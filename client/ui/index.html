@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Realtime Secure Messenger</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-title">Realtime Secure Messenger</div>
+        <div class="brand-sub">E2EE • Double Ratchet • Real-time DM</div>
+      </div>
+
+      <div class="login">
+        <label>
+          <span>Username</span>
+          <input id="username" placeholder="Enter your username" autocomplete="off" />
+        </label>
+        <label>
+          <span>Password</span>
+          <input id="password" type="password" placeholder="Enter your password" />
+        </label>
+
+        <button id="startBtn" class="primary">Start</button>
+        <button id="logoutBtn" class="secondary" type="button">Logout</button>
+
+        <!-- Status pill (NOT a button) -->
+        <div id="status" class="status" aria-live="polite">Idle</div>
+      </div>
+    </div>
+
+    <div class="content">
+      <aside class="sidebar">
+        <div class="field">
+          <label>Chat with</label>
+          <input id="to" placeholder="Enter peer username" autocomplete="off" />
+        </div>
+      </aside>
+
+      <main class="chat">
+        <div id="messages" class="messages"></div>
+
+        <div class="composer">
+          <input id="msg" placeholder="Type a message…" autocomplete="off" />
+          <button id="sendBtn">Send</button>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

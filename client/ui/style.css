@@ -1,0 +1,216 @@
+:root{
+  --bg: #f6f7fb;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --shadow: 0 10px 30px rgba(15, 23, 42, .08);
+  --primary: #2563eb;
+  --primary-2: #1d4ed8;
+  --bubble-me: #2563eb;
+  --bubble-peer: #f1f5f9;
+}
+
+*{ box-sizing: border-box; }
+html, body { height: 100%; }
+
+body{
+  margin:0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.shell{
+  max-width: 1100px;
+  margin: 24px auto;
+  padding: 0 16px;
+}
+
+.topbar{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.brand-title{
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: .2px;
+}
+.brand-sub{
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.login{
+  display:flex;
+  align-items:flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.login label{
+  display:flex;
+  flex-direction: column;
+  gap:6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.login input{
+  width: 180px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline: none;
+  background: #fff;
+}
+.login input:focus{
+  border-color: #bfdbfe;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+}
+
+button{
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: 12px;
+  cursor:pointer;
+}
+button:hover{ background:#f8fafc; }
+button:disabled{ opacity:.55; cursor:not-allowed; }
+
+button.primary{
+  background: var(--primary);
+  border-color: var(--primary);
+  color:#fff;
+}
+button.primary:hover{
+  background: var(--primary-2);
+  border-color: var(--primary-2);
+}
+
+/* ✅ NEW: secondary button (Logout) */
+button.secondary{
+  background: #f8fafc;
+  border-color: var(--border);
+  color: var(--text);
+}
+button.secondary:hover{
+  background: #eef2f7;
+}
+button.secondary:disabled{
+  opacity: .55;
+}
+
+.status{
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  user-select: none;
+}
+
+.content{
+  margin-top: 16px;
+  display:grid;
+  grid-template-columns: 280px 1fr;
+  gap: 16px;
+}
+
+.sidebar, .chat{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.sidebar{ padding: 14px; }
+
+.field label{
+  display:block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.field input{
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline:none;
+  background: #fff;
+}
+.field input:focus{
+  border-color: #bfdbfe;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+}
+
+.chat{
+  display:flex;
+  flex-direction: column;
+  min-height: 70vh;
+}
+
+.messages{
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0; /* important for flex scroll */
+}
+
+.msg{
+  max-width: 70%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  margin: 10px 0;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg.me{
+  margin-left: auto;
+  background: var(--bubble-me);
+  color: #fff;
+}
+
+.msg.peer{
+  margin-right: auto;
+  background: var(--bubble-peer);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.composer{
+  display:flex;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+.composer input{
+  flex: 1;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline:none;
+  background: #fff;
+}
+.composer input:focus{
+  border-color: #bfdbfe;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+}
+
+@media (max-width: 900px){
+  .content{ grid-template-columns: 1fr; }
+  .login input{ width: 150px; }
+}

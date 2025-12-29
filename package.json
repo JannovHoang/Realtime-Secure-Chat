@@ -1,0 +1,20 @@
+{
+  "name": "realtime-secure-chat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time Secure Chat (E2EE) using Project 1 Password Manager + Project 2 Double Ratchet, with WebSocket relay server and Vite UI.",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "vite --config vite.config.js",
+    "build": "vite build --config vite.config.js",
+    "preview": "vite preview --config vite.config.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}
+
+
