@@ -3,6 +3,7 @@ import {
   sendMessage,
   openConversation,
   destroyChat,
+  listConversationPeers,
   isPeerReady,
   onPeerReady,
 } from "../chat.js";
@@ -123,6 +124,55 @@ function isCurrentPeerReady() {
   return isPeerReady(currentPeer);
 }
 
+/* ===================== conversation list ===================== */
+function renderPeerList() {
+  const listEl = $("peerList");
+  const emptyEl = $("peerEmpty");
+  if (!listEl || !emptyEl) return;
+
+  listEl.innerHTML = "";
+
+  const list = Array.from(peers).sort((a, b) => a.localeCompare(b));
+  if (list.length === 0) {
+    emptyEl.style.display = "block";
+    return;
+  }
+
+  emptyEl.style.display = "none";
+
+  for (const p of list) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "peer-item" + (p === currentPeer ? " active" : "");
+
+    const avatar = document.createElement("span");
+    avatar.className = "peer-avatar";
+    avatar.textContent = p.slice(0, 1).toUpperCase();
+
+    const name = document.createElement("span");
+    name.className = "peer-name";
+    name.textContent = p;
+
+    item.appendChild(avatar);
+    item.appendChild(name);
+
+    item.addEventListener("click", async () => {
+      $("to").value = p;
+      await switchPeer(true);
+    });
+
+    listEl.appendChild(item);
+  }
+}
+
+async function syncPeersFromVault() {
+  try {
+    const fromVault = await listConversationPeers();
+    for (const p of fromVault) ensurePeerInDirectory(p);
+  } catch {}
+  renderPeerList();
+}
+
 /* ===================== history ===================== */
 async function loadHistory(peer) {
   clearMessages();
@@ -139,22 +189,22 @@ function ensurePeerDatalist() {
   if (!input) return;
 
   // Create datalist dynamically; no need to edit HTML.
-  let dl = document.getElementById("peerList");
+  let dl = document.getElementById("peerDatalist");
   if (!dl) {
     dl = document.createElement("datalist");
-    dl.id = "peerList";
+    dl.id = "peerDatalist";
     document.body.appendChild(dl);
   }
 
   // attach list attribute
-  input.setAttribute("list", "peerList");
+  input.setAttribute("list", "peerDatalist");
 
   // optional placeholder hint
   if (!input.placeholder) input.placeholder = "Chat with (choose from suggestions)";
 }
 
 function refreshPeerDatalist() {
-  const dl = document.getElementById("peerList");
+  const dl = document.getElementById("peerDatalist");
   if (!dl) return;
 
   dl.innerHTML = "";
@@ -177,13 +227,11 @@ async function switchPeer(force = false) {
   const typed = normalizeKeepCase(raw);
   if (!typed) return;
 
-  // ✅ validate / auto-correct:
-  // If user typed something that matches a known peer EXACTLY after normalization,
-  // replace the input with the canonical display (correct case/spaces).
+  // Validate and auto-correct case if we have a known peer display name.
   const display = findPeerDisplay(typed);
 
   if (display) {
-    if ($("to").value !== display) $("to").value = display; // normalize shown text
+    if ($("to").value !== display) $("to").value = display;
   }
 
   const chosen = display || typed;
@@ -191,15 +239,15 @@ async function switchPeer(force = false) {
   if (force || currentPeer !== chosen) {
     currentPeer = chosen;
 
-    // If peer not ready, show friendly hint but still allow switching (history may exist)
     if (!isPeerReady(chosen) && !display) {
       toast(
-        `Peer "${chosen}" chưa có certificate. Hãy mở tab người kia và Start trước.`,
+        `Peer "${chosen}" has no certificate yet. Ask them to click Start.`,
         "info"
       );
     }
 
     await loadHistory(chosen);
+    renderPeerList();
     setButtons();
   }
 }
@@ -209,6 +257,7 @@ setStatus("Idle", true);
 setButtons();
 ensurePeerDatalist();
 refreshPeerDatalist();
+renderPeerList();
 
 /* ===================== Start ===================== */
 $("startBtn").onclick = async () => {
@@ -224,18 +273,28 @@ $("startBtn").onclick = async () => {
 
     starting = true;
     setButtons();
-    setStatus("Starting…", true);
+    setStatus("Starting...", true);
 
     await initChat(username, password);
 
     started = true;
     starting = false;
 
-    // subscribe peer-ready events
-    unsubPeerReady = onPeerReady((peer) => {
-      // store peer into directory (case preserved from cert)
-      ensurePeerInDirectory(peer);
+    peers.clear();
+    peerByNorm.clear();
+    refreshPeerDatalist();
+    renderPeerList();
 
+    const pwField = $("passwordField");
+    if (pwField) {
+      pwField.classList.add("is-hidden");
+      pwField.style.display = "none";
+    }
+    $("password").value = "";
+    $("password").disabled = true;
+
+    // subscribe peer-ready events (no list updates here; list comes from history)
+    unsubPeerReady = onPeerReady((peer) => {
       if (peer === currentPeer) setButtons();
     });
 
@@ -243,6 +302,7 @@ $("startBtn").onclick = async () => {
     setStatus("Ready", true);
     toast("Ready.", "success");
 
+    await syncPeersFromVault();
     // auto load history if peer already typed
     await switchPeer(true);
   } catch (e) {
@@ -271,12 +331,23 @@ $("logoutBtn").onclick = async () => {
     $("msg").value = "";
     clearMessages();
 
-    // Do NOT clear peers directory automatically (optional).
-    // If you want it empty on logout, uncomment:
-    // peers.clear(); peerByNorm.clear(); refreshPeerDatalist();
+    peers.clear();
+    peerByNorm.clear();
+    refreshPeerDatalist();
+    renderPeerList();
+
+    const pwField = $("passwordField");
+    if (pwField) {
+      pwField.classList.remove("is-hidden");
+      pwField.style.display = "";
+    }
+    $("password").disabled = false;
+    $("username").value = "";
+    $("password").value = "";
 
     setStatus("Logged out", true);
     setButtons();
+    renderPeerList();
     toast("Logged out.", "success");
   } catch (e) {
     console.error("[Logout error]", e);
@@ -320,7 +391,7 @@ $("sendBtn").onclick = async () => {
     if (display && $("to").value !== display) $("to").value = display;
 
     if (!isPeerReady(to)) {
-      toast(`Waiting certificate of ${to}… (mở tab người kia và Start)`, "error");
+      toast(`Waiting certificate of ${to} (ask them to click Start).`, "error");
       return;
     }
 
@@ -332,6 +403,8 @@ $("sendBtn").onclick = async () => {
 
     $("msg").value = "";
     appendMsg("me", msg);
+    ensurePeerInDirectory(to);
+    renderPeerList();
   } catch (e) {
     console.error("[Send error]", e);
     toast("Send failed: " + (e?.message || e), "error");
@@ -351,6 +424,7 @@ window.onChatMessage = ({ from, text }) => {
 
   // Learn peer name from incoming too (case preserved)
   ensurePeerInDirectory(from);
+  renderPeerList();
 
   if (from === currentPeer) {
     appendMsg("peer", text);

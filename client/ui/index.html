@@ -11,7 +11,7 @@
     <div class="topbar">
       <div class="brand">
         <div class="brand-title">Realtime Secure Messenger</div>
-        <div class="brand-sub">E2EE • Double Ratchet • Real-time DM</div>
+        <div class="brand-sub">E2EE - Double Ratchet - Real-time DM</div>
       </div>
 
       <div class="login">
@@ -19,7 +19,7 @@
           <span>Username</span>
           <input id="username" placeholder="Enter your username" autocomplete="off" />
         </label>
-        <label>
+        <label id="passwordField">
           <span>Password</span>
           <input id="password" type="password" placeholder="Enter your password" />
         </label>
@@ -38,13 +38,18 @@
           <label>Chat with</label>
           <input id="to" placeholder="Enter peer username" autocomplete="off" />
         </div>
+        <div class="peer-list">
+          <div class="peer-list-head">Conversations</div>
+          <div id="peerList" class="peer-items"></div>
+          <div id="peerEmpty" class="peer-empty">No conversations yet.</div>
+        </div>
       </aside>
 
       <main class="chat">
         <div id="messages" class="messages"></div>
 
         <div class="composer">
-          <input id="msg" placeholder="Type a message…" autocomplete="off" />
+          <input id="msg" placeholder="Type a message..." autocomplete="off" />
           <button id="sendBtn">Send</button>
         </div>
       </main>

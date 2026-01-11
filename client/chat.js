@@ -9,7 +9,7 @@
 // - FIX 5 (NEW): After FIRST generateCertificate/cert_submit => await saveStateNow() to prevent key rotation
 // - FIX 6 (NEW): Handle server pending_flushed => kick drain again
 
-import { initVault, storeRecord, loadRecord } from "./storage.js";
+import { initVault, storeRecord, loadRecord, listRecordNames } from "./storage.js";
 import { MessengerClient } from "../crypto/dr/messenger.browser.js";
 
 const WS_URL = "ws://localhost:3000/ws";
@@ -649,6 +649,22 @@ export async function initChat(username, password) {
 /* ===================== status API for UI ===================== */
 export function getUsername() {
   return myUser;
+}
+
+export async function listConversationPeers() {
+  if (!myUser) return [];
+  const names = await listRecordNames("dm:");
+  const out = new Set();
+  for (const n of names) {
+    if (!n.startsWith("dm:")) continue;
+    const body = n.slice(3);
+    const parts = body.split("<->");
+    if (parts.length !== 2) continue;
+    const [a, b] = parts;
+    if (a === myUser && b) out.add(b);
+    else if (b === myUser && a) out.add(a);
+  }
+  return Array.from(out);
 }
 
 export function isPeerReady(peer) {
