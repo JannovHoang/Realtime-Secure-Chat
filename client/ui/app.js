@@ -124,6 +124,34 @@ function isCurrentPeerReady() {
   return isPeerReady(currentPeer);
 }
 
+function resetUiAfterLogout(reason) {
+  started = false;
+  starting = false;
+  currentPeer = null;
+
+  $("to").value = "";
+  $("msg").value = "";
+  clearMessages();
+
+  peers.clear();
+  peerByNorm.clear();
+  refreshPeerDatalist();
+  renderPeerList();
+
+  const pwField = $("passwordField");
+  if (pwField) {
+    pwField.classList.remove("is-hidden");
+    pwField.style.display = "";
+  }
+  $("password").disabled = false;
+  $("username").value = "";
+  $("password").value = "";
+
+  setStatus(reason === "logged_in_elsewhere" ? "Logged out (other login)" : "Logged out", true);
+  setButtons();
+  renderPeerList();
+}
+
 /* ===================== conversation list ===================== */
 function renderPeerList() {
   const listEl = $("peerList");
@@ -322,37 +350,19 @@ $("logoutBtn").onclick = async () => {
     unsubPeerReady = null;
 
     await destroyChat();
-
-    started = false;
-    starting = false;
-    currentPeer = null;
-
-    $("to").value = "";
-    $("msg").value = "";
-    clearMessages();
-
-    peers.clear();
-    peerByNorm.clear();
-    refreshPeerDatalist();
-    renderPeerList();
-
-    const pwField = $("passwordField");
-    if (pwField) {
-      pwField.classList.remove("is-hidden");
-      pwField.style.display = "";
-    }
-    $("password").disabled = false;
-    $("username").value = "";
-    $("password").value = "";
-
-    setStatus("Logged out", true);
-    setButtons();
-    renderPeerList();
+    resetUiAfterLogout();
     toast("Logged out.", "success");
   } catch (e) {
     console.error("[Logout error]", e);
     toast("Logout failed", "error");
   }
+};
+
+window.onForcedLogout = (reason) => {
+  if (unsubPeerReady) unsubPeerReady();
+  unsubPeerReady = null;
+  resetUiAfterLogout(reason);
+  toast("Logged out: this account was used elsewhere.", "error");
 };
 
 /* ===================== Peer input ===================== */

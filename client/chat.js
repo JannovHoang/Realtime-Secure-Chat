@@ -355,6 +355,13 @@ function drainInboundAllSoon() {
   }
 }
 
+async function handleForceLogout(reason) {
+  try {
+    if (window.onForcedLogout) window.onForcedLogout(reason);
+  } catch {}
+  await destroyChat();
+}
+
 /* ===================== decrypt/store/render one packet ===================== */
 async function processCipherPacket(from, header, ciphertextB64, ts) {
   const ciphertext = b64ToAb(ciphertextB64);
@@ -562,6 +569,11 @@ export async function initChat(username, password) {
     try {
       data = JSON.parse(e.data);
     } catch {
+      return;
+    }
+
+    if (data.type === "force_logout") {
+      await handleForceLogout(data.reason || "logged_in_elsewhere");
       return;
     }
 

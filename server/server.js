@@ -329,6 +329,17 @@ wss.on("connection", (ws) => {
         return sendJson(ws, { type: "error", error: "Empty username" });
       }
 
+      const existing = userToWs.get(user);
+      if (existing && existing !== ws) {
+        sendJson(existing, {
+          type: "force_logout",
+          reason: "logged_in_elsewhere",
+        });
+        try {
+          existing.close(4001, "Logged in elsewhere");
+        } catch {}
+      }
+
       wsToUser.set(ws, user);
       userToWs.set(user, ws);
 

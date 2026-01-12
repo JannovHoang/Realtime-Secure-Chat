@@ -24,7 +24,7 @@ body {
 
 body {
   margin: 0;
-  font-family: "Trebuchet MS", "Tahoma", "Verdana", sans-serif;
+  font-family: "Segoe UI", "Tahoma", "Arial", "Noto Sans", "Helvetica", sans-serif;
   font-size: 15px;
   color: var(--text);
   background:
@@ -286,6 +286,8 @@ button.secondary:hover {
   white-space: pre-wrap;
   word-break: break-word;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  font-family: "Segoe UI", "Tahoma", "Arial", "Noto Sans", "Helvetica", sans-serif;
+  font-weight: 500;
 }
 
 .msg.me {
