@@ -14,8 +14,9 @@ const { Keychain } = pmModule;
 let keychain = null;          // in-memory per tab
 let vaultStorageKey = null;   // localStorage key per user
 
-// Encrypted index key (inside vault)
+// Encrypted index keys (inside vault)
 const INDEX_KEY = "__securechat_index_v1__";
+const CONV_INDEX_KEY = "__securechat_conversations_v1__";
 
 // Chunking scheme
 const CHUNK_META_SUFFIX = "::chunks_meta"; // JSON { n, encoding, totalBytes }
@@ -25,8 +26,23 @@ const CHUNK_PART_PREFIX = "::chunk:";
 const MAX_CHUNK_BYTES = 48;
 
 // -------------------- Helpers --------------------
-function makeVaultStorageKey(userId) {
-  return `securechat:vault:${userId}`;
+function toBase64Url(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+async function hashLabel(label) {
+  const data = new TextEncoder().encode(String(label ?? ""));
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return toBase64Url(digest);
+}
+
+async function makeVaultStorageKey(userId) {
+  const label = `securechat:vault:${userId}`;
+  const h = await hashLabel(label);
+  return `securechat:vault:${h}`;
 }
 
 /**
@@ -82,6 +98,13 @@ function splitStringIntoUtf8ChunksSafe(str, maxBytes = MAX_CHUNK_BYTES) {
 
   if (cur) chunks.push(cur);
   return { chunks, totalBytes: utf8ByteLen(str) };
+}
+
+function abToB64(ab) {
+  const bytes = new Uint8Array(ab);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
 }
 
 function readPersisted() {
@@ -200,20 +223,40 @@ async function writeIndex(arr) {
   await setValueChunked(INDEX_KEY, JSON.stringify(uniq));
 }
 
-// -------------------- Public API --------------------
-export function hasPersistedVault(userId = "default") {
-  return localStorage.getItem(makeVaultStorageKey(userId)) != null;
+async function readConversationIndex() {
+  const s = await getValueChunked(CONV_INDEX_KEY);
+  if (!s) return [];
+  try {
+    const arr = JSON.parse(s);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
 }
 
-export function clearPersistedVault(userId = "default") {
-  localStorage.removeItem(makeVaultStorageKey(userId));
+async function writeConversationIndex(arr) {
+  const uniq = Array.from(
+    new Set(arr.map(normalizeKeyName).filter(Boolean))
+  );
+  await setValueChunked(CONV_INDEX_KEY, JSON.stringify(uniq));
+}
+
+// -------------------- Public API --------------------
+export async function hasPersistedVault(userId = "default") {
+  const key = await makeVaultStorageKey(userId);
+  return localStorage.getItem(key) != null;
+}
+
+export async function clearPersistedVault(userId = "default") {
+  const key = await makeVaultStorageKey(userId);
+  localStorage.removeItem(key);
 }
 
 /**
  * Initialize OR load existing vault
  */
 export async function initVault(password, userId = "default") {
-  vaultStorageKey = makeVaultStorageKey(userId);
+  vaultStorageKey = await makeVaultStorageKey(userId);
   const persisted = readPersisted();
 
   if (persisted?.repr && persisted?.digest) {
@@ -223,12 +266,13 @@ export async function initVault(password, userId = "default") {
 
   keychain = await Keychain.init(password);
   await setValueChunked(INDEX_KEY, JSON.stringify([]));
+  await setValueChunked(CONV_INDEX_KEY, JSON.stringify([]));
   await persistNow();
   return keychain;
 }
 
 export async function loadVault(password, repr, digest, userId = "default") {
-  vaultStorageKey = makeVaultStorageKey(userId);
+  vaultStorageKey = await makeVaultStorageKey(userId);
   keychain = await Keychain.load(password, repr, digest);
   await persistNow();
   return keychain;
@@ -282,4 +326,26 @@ export async function listRecordNames(prefix = "") {
   const idx = await readIndex();
   if (!p) return idx;
   return idx.filter((k) => k.startsWith(p));
+}
+
+export async function addConversationPeer(peer) {
+  const p = normalizeKeyName(peer);
+  if (!p) return;
+  const idx = await readConversationIndex();
+  if (!idx.includes(p)) {
+    idx.push(p);
+    await writeConversationIndex(idx);
+  }
+  await persistNow();
+}
+
+export async function listConversationPeers() {
+  return await readConversationIndex();
+}
+
+export async function hmacRecordKey(label) {
+  if (!keychain?.secrets?.domainKey) throw new Error("Vault not initialized");
+  const data = new TextEncoder().encode(String(label ?? ""));
+  const raw = await crypto.subtle.sign("HMAC", keychain.secrets.domainKey, data);
+  return abToB64(raw);
 }

@@ -9,7 +9,14 @@
 // - FIX 5 (NEW): After FIRST generateCertificate/cert_submit => await saveStateNow() to prevent key rotation
 // - FIX 6 (NEW): Handle server pending_flushed => kick drain again
 
-import { initVault, storeRecord, loadRecord, listRecordNames } from "./storage.js";
+import {
+  initVault,
+  storeRecord,
+  loadRecord,
+  addConversationPeer,
+  listConversationPeers as listConversationPeersFromVault,
+  hmacRecordKey,
+} from "./storage.js";
 import { MessengerClient } from "../crypto/dr/messenger.browser.js";
 
 const WS_URL = "ws://localhost:3000/ws";
@@ -80,8 +87,11 @@ function b64ToAb(b64) {
   return bytes.buffer;
 }
 
-const threadKey = (peer) =>
-  myUser < peer ? `dm:${myUser}<->${peer}` : `dm:${peer}<->${myUser}`;
+async function threadKey(peer) {
+  const label = myUser < peer ? `dm:${myUser}<->${peer}` : `dm:${peer}<->${myUser}`;
+  const h = await hmacRecordKey(label);
+  return `dmh:${h}`;
+}
 
 /* ===================== Persist / Restore Double Ratchet state ===================== */
 async function exportHmacKeyRawB64(hmacKey) {
@@ -357,7 +367,7 @@ async function processCipherPacket(from, header, ciphertextB64, ts) {
     plaintext = await messenger.receiveMessage(from, [header, ciphertext]);
   }
 
-  const key = threadKey(from);
+  const key = await threadKey(from);
   const history = (await loadRecord(key)) || "[]";
 
   let arr;
@@ -370,6 +380,7 @@ async function processCipherPacket(from, header, ciphertextB64, ts) {
 
   arr.push({ from, text: plaintext, ts: ts ?? Date.now() });
   await storeRecord(key, JSON.stringify(arr));
+  await addConversationPeer(from);
 
   scheduleSaveState();
 
@@ -653,18 +664,7 @@ export function getUsername() {
 
 export async function listConversationPeers() {
   if (!myUser) return [];
-  const names = await listRecordNames("dm:");
-  const out = new Set();
-  for (const n of names) {
-    if (!n.startsWith("dm:")) continue;
-    const body = n.slice(3);
-    const parts = body.split("<->");
-    if (parts.length !== 2) continue;
-    const [a, b] = parts;
-    if (a === myUser && b) out.add(b);
-    else if (b === myUser && a) out.add(a);
-  }
-  return Array.from(out);
+  return await listConversationPeersFromVault();
 }
 
 export function isPeerReady(peer) {
@@ -688,7 +688,8 @@ export async function openConversation(peer) {
     await drainInbound(p);
   } catch {}
 
-  const history = (await loadRecord(threadKey(p))) || "[]";
+  const key = await threadKey(p);
+  const history = (await loadRecord(key)) || "[]";
   try {
     const arr = JSON.parse(history);
     return Array.isArray(arr) ? arr : [];
@@ -710,7 +711,7 @@ export async function sendMessage(peer, text) {
 
   const [header, ciphertext] = await messenger.sendMessage(p, msg);
 
-  const key = threadKey(p);
+  const key = await threadKey(p);
   const history = (await loadRecord(key)) || "[]";
   let arr;
   try {
@@ -721,6 +722,7 @@ export async function sendMessage(peer, text) {
   }
   arr.push({ from: myUser, text: msg, ts: Date.now() });
   await storeRecord(key, JSON.stringify(arr));
+  await addConversationPeer(p);
 
   wsSend({
     type: "send",
