@@ -6,7 +6,17 @@ import {
   listConversationPeers,
   isPeerReady,
   onPeerReady,
+  saveCloudBackup,
+  fetchCloudBackup,
 } from "../chat.js";
+import {
+  hasPersistedVault,
+  exportIdentityPayload,
+  verifyPersistedVaultPassword,
+  encryptIdentityPayload,
+  decryptIdentityPayload,
+  importIdentityPayload,
+} from "../storage.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -14,7 +24,13 @@ let currentPeer = null;
 let started = false;
 let starting = false;
 let disconnected = false;
+let restoring = false;
+let backingUp = false;
 let unsubPeerReady = null;
+let backupModalResolver = null;
+let startGuardResolver = null;
+let restoredThisSession = false;
+const continueWithoutRestoreFor = new Set();
 
 /** ===== NEW: peer directory from certs =====
  * Keep-case usernames as they appear in certificates.
@@ -63,8 +79,11 @@ function setStatus(text, ok = true) {
 }
 
 function setButtons() {
-  $("startBtn").disabled = starting || (started && !disconnected);
-  $("logoutBtn").disabled = !started;
+  const busy = starting || restoring || backingUp;
+  $("startBtn").disabled = busy || (started && !disconnected);
+  $("restoreBtn").disabled = busy || started || !normalizeKeepCase($("username").value) || !$("password").value;
+  $("backupBtn").disabled = busy || !started || disconnected;
+  $("logoutBtn").disabled = busy || !started;
   $("startBtn").textContent = disconnected ? "Reconnect" : "Start";
 
   const canInteract = started && !disconnected;
@@ -105,6 +124,74 @@ function toast(text, type = "info") {
 
   wrap.appendChild(t);
   setTimeout(() => t.remove(), 2200);
+}
+
+function closeBackupModal() {
+  const modal = $("backupModal");
+  const input = $("backupPassword");
+  const toggle = $("backupPasswordToggle");
+  if (!modal || !input || !toggle) return;
+
+  modal.classList.add("is-hidden");
+  modal.setAttribute("aria-hidden", "true");
+  input.value = "";
+  input.type = "password";
+  toggle.textContent = "Show";
+  toggle.setAttribute("aria-label", "Show password");
+}
+
+function resolveBackupModal(value) {
+  const resolver = backupModalResolver;
+  backupModalResolver = null;
+  closeBackupModal();
+  if (resolver) resolver(value);
+}
+
+function closeStartGuardModal() {
+  const modal = $("startGuardModal");
+  if (!modal) return;
+  modal.classList.add("is-hidden");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function resolveStartGuard(value) {
+  const resolver = startGuardResolver;
+  startGuardResolver = null;
+  closeStartGuardModal();
+  if (resolver) resolver(value);
+}
+
+function askStartGuard() {
+  const modal = $("startGuardModal");
+  if (!modal) {
+    return Promise.resolve("continue");
+  }
+
+  closeStartGuardModal();
+  modal.classList.remove("is-hidden");
+  modal.setAttribute("aria-hidden", "false");
+
+  return new Promise((resolve) => {
+    startGuardResolver = resolve;
+    queueMicrotask(() => $("startGuardContinue")?.focus());
+  });
+}
+
+function askBackupPassword() {
+  const modal = $("backupModal");
+  const input = $("backupPassword");
+  if (!modal || !input) {
+    return Promise.resolve(null);
+  }
+
+  closeBackupModal();
+  modal.classList.remove("is-hidden");
+  modal.setAttribute("aria-hidden", "false");
+
+  return new Promise((resolve) => {
+    backupModalResolver = resolve;
+    queueMicrotask(() => input.focus());
+  });
 }
 
 function appendMsg(type, text) {
@@ -150,6 +237,8 @@ function resetUiAfterLogout(reason) {
   $("password").disabled = false;
   $("username").value = "";
   $("password").value = "";
+  restoredThisSession = false;
+  continueWithoutRestoreFor.clear();
 
   setStatus(reason === "logged_in_elsewhere" ? "Logged out (other login)" : "Logged out", true);
   setButtons();
@@ -181,6 +270,95 @@ function markDisconnectedForReconnect() {
   setButtons();
   $("password").focus();
   toast("Reconnect required. Re-enter password and press Start.", "error");
+}
+
+async function runRestoreFlow() {
+  const username = normalizeKeepCase($("username").value);
+  const password = $("password").value;
+  if (!username || !password) {
+    toast("Please enter username and password.", "error");
+    return;
+  }
+
+  if (await hasPersistedVault(username)) {
+    const confirmed = window.confirm(
+      `Restore will overwrite the current local identity for ${username} in this browser. Continue?`
+    );
+    if (!confirmed) return;
+  }
+
+  restoring = true;
+  setButtons();
+  setStatus("Restoring...", true);
+
+  try {
+    const blob = await fetchCloudBackup(username);
+    const payload = await decryptIdentityPayload(blob, password, username);
+    await importIdentityPayload(payload, username);
+
+    restoredThisSession = true;
+    continueWithoutRestoreFor.delete(username);
+    $("password").value = "";
+    $("password").focus();
+    setStatus("Restore ready", true);
+    toast("Backup restored. Enter password and press Start.", "success");
+  } catch (e) {
+    console.error("[Restore error]", e);
+    setStatus("Restore failed", false);
+    toast(
+      "Restore failed. Check your username/password or backup availability.",
+      "error"
+    );
+  } finally {
+    restoring = false;
+    setButtons();
+  }
+}
+
+async function runBackupFlow() {
+  if (!started || disconnected) return;
+
+  const username = normalizeKeepCase($("username").value);
+  if (!username) {
+    toast("Missing username.", "error");
+    return;
+  }
+
+  const password = await askBackupPassword();
+  if (password == null) return;
+  if (!password) {
+    toast("Backup failed: password is required.", "error");
+    return;
+  }
+
+  backingUp = true;
+  setButtons();
+  setStatus("Saving backup...", true);
+
+  try {
+    const passwordOk = await verifyPersistedVaultPassword(username, password);
+    if (!passwordOk) {
+      throw new Error("Incorrect password");
+    }
+
+    const payload = await exportIdentityPayload(username);
+    const blob = await encryptIdentityPayload(payload, password);
+    await saveCloudBackup(blob);
+
+    setStatus("Ready", true);
+    toast("Cloud backup saved.", "success");
+  } catch (e) {
+    console.error("[Backup error]", e);
+    setStatus("Backup failed", false);
+    if ((e?.message || "").toLowerCase().includes("incorrect password")) {
+      toast("Backup failed: incorrect password.", "error");
+    } else {
+      toast("Backup failed.", "error");
+    }
+  } finally {
+    backingUp = false;
+    setButtons();
+  }
 }
 
 /* ===================== conversation list ===================== */
@@ -318,6 +496,9 @@ ensurePeerDatalist();
 refreshPeerDatalist();
 renderPeerList();
 
+$("username").addEventListener("input", () => setButtons());
+$("password").addEventListener("input", () => setButtons());
+
 /* ===================== Start ===================== */
 $("startBtn").onclick = async () => {
   try {
@@ -328,6 +509,19 @@ $("startBtn").onclick = async () => {
       toast("Please enter username and password.", "error");
       setStatus("Missing info", false);
       return;
+    }
+
+    const hasLocalVault = await hasPersistedVault(username);
+    if (!hasLocalVault && !restoredThisSession && !continueWithoutRestoreFor.has(username)) {
+      const choice = await askStartGuard();
+      if (choice === "restore") {
+        await runRestoreFlow();
+        return;
+      }
+      if (choice === "cancel") {
+        return;
+      }
+      continueWithoutRestoreFor.add(username);
     }
 
     starting = true;
@@ -390,6 +584,68 @@ $("logoutBtn").onclick = async () => {
     toast("Logout failed", "error");
   }
 };
+
+$("restoreBtn").onclick = async () => {
+  await runRestoreFlow();
+};
+
+$("backupBtn").onclick = async () => {
+  await runBackupFlow();
+};
+
+$("backupModalCancel").onclick = () => {
+  resolveBackupModal(null);
+};
+
+$("backupModalConfirm").onclick = () => {
+  resolveBackupModal($("backupPassword").value);
+};
+
+$("backupPasswordToggle").onclick = () => {
+  const input = $("backupPassword");
+  const toggle = $("backupPasswordToggle");
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  toggle.textContent = showing ? "Show" : "Hide";
+  toggle.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+  input.focus();
+};
+
+$("backupPassword").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    resolveBackupModal($("backupPassword").value);
+    return;
+  }
+  if (e.key === "Escape") {
+    e.preventDefault();
+    resolveBackupModal(null);
+  }
+});
+
+$("backupModal").addEventListener("click", (e) => {
+  if (e.target === $("backupModal")) {
+    resolveBackupModal(null);
+  }
+});
+
+$("startGuardCancel").onclick = () => {
+  resolveStartGuard("cancel");
+};
+
+$("startGuardRestore").onclick = () => {
+  resolveStartGuard("restore");
+};
+
+$("startGuardContinue").onclick = () => {
+  resolveStartGuard("continue");
+};
+
+$("startGuardModal").addEventListener("click", (e) => {
+  if (e.target === $("startGuardModal")) {
+    resolveStartGuard("cancel");
+  }
+});
 
 window.onForcedLogout = (reason) => {
   if (unsubPeerReady) unsubPeerReady();

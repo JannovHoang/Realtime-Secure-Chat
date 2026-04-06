@@ -107,6 +107,51 @@ function abToB64(ab) {
   return btoa(bin);
 }
 
+function b64ToAb(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function strToAb(str) {
+  return new TextEncoder().encode(String(str ?? "")).buffer;
+}
+
+function abToStr(ab) {
+  return new TextDecoder().decode(ab);
+}
+
+function randomBytes(len) {
+  const out = new Uint8Array(len);
+  crypto.getRandomValues(out);
+  return out.buffer;
+}
+
+function validateImportedPayload(payload, expectedUsername = null) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid backup payload");
+  }
+  if (payload.version !== 1) {
+    throw new Error("Unsupported backup version");
+  }
+  if (typeof payload.username !== "string" || !normalizeKeyName(payload.username)) {
+    throw new Error("Invalid backup username");
+  }
+  if (typeof payload.repr !== "string" || !payload.repr) {
+    throw new Error("Invalid backup repr");
+  }
+  if (typeof payload.digest !== "string" || !payload.digest) {
+    throw new Error("Invalid backup digest");
+  }
+
+  const payloadUser = normalizeKeyName(payload.username);
+  const expectedUser = normalizeKeyName(expectedUsername || "");
+  if (expectedUser && payloadUser !== expectedUser) {
+    throw new Error("Backup username mismatch");
+  }
+}
+
 function readPersisted() {
   if (!vaultStorageKey) return null;
   const raw = localStorage.getItem(vaultStorageKey);
@@ -124,6 +169,45 @@ async function persistNow() {
   localStorage.setItem(
     vaultStorageKey,
     JSON.stringify({ repr, digest, savedAt: Date.now() })
+  );
+}
+
+async function readPersistedForUser(userId) {
+  const key = await makeVaultStorageKey(userId);
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function writePersistedForUser(userId, persisted) {
+  const key = await makeVaultStorageKey(userId);
+  localStorage.setItem(key, JSON.stringify(persisted));
+}
+
+async function deriveBackupKey(password, saltAb, usages) {
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    strToAb(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: saltAb,
+      iterations: 100000,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    usages
   );
 }
 
@@ -319,6 +403,111 @@ export async function removeRecord(name) {
 export async function dumpVault() {
   if (!keychain) throw new Error("Vault not initialized");
   return await keychain.dump(); // [repr, digest]
+}
+
+export async function exportIdentityPayload(userId = "default") {
+  const persisted = await readPersistedForUser(userId);
+  if (!persisted?.repr || !persisted?.digest) {
+    throw new Error("No persisted vault for user");
+  }
+
+  return {
+    version: 1,
+    username: normalizeKeyName(userId),
+    repr: persisted.repr,
+    digest: persisted.digest,
+    exportedAt: new Date().toISOString(),
+  };
+}
+
+export async function verifyPersistedVaultPassword(userId, password) {
+  const persisted = await readPersistedForUser(userId);
+  if (!persisted?.repr || !persisted?.digest) return false;
+  try {
+    await Keychain.load(password, persisted.repr, persisted.digest);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function encryptIdentityPayload(payload, password) {
+  validateImportedPayload(payload);
+
+  const saltAb = randomBytes(16);
+  const ivAb = randomBytes(12);
+  const key = await deriveBackupKey(password, saltAb, ["encrypt"]);
+  const plaintextAb = strToAb(JSON.stringify(payload));
+  const ciphertextAb = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: ivAb },
+    key,
+    plaintextAb
+  );
+
+  return {
+    version: 1,
+    username: normalizeKeyName(payload.username),
+    ciphertextB64: abToB64(ciphertextAb),
+    ivB64: abToB64(ivAb),
+    saltB64: abToB64(saltAb),
+    kdf: {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      iterations: 100000,
+    },
+  };
+}
+
+export async function decryptIdentityPayload(blob, password, expectedUsername = null) {
+  if (!blob || typeof blob !== "object") {
+    throw new Error("Invalid encrypted backup");
+  }
+  if (typeof blob.ciphertextB64 !== "string" || !blob.ciphertextB64) {
+    throw new Error("Invalid encrypted backup ciphertext");
+  }
+  if (typeof blob.ivB64 !== "string" || !blob.ivB64) {
+    throw new Error("Invalid encrypted backup iv");
+  }
+  if (typeof blob.saltB64 !== "string" || !blob.saltB64) {
+    throw new Error("Invalid encrypted backup salt");
+  }
+
+  const saltAb = b64ToAb(blob.saltB64);
+  const ivAb = b64ToAb(blob.ivB64);
+  const ciphertextAb = b64ToAb(blob.ciphertextB64);
+  const key = await deriveBackupKey(password, saltAb, ["decrypt"]);
+
+  let plaintextAb;
+  try {
+    plaintextAb = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: ivAb },
+      key,
+      ciphertextAb
+    );
+  } catch {
+    throw new Error("Backup decrypt failed");
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(abToStr(plaintextAb));
+  } catch {
+    throw new Error("Backup payload is not valid JSON");
+  }
+
+  validateImportedPayload(payload, expectedUsername || blob.username || null);
+  return payload;
+}
+
+export async function importIdentityPayload(payload, expectedUsername = null) {
+  validateImportedPayload(payload, expectedUsername);
+
+  const username = normalizeKeyName(payload.username);
+  await writePersistedForUser(username, {
+    repr: payload.repr,
+    digest: payload.digest,
+    savedAt: Date.now(),
+  });
 }
 
 export async function listRecordNames(prefix = "") {

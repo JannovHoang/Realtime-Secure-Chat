@@ -20,6 +20,7 @@ import {
 import { MessengerClient } from "../crypto/dr/messenger.browser.js";
 
 const WS_URL = "ws://localhost:3000/ws";
+const BACKUP_REQUEST_TIMEOUT_MS = 10000;
 
 // ===== runtime state =====
 let socket = null;
@@ -37,6 +38,8 @@ let preQueue = [];
 
 // UI hooks
 const peerReadyListeners = new Set();
+const backupSaveRequests = new Map();
+let backupRequestSeq = 0;
 
 // Persisted DR state key (per-username)
 const drStateKey = (u) => `dr:state:${u}`;
@@ -72,6 +75,32 @@ function flushPending() {
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
   for (const s of pending) socket.send(s);
   pending = [];
+}
+
+function nextBackupRequestId() {
+  backupRequestSeq += 1;
+  return `backup-${Date.now()}-${backupRequestSeq}`;
+}
+
+function getServerHttpBase() {
+  const u = new URL(WS_URL);
+  u.protocol = u.protocol === "wss:" ? "https:" : "http:";
+  u.pathname = "";
+  u.search = "";
+  u.hash = "";
+  return u.origin;
+}
+
+function settleBackupSaveRequest(requestId, ok, error = "Backup save failed") {
+  if (!requestId) return false;
+  const pendingReq = backupSaveRequests.get(requestId);
+  if (!pendingReq) return false;
+
+  backupSaveRequests.delete(requestId);
+  clearTimeout(pendingReq.timer);
+  if (ok) pendingReq.resolve();
+  else pendingReq.reject(new Error(error));
+  return true;
 }
 
 function abToB64(ab) {
@@ -591,6 +620,11 @@ export async function initChat(username, password) {
       return;
     }
 
+    if (data.type === "backup_saved") {
+      settleBackupSaveRequest(data.requestId, data.ok === true, data.error);
+      return;
+    }
+
     if (!messenger) {
       preQueue.push(data);
       return;
@@ -755,6 +789,52 @@ export async function sendMessage(peer, text) {
   scheduleSaveState();
 }
 
+export async function saveCloudBackup(blobDoc) {
+  if (!myUser || !socket || socket.readyState !== WebSocket.OPEN) {
+    throw new Error("Cloud backup requires an active session");
+  }
+
+  const requestId = nextBackupRequestId();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      backupSaveRequests.delete(requestId);
+      reject(new Error("Backup save timed out"));
+    }, BACKUP_REQUEST_TIMEOUT_MS);
+
+    backupSaveRequests.set(requestId, { resolve, reject, timer });
+    wsSend({
+      type: "backup_save",
+      requestId,
+      username: myUser,
+      ...blobDoc,
+    });
+  });
+}
+
+export async function fetchCloudBackup(username) {
+  const user = normalizeUsername(username);
+  if (!user) {
+    throw new Error("Username is required");
+  }
+
+  const res = await fetch(
+    `${getServerHttpBase()}/api/backup/${encodeURIComponent(user)}`
+  );
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("Restore failed");
+  }
+
+  if (!res.ok || !data?.ok) {
+    throw new Error("Restore failed");
+  }
+
+  return data;
+}
+
 /* ===================== logout / cleanup ===================== */
 export async function destroyChat() {
   try {
@@ -790,6 +870,12 @@ export async function destroyChat() {
 
   readyPeers.clear();
   inboundQueue.clear();
+
+  for (const req of backupSaveRequests.values()) {
+    clearTimeout(req.timer);
+    req.reject(new Error("Backup save interrupted"));
+  }
+  backupSaveRequests.clear();
 
   myUser = null;
 }

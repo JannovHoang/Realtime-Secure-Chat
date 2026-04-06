@@ -24,7 +24,7 @@ async function connectMongo() {
   await client.connect();
   await client.db("admin").command({ ping: 1 });
 
-  db = client.db("realtime_secure_chat");
+  db = client.db();
   console.log("Mongo connected");
   return db;
 }
@@ -112,6 +112,34 @@ async function saveCiphertextMessage(msgDoc) {
   await currentDb.collection("messages").insertOne(msgDoc);
 }
 
+async function saveIdentityBackup(username, backupDoc) {
+  const currentDb = getDb();
+  const now = new Date();
+  await currentDb.collection("identity_backups").updateOne(
+    { username },
+    {
+      $set: {
+        username,
+        version: backupDoc.version,
+        ciphertextB64: backupDoc.ciphertextB64,
+        ivB64: backupDoc.ivB64,
+        saltB64: backupDoc.saltB64,
+        kdf: backupDoc.kdf,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        createdAt: now,
+      },
+    },
+    { upsert: true }
+  );
+}
+
+async function getIdentityBackup(username) {
+  const currentDb = getDb();
+  return currentDb.collection("identity_backups").findOne({ username });
+}
+
 async function ensureIndexes() {
   const currentDb = getDb();
 
@@ -126,6 +154,10 @@ async function ensureIndexes() {
   await currentDb
     .collection("messages")
     .createIndex({ conversationId: 1, ts: 1 });
+
+  await currentDb
+    .collection("identity_backups")
+    .createIndex({ username: 1 }, { unique: true });
 }
 
 module.exports = {
@@ -137,5 +169,7 @@ module.exports = {
   saveCert,
   getAllCerts,
   saveCiphertextMessage,
+  saveIdentityBackup,
+  getIdentityBackup,
   ensureIndexes,
 };

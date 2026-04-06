@@ -21,6 +21,8 @@ const {
   saveCert,
   getAllCerts,
   saveCiphertextMessage,
+  saveIdentityBackup,
+  getIdentityBackup,
 } = require("./mongo");
 
 const {
@@ -41,6 +43,12 @@ const PENDING_PATH = path.join(__dirname, "pending.json");
 const MAX_PENDING_PER_USER = process.env.PENDING_MAX
   ? Number(process.env.PENDING_MAX)
   : 500;
+const MAX_BACKUP_BLOB_B64_LEN = process.env.MAX_BACKUP_BLOB_B64_LEN
+  ? Number(process.env.MAX_BACKUP_BLOB_B64_LEN)
+  : 8 * 1024 * 1024;
+const BACKUP_GET_WINDOW_MS = 5 * 60 * 1000;
+const BACKUP_GET_LIMIT = 10;
+const backupGetRateLimit = new Map(); // ip -> timestamps[]
 
 function loadKeysFile() {
   if (!fs.existsSync(KEYS_PATH)) return null;
@@ -150,6 +158,36 @@ function getMime(filePath) {
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   if (ext === ".svg") return "image/svg+xml";
   return "application/octet-stream";
+}
+
+function writeJson(res, statusCode, obj, extraHeaders = {}) {
+  res.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+    ...extraHeaders,
+  });
+  res.end(JSON.stringify(obj));
+}
+
+function getRequestIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0].trim();
+  }
+  return req.socket?.remoteAddress || "unknown";
+}
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  const timestamps = backupGetRateLimit.get(ip) || [];
+  const fresh = timestamps.filter((ts) => now - ts < BACKUP_GET_WINDOW_MS);
+  if (fresh.length >= BACKUP_GET_LIMIT) {
+    backupGetRateLimit.set(ip, fresh);
+    return true;
+  }
+  fresh.push(now);
+  backupGetRateLimit.set(ip, fresh);
+  return false;
 }
 
 function abToB64(ab) {
@@ -387,6 +425,72 @@ async function initKeysOnce() {
 
 // ===== HTTP server (optional static serving) =====
 const server = http.createServer((req, res) => {
+  const reqUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+
+  if (req.method === "OPTIONS" && reqUrl.pathname.startsWith("/api/backup/")) {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    });
+    return res.end();
+  }
+
+  if (req.method === "GET" && reqUrl.pathname.startsWith("/api/backup/")) {
+    const username = normalizeUsername(
+      decodeURIComponent(reqUrl.pathname.slice("/api/backup/".length))
+    );
+    const ip = getRequestIp(req);
+
+    if (!username) {
+      return writeJson(res, 400, {
+        ok: false,
+        error: "Restore unavailable",
+      });
+    }
+
+    if (isRateLimited(ip)) {
+      return writeJson(res, 429, {
+        ok: false,
+        error: "Restore unavailable",
+      });
+    }
+
+    void (async () => {
+      try {
+        const doc = await getIdentityBackup(username);
+        if (
+          !doc?.username ||
+          typeof doc.ciphertextB64 !== "string" ||
+          typeof doc.ivB64 !== "string" ||
+          typeof doc.saltB64 !== "string"
+        ) {
+          return writeJson(res, 200, {
+            ok: false,
+            error: "Restore unavailable",
+          });
+        }
+
+        return writeJson(res, 200, {
+          ok: true,
+          username: doc.username,
+          version: doc.version,
+          ciphertextB64: doc.ciphertextB64,
+          ivB64: doc.ivB64,
+          saltB64: doc.saltB64,
+          kdf: doc.kdf,
+        });
+      } catch (err) {
+        console.warn("[backup_get] failed:", err);
+        return writeJson(res, 200, {
+          ok: false,
+          error: "Restore unavailable",
+        });
+      }
+    })();
+    return;
+  }
+
   if (req.url && req.url.startsWith("/ws")) {
     res.writeHead(426, { "Content-Type": "text/plain; charset=utf-8" });
     return res.end("Use WebSocket to connect.");
@@ -561,6 +665,69 @@ wss.on("connection", (ws) => {
 
       // Tell sender it was queued
       return sendJson(ws, { type: "delivery", ok: true, to, queued: true });
+    }
+
+    if (data.type === "backup_save") {
+      const requestId = typeof data.requestId === "string" ? data.requestId : null;
+      const registeredUser = wsToUser.get(ws);
+      const username = normalizeUsername(data.username);
+
+      if (!registeredUser || !username || username !== registeredUser) {
+        return sendJson(ws, {
+          type: "backup_saved",
+          ok: false,
+          requestId,
+          error: "Backup save failed",
+        });
+      }
+
+      if (
+        typeof data.ciphertextB64 !== "string" ||
+        typeof data.ivB64 !== "string" ||
+        typeof data.saltB64 !== "string" ||
+        !data.ciphertextB64 ||
+        !data.ivB64 ||
+        !data.saltB64
+      ) {
+        return sendJson(ws, {
+          type: "backup_saved",
+          ok: false,
+          requestId,
+          error: "Backup save failed",
+        });
+      }
+
+      if (data.ciphertextB64.length > MAX_BACKUP_BLOB_B64_LEN) {
+        return sendJson(ws, {
+          type: "backup_saved",
+          ok: false,
+          requestId,
+          error: "Backup save failed",
+        });
+      }
+
+      try {
+        await saveIdentityBackup(username, {
+          version: Number(data.version || 1),
+          ciphertextB64: data.ciphertextB64,
+          ivB64: data.ivB64,
+          saltB64: data.saltB64,
+          kdf: data.kdf && typeof data.kdf === "object" ? data.kdf : null,
+        });
+        return sendJson(ws, {
+          type: "backup_saved",
+          ok: true,
+          requestId,
+        });
+      } catch (err) {
+        console.warn("[backup_save] failed:", err);
+        return sendJson(ws, {
+          type: "backup_saved",
+          ok: false,
+          requestId,
+          error: "Backup save failed",
+        });
+      }
     }
 
     // Backward compatibility
