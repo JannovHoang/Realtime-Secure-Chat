@@ -18,6 +18,8 @@ const {
   enqueuePendingMessage,
   getPendingMessagesForUser,
   deletePendingMessagesByIds,
+  saveCert,
+  getAllCerts,
 } = require("./mongo");
 
 const {
@@ -278,6 +280,35 @@ async function flushPendingWithFallback(user, ws) {
   return sent;
 }
 
+async function getCertCacheWithFallback() {
+  try {
+    const docs = await getAllCerts();
+    const items = [];
+
+    for (const doc of docs) {
+      if (!doc?.username || !doc?.certificate || !doc?.signatureB64) continue;
+      items.push({
+        certificate: doc.certificate,
+        signatureB64: doc.signatureB64,
+      });
+      signedCerts.set(doc.username, {
+        certificate: doc.certificate,
+        signatureB64: doc.signatureB64,
+      });
+    }
+
+    return items;
+  } catch (e) {
+    console.warn("[certs] mongo load failed, using memory fallback:", e);
+  }
+
+  const all = [];
+  for (const { certificate, signatureB64 } of signedCerts.values()) {
+    all.push({ certificate, signatureB64 });
+  }
+  return all;
+}
+
 async function initKeysOnce() {
   const persisted = loadKeysFile();
 
@@ -406,10 +437,7 @@ wss.on("connection", (ws) => {
       sendJson(ws, { type: "registered", user });
 
       // ===== send certs BEFORE flushing offline messages =====
-      const all = [];
-      for (const { certificate, signatureB64 } of signedCerts.values()) {
-        all.push({ certificate, signatureB64 });
-      }
+      const all = await getCertCacheWithFallback();
       sendJson(ws, { type: "cert_cache", items: all });
 
       // ===== THEN flush pending offline messages =====
@@ -447,6 +475,12 @@ wss.on("connection", (ws) => {
       const signatureB64 = abToB64(sigAb);
 
       signedCerts.set(certUser, { certificate: cert, signatureB64 });
+
+      try {
+        await saveCert(certUser, cert, signatureB64);
+      } catch (e) {
+        console.warn("[certs] mongo save failed, keeping memory cache only:", e);
+      }
 
       // Broadcast signed cert
       const msg = { type: "cert_signed", certificate: cert, signatureB64 };

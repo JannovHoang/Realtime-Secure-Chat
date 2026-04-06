@@ -82,6 +82,31 @@ async function deletePendingMessagesByIds(ids) {
   });
 }
 
+async function saveCert(username, certificate, signatureB64) {
+  const currentDb = getDb();
+  await currentDb.collection("certs").updateOne(
+    { username },
+    {
+      $set: {
+        username,
+        certificate,
+        signatureB64,
+        createdAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+}
+
+async function getAllCerts() {
+  const currentDb = getDb();
+  return currentDb
+    .collection("certs")
+    .find({})
+    .sort({ username: 1 })
+    .toArray();
+}
+
 async function ensureIndexes() {
   const currentDb = getDb();
 
@@ -100,5 +125,7 @@ module.exports = {
   enqueuePendingMessage,
   getPendingMessagesForUser,
   deletePendingMessagesByIds,
+  saveCert,
+  getAllCerts,
   ensureIndexes,
 };
