@@ -20,6 +20,7 @@ const {
   deletePendingMessagesByIds,
   saveCert,
   getAllCerts,
+  saveCiphertextMessage,
 } = require("./mongo");
 
 const {
@@ -153,6 +154,12 @@ function getMime(filePath) {
 
 function abToB64(ab) {
   return Buffer.from(new Uint8Array(ab)).toString("base64");
+}
+
+function makeConversationId(a, b) {
+  const left = normalizeUsername(a);
+  const right = normalizeUsername(b);
+  return left < right ? `dm:${left}<->${right}` : `dm:${right}<->${left}`;
 }
 
 // ===== Pending persistence =====
@@ -307,6 +314,22 @@ async function getCertCacheWithFallback() {
     all.push({ certificate, signatureB64 });
   }
   return all;
+}
+
+async function saveCiphertextHistoryWithFallback(msgObj) {
+  try {
+    await saveCiphertextMessage({
+      conversationId: makeConversationId(msgObj.from, msgObj.to),
+      from: msgObj.from,
+      to: msgObj.to,
+      header: msgObj.header,
+      ciphertextB64: msgObj.ciphertextB64,
+      ts: msgObj.ts,
+      kind: "dm",
+    });
+  } catch (e) {
+    console.warn("[messages] mongo save failed, history not persisted:", e);
+  }
 }
 
 async function initKeysOnce() {
@@ -514,6 +537,8 @@ wss.on("connection", (ws) => {
         ciphertextB64: data.ciphertextB64,
         ts: Date.now(),
       };
+
+      await saveCiphertextHistoryWithFallback(msgObj);
 
       const toWs = userToWs.get(to);
       console.log(

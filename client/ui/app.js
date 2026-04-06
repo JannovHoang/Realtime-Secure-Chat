@@ -13,6 +13,7 @@ const $ = (id) => document.getElementById(id);
 let currentPeer = null;
 let started = false;
 let starting = false;
+let disconnected = false;
 let unsubPeerReady = null;
 
 /** ===== NEW: peer directory from certs =====
@@ -62,12 +63,14 @@ function setStatus(text, ok = true) {
 }
 
 function setButtons() {
-  $("startBtn").disabled = starting || started;
+  $("startBtn").disabled = starting || (started && !disconnected);
   $("logoutBtn").disabled = !started;
+  $("startBtn").textContent = disconnected ? "Reconnect" : "Start";
 
-  $("to").disabled = !started;
-  $("msg").disabled = !started;
-  $("sendBtn").disabled = !started || starting || !isCurrentPeerReady();
+  const canInteract = started && !disconnected;
+  $("to").disabled = !canInteract;
+  $("msg").disabled = !canInteract;
+  $("sendBtn").disabled = !canInteract || starting || !isCurrentPeerReady();
 }
 
 function toast(text, type = "info") {
@@ -127,6 +130,7 @@ function isCurrentPeerReady() {
 function resetUiAfterLogout(reason) {
   started = false;
   starting = false;
+  disconnected = false;
   currentPeer = null;
 
   $("to").value = "";
@@ -150,6 +154,33 @@ function resetUiAfterLogout(reason) {
   setStatus(reason === "logged_in_elsewhere" ? "Logged out (other login)" : "Logged out", true);
   setButtons();
   renderPeerList();
+}
+
+function markDisconnected() {
+  if (!started || disconnected) return;
+  disconnected = true;
+  setStatus("Disconnected", false);
+  setButtons();
+  toast("Mất kết nối server, vui lòng Start lại.", "error");
+}
+
+function markDisconnectedForReconnect() {
+  if (!started || disconnected) return;
+  disconnected = true;
+
+  const pwField = $("passwordField");
+  if (pwField) {
+    pwField.classList.remove("is-hidden");
+    pwField.style.display = "";
+  }
+
+  $("password").disabled = false;
+  $("password").value = "";
+
+  setStatus("Disconnected", false);
+  setButtons();
+  $("password").focus();
+  toast("Reconnect required. Re-enter password and press Start.", "error");
 }
 
 /* ===================== conversation list ===================== */
@@ -307,6 +338,7 @@ $("startBtn").onclick = async () => {
 
     started = true;
     starting = false;
+    disconnected = false;
 
     peers.clear();
     peerByNorm.clear();
@@ -337,6 +369,7 @@ $("startBtn").onclick = async () => {
     console.error("[Start error]", e);
     started = false;
     starting = false;
+    disconnected = false;
     setButtons();
     setStatus("Start failed", false);
     toast("Start failed: " + (e?.message || e), "error");
@@ -363,6 +396,10 @@ window.onForcedLogout = (reason) => {
   unsubPeerReady = null;
   resetUiAfterLogout(reason);
   toast("Logged out: this account was used elsewhere.", "error");
+};
+
+window.onChatDisconnected = () => {
+  markDisconnectedForReconnect();
 };
 
 /* ===================== Peer input ===================== */

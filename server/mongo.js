@@ -107,6 +107,11 @@ async function getAllCerts() {
     .toArray();
 }
 
+async function saveCiphertextMessage(msgDoc) {
+  const currentDb = getDb();
+  await currentDb.collection("messages").insertOne(msgDoc);
+}
+
 async function ensureIndexes() {
   const currentDb = getDb();
 
@@ -117,6 +122,10 @@ async function ensureIndexes() {
   await currentDb
     .collection("certs")
     .createIndex({ username: 1 }, { unique: true });
+
+  await currentDb
+    .collection("messages")
+    .createIndex({ conversationId: 1, ts: 1 });
 }
 
 module.exports = {
@@ -127,5 +136,6 @@ module.exports = {
   deletePendingMessagesByIds,
   saveCert,
   getAllCerts,
+  saveCiphertextMessage,
   ensureIndexes,
 };

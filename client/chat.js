@@ -530,6 +530,12 @@ function onBeforeUnload() {
   } catch {}
 }
 
+function notifyDisconnected() {
+  try {
+    if (window.onChatDisconnected) window.onChatDisconnected();
+  } catch {}
+}
+
 /* ===================== init ===================== */
 export async function initChat(username, password) {
   await destroyChat();
@@ -562,7 +568,10 @@ export async function initChat(username, password) {
   };
 
   socket.onerror = (e) => console.warn("[chat] ws error", e);
-  socket.onclose = () => console.warn("[chat] disconnected");
+  socket.onclose = () => {
+    console.warn("[chat] disconnected");
+    notifyDisconnected();
+  };
 
   socket.onmessage = async (e) => {
     let data;
