@@ -5,11 +5,20 @@
 
 "use strict";
 
+require("dotenv").config();
+
 const http = require("http");
 const path = require("path");
 const fs = require("fs");
 const WebSocket = require("ws");
 const crypto = require("node:crypto"); // Node WebCrypto subtle for import/export JWK
+const {
+  connectMongo,
+  ensureIndexes,
+  enqueuePendingMessage,
+  getPendingMessagesForUser,
+  deletePendingMessagesByIds,
+} = require("./mongo");
 
 const {
   generateECDSA,
@@ -218,6 +227,57 @@ function flushPending(user, ws) {
   return sent;
 }
 
+async function enqueuePendingWithFallback(to, msgObj) {
+  const key = normalizeUsername(to);
+  if (!key) return;
+
+  try {
+    await enqueuePendingMessage(key, msgObj, MAX_PENDING_PER_USER);
+    console.log("[pending] mongo enqueue key=", key);
+    return;
+  } catch (e) {
+    console.warn("[pending] mongo enqueue failed, using file fallback:", e);
+  }
+
+  enqueuePending(key, msgObj);
+}
+
+async function flushPendingWithFallback(user, ws) {
+  const key = normalizeUsername(user);
+  let sent = 0;
+
+  try {
+    const docs = await getPendingMessagesForUser(key, MAX_PENDING_PER_USER);
+    const deliveredIds = [];
+
+    for (const doc of docs) {
+      const msg = {
+        type: "message",
+        from: doc.from,
+        to: doc.to,
+        header: doc.header,
+        ciphertextB64: doc.ciphertextB64,
+        ts: doc.ts,
+      };
+
+      const ok = sendJson(ws, msg);
+      if (!ok) break;
+
+      deliveredIds.push(doc._id);
+      sent++;
+    }
+
+    if (deliveredIds.length > 0) {
+      await deletePendingMessagesByIds(deliveredIds);
+    }
+  } catch (e) {
+    console.warn("[pending] mongo flush failed, using file fallback:", e);
+  }
+
+  sent += flushPending(key, ws);
+  return sent;
+}
+
 async function initKeysOnce() {
   const persisted = loadKeysFile();
 
@@ -343,6 +403,8 @@ wss.on("connection", (ws) => {
       wsToUser.set(ws, user);
       userToWs.set(user, ws);
 
+      sendJson(ws, { type: "registered", user });
+
       // ===== send certs BEFORE flushing offline messages =====
       const all = [];
       for (const { certificate, signatureB64 } of signedCerts.values()) {
@@ -351,10 +413,9 @@ wss.on("connection", (ws) => {
       sendJson(ws, { type: "cert_cache", items: all });
 
       // ===== THEN flush pending offline messages =====
-      const flushed = flushPending(user, ws);
+      const flushed = await flushPendingWithFallback(user, ws);
       sendJson(ws, { type: "pending_flushed", count: flushed });
-
-      return sendJson(ws, { type: "registered", user });
+      return;
     }
 
     // 2) Client submits certificate
@@ -437,7 +498,7 @@ wss.on("connection", (ws) => {
       }
 
       // recipient offline OR send failed -> queue ciphertext-only msg for later
-      enqueuePending(to, msgObj);
+      await enqueuePendingWithFallback(to, msgObj);
 
       // Tell sender it was queued
       return sendJson(ws, { type: "delivery", ok: true, to, queued: true });
@@ -462,11 +523,18 @@ wss.on("connection", (ws) => {
 
 // ===== Boot =====
 (async () => {
-  await initKeysOnce();
-  loadPendingFile();
+  try {
+    await connectMongo();
+    await ensureIndexes();
+    await initKeysOnce();
+    loadPendingFile();
 
-  server.listen(PORT, () => {
-    console.log(`HTTP UI (optional): http://localhost:${PORT}`);
-    console.log(`WebSocket: ws://localhost:${PORT}/ws`);
-  });
+    server.listen(PORT, () => {
+      console.log(`HTTP UI (optional): http://localhost:${PORT}`);
+      console.log(`WebSocket: ws://localhost:${PORT}/ws`);
+    });
+  } catch (err) {
+    console.error("Server startup failed:", err);
+    process.exit(1);
+  }
 })();
