@@ -17,6 +17,7 @@ let vaultStorageKey = null;   // localStorage key per user
 // Encrypted index keys (inside vault)
 const INDEX_KEY = "__securechat_index_v1__";
 const CONV_INDEX_KEY = "__securechat_conversations_v1__";
+const IDENTITY_META_KEY = "__securechat_identity_meta_v2__";
 
 // Chunking scheme
 const CHUNK_META_SUFFIX = "::chunks_meta"; // JSON { n, encoding, totalBytes }
@@ -128,15 +129,31 @@ function randomBytes(len) {
   return out.buffer;
 }
 
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((out, key) => {
+        out[key] = canonicalize(value[key]);
+        return out;
+      }, {});
+  }
+  return value;
+}
+
 function validateImportedPayload(payload, expectedUsername = null) {
   if (!payload || typeof payload !== "object") {
     throw new Error("Invalid backup payload");
   }
-  if (payload.version !== 1) {
+  if (payload.version !== 2) {
     throw new Error("Unsupported backup version");
   }
   if (typeof payload.username !== "string" || !normalizeKeyName(payload.username)) {
     throw new Error("Invalid backup username");
+  }
+  if (typeof payload.identityId !== "string" || !normalizeKeyName(payload.identityId)) {
+    throw new Error("Invalid backup identityId");
   }
   if (typeof payload.repr !== "string" || !payload.repr) {
     throw new Error("Invalid backup repr");
@@ -405,15 +422,76 @@ export async function dumpVault() {
   return await keychain.dump(); // [repr, digest]
 }
 
+export async function deriveIdentityIdFromPublicJwk(pubJwk) {
+  if (!pubJwk || typeof pubJwk !== "object") {
+    throw new Error("Missing public key for identityId");
+  }
+  const canonical = JSON.stringify(canonicalize(pubJwk));
+  return await hashLabel(canonical);
+}
+
+export async function saveIdentityMetadata(meta) {
+  if (!keychain) throw new Error("Vault not initialized");
+  const username = normalizeKeyName(meta?.username);
+  const identityId = normalizeKeyName(meta?.identityId);
+  if (!username || !identityId) {
+    throw new Error("Invalid identity metadata");
+  }
+
+  await storeRecord(
+    IDENTITY_META_KEY,
+    JSON.stringify({
+      version: 1,
+      username,
+      identityId,
+      savedAt: Date.now(),
+    })
+  );
+}
+
+export async function loadIdentityMetadata() {
+  if (!keychain) throw new Error("Vault not initialized");
+  const raw = await loadRecord(IDENTITY_META_KEY);
+  if (!raw) return null;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  const username = normalizeKeyName(parsed?.username);
+  const identityId = normalizeKeyName(parsed?.identityId);
+  if (!username || !identityId) return null;
+
+  return {
+    version: Number(parsed?.version || 1),
+    username,
+    identityId,
+    savedAt: Number(parsed?.savedAt || 0),
+  };
+}
+
 export async function exportIdentityPayload(userId = "default") {
   const persisted = await readPersistedForUser(userId);
   if (!persisted?.repr || !persisted?.digest) {
     throw new Error("No persisted vault for user");
   }
 
+  const identityMeta = await loadIdentityMetadata();
+  const username = normalizeKeyName(userId);
+  if (!identityMeta?.identityId) {
+    throw new Error("No persisted identityId for user");
+  }
+  if (normalizeKeyName(identityMeta.username) !== username) {
+    throw new Error("Persisted identity metadata mismatch");
+  }
+
   return {
-    version: 1,
-    username: normalizeKeyName(userId),
+    version: 2,
+    username,
+    identityId: identityMeta.identityId,
     repr: persisted.repr,
     digest: persisted.digest,
     exportedAt: new Date().toISOString(),
@@ -445,8 +523,9 @@ export async function encryptIdentityPayload(payload, password) {
   );
 
   return {
-    version: 1,
+    version: 2,
     username: normalizeKeyName(payload.username),
+    identityId: normalizeKeyName(payload.identityId),
     ciphertextB64: abToB64(ciphertextAb),
     ivB64: abToB64(ivAb),
     saltB64: abToB64(saltAb),

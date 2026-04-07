@@ -16,6 +16,8 @@ import {
   addConversationPeer,
   listConversationPeers as listConversationPeersFromVault,
   hmacRecordKey,
+  deriveIdentityIdFromPublicJwk,
+  saveIdentityMetadata,
 } from "./storage.js";
 import { MessengerClient } from "../crypto/dr/messenger.browser.js";
 
@@ -199,7 +201,8 @@ async function importEcdhKeyFromJwk(jwk, usages, requireD) {
 
 async function exportMessengerState(m) {
   const out = {
-    v: 1,
+    v: 2,
+    identityId: m.identityId || null,
     certs: m.certs || {},
     EGKeyPair: null,
     conns: {},
@@ -237,6 +240,7 @@ async function exportMessengerState(m) {
 async function importMessengerState(m, state) {
   if (!state || typeof state !== "object") return;
 
+  m.identityId = typeof state.identityId === "string" ? state.identityId : null;
   m.certs = state.certs && typeof state.certs === "object" ? state.certs : {};
 
   if (state.EGKeyPair?.pubJwk && state.EGKeyPair?.secJwk) {
@@ -276,6 +280,18 @@ async function importMessengerState(m, state) {
 
     m.conns[name] = st;
   }
+}
+
+async function ensureMessengerIdentityId() {
+  if (!messenger?.EGKeyPair?.pub) {
+    throw new Error("Missing long-term public key for identityId");
+  }
+
+  const pubJwk = await crypto.subtle.exportKey("jwk", messenger.EGKeyPair.pub);
+  const identityId = await deriveIdentityIdFromPublicJwk(pubJwk);
+  messenger.identityId = identityId;
+  await saveIdentityMetadata({ username: myUser, identityId });
+  return identityId;
 }
 
 /* ===================== Persist state via vault ===================== */
@@ -678,11 +694,13 @@ export async function initChat(username, password) {
   // IMPORTANT FIX: If we generate a new keypair, we MUST save immediately to avoid rotation.
   if (!messenger.EGKeyPair?.pub || !messenger.EGKeyPair?.sec) {
     const cert = await messenger.generateCertificate(myUser);
+    await ensureMessengerIdentityId();
     wsSend({ type: "cert_submit", certificate: cert });
 
     // CRITICAL: hard flush state NOW (prevents losing EGKeyPair if tab closes)
     await saveStateNow();
   } else {
+    await ensureMessengerIdentityId();
     const cert = {
       username: myUser,
       pub: await crypto.subtle.exportKey("jwk", messenger.EGKeyPair.pub),
@@ -715,6 +733,10 @@ export async function initChat(username, password) {
 /* ===================== status API for UI ===================== */
 export function getUsername() {
   return myUser;
+}
+
+export function getCurrentIdentityId() {
+  return messenger?.identityId || null;
 }
 
 export async function listConversationPeers() {

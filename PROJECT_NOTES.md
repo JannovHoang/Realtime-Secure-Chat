@@ -775,6 +775,398 @@ Still needed later:
 - refactor WS URL away from localhost
 - test behind `ngrok` or Cloudflare Tunnel
 
+## V2 Foundation Roadmap
+
+This is the approved long-term direction after `v1` cloud backup.
+
+Important framing:
+
+- this is not "full v2"
+- this is `v2 foundation`
+- the goal is to make the system understand `identityId` consistently before any recent-message catch-up work
+
+### Why This Exists
+
+The current architectural weakness is that `username` is still being used like all of these at once:
+
+- account id
+- cert owner
+- cloud backup owner
+- session owner
+- crypto identity owner
+
+That is the root cause behind:
+
+- same username but different local identity causing confusion
+- cert overwrite behavior that is too username-centric
+- cloud backup overwrite ambiguity
+- restore behavior that is hard to reason about across browsers
+
+### Core Design Goal
+
+Introduce and consistently use `identityId` as the stable identifier of the crypto identity.
+
+Conceptual split:
+
+1. `Account`
+   - currently still represented by `username`
+   - later can evolve into Google login or a stronger account id
+2. `Crypto Identity`
+   - represented by `identityId`
+   - tied to key material, certificate, backup payload, and ratchet-related state
+3. `Device / Session`
+   - browser or machine currently using the identity
+   - runtime session metadata should know both `username` and `identityId`
+
+### Scope Of V2 Foundation
+
+This phase will:
+
+- add `identityId` to local vault state
+- add `identityId` to cloud backup payloads
+- add `identityId` to Mongo `identity_backups`
+- add `identityId` to Mongo `certs`
+- add `identityId` to client register/session metadata
+- make restore validation understand both `username` and `identityId`
+
+This phase will not:
+
+- implement recent-message catch-up
+- implement full history restore
+- add Google login or stronger account auth
+- build a complete compatibility layer for all old test data
+
+### Recommended Data Strategy
+
+For this refactor, the simplest path is:
+
+- use a separate branch
+- use either a clean Mongo DB or fully reset the existing test DB
+- clear browser local state before serious testing
+- do not try to preserve every old test artifact
+
+This is intentional. A half-compatibility layer for old test state would increase risk more than value.
+
+### `identityId` Design
+
+`identityId` should be a stable identifier derived from the cryptographic identity itself.
+
+Recommended approach:
+
+- derive it from the public key fingerprint
+- keep the algorithm deterministic so the same restored identity gets the same `identityId`
+- derive it from the canonical export of the long-term identity public key, not from temporary session/cert data
+
+Concrete recommended formula for this project:
+
+1. export the long-term identity public key in a fixed JSON shape
+2. serialize it using canonical JSON ordering
+3. compute `SHA-256`
+4. encode the result as `base64url`
+
+This concrete choice should be finalized before code is written, not during partial implementation.
+
+Conceptually:
+
+- same restored identity across browsers -> same `identityId`
+- accidental newly-created identity under the same username -> different `identityId`
+
+This requirement is strict:
+
+- the same identity restored in another browser must produce the same `identityId`
+- if that property is not true, the entire `v2 foundation` plan becomes unreliable
+
+### Mongo Direction For V2 Foundation
+
+#### `identity_backups`
+
+Target document shape:
+
+```json
+{
+  "username": "Saka",
+  "identityId": "id_abc123",
+  "version": 2,
+  "ciphertextB64": "...",
+  "ivB64": "...",
+  "saltB64": "...",
+  "kdf": {
+    "name": "PBKDF2",
+    "hash": "SHA-256",
+    "iterations": 100000
+  },
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+For `v2 foundation`, keeping one active backup per username is still acceptable if scope needs to stay tight, but the backup document must include `identityId`.
+
+#### `certs`
+
+Target document shape:
+
+```json
+{
+  "username": "Saka",
+  "identityId": "id_abc123",
+  "certificate": { "...": "..." },
+  "createdAt": "...",
+  "updatedAt": "...",
+  "active": true
+}
+```
+
+For this phase, keeping one active cert per username is still acceptable as a scope-saving compromise, but the cert must carry `identityId`.
+
+This is still an intermediate model, not the final long-term multi-identity history model.
+
+Important:
+
+- `1 active cert / username` is a transitional model for `v2 foundation`
+- it is not the long-term destination
+- it exists only to keep this phase controlled and to avoid mixing the identity foundation work with full multi-identity history support
+
+### Client Data Direction
+
+The local vault must clearly persist:
+
+- `username`
+- `identityId`
+
+Cloud backup payload must clearly include:
+
+- `version`
+- `username`
+- `identityId`
+- `repr`
+- `digest`
+- `exportedAt`
+
+Legacy handling rule for this phase:
+
+- backup payloads that do not contain `identityId` are considered legacy
+- legacy payloads should fail on the `v2 foundation` path
+- do not build a half-compatibility layer for old payloads in this phase
+
+Restore validation must no longer rely on username alone.
+
+It must validate:
+
+- payload version
+- payload username
+- payload identityId
+- current restore target username
+- and, where relevant, whether the browser already contains a different local identity for the same username
+
+### Runtime Direction
+
+When the client registers with the server, the runtime must know:
+
+- username
+- identityId
+
+Session semantics for this phase remain intentionally limited:
+
+- keep `1 active session / username`
+- but that active session must explicitly carry `identityId`
+
+That same identity metadata must be carried consistently through:
+
+- cert publication
+- cert retrieval
+- session registration
+- cloud backup save/get handling
+
+The key rule for this phase:
+
+- do not let some components reason by username while others reason by identityId
+
+That "halfway state" is more dangerous than the original simpler model.
+
+### Why Catch-Up Must Wait
+
+Recent-message catch-up is still the intended next major phase after this.
+
+But it should only happen after the identity model is clear.
+
+Reason:
+
+- if message sync happens before identity binding is reliable, the client can easily merge or interpret history under the wrong identity assumptions
+- that would make debugging much harder than necessary
+
+### V2 Foundation Checklist By File
+
+#### `client/storage.js`
+
+- define how `identityId` is created and stored
+- persist `identityId` inside local vault-related state
+- upgrade backup payload export to include `identityId`
+- upgrade backup payload import validation to require `identityId`
+
+#### `client/chat.js`
+
+- make register/session metadata include `identityId`
+- ensure any cert-related metadata exchanged with the server understands `identityId`
+
+#### `client/ui/app.js`
+
+- adjust restore warnings if the browser already has a different local identity for the same username
+- keep UX clear when restore would overwrite a different identity, not just any local state
+- use stronger wording for the different-identity overwrite case, for example:
+  - `This backup belongs to a different local identity than the one currently stored in this browser. Restoring will overwrite the current local identity.`
+
+#### `server/mongo.js`
+
+- extend `identity_backups` helpers to read/write `identityId`
+- extend `certs` helpers to read/write `identityId`
+- adjust indexes as needed for the chosen intermediate model
+
+#### `server/server.js`
+
+- accept and validate `identityId` in register/session flow
+- accept and validate `identityId` in cert-related flow
+- accept and validate `identityId` in backup save/get flow where applicable
+
+### Recommended Implementation Order
+
+The order matters. Do not parallelize the conceptual steps too early.
+
+1. Finalize the `identityId` format and derivation method.
+2. Put `identityId` into local vault state.
+3. Put `identityId` into backup payload version 2.
+4. Put `identityId` into Mongo `identity_backups`.
+5. Put `identityId` into Mongo `certs`.
+6. Put `identityId` into register/session runtime metadata.
+7. Tighten restore validation so it reasons about both username and identity.
+8. Only after that consider the later catch-up phase.
+
+### V2 Foundation Final Checklist
+
+Use this as the execution checklist before writing code.
+
+#### Step 0: Environment Reset
+
+- use a separate branch for `v2 foundation`
+- use a clean Mongo DB or fully reset the existing test DB
+- clear browser site data before serious testing
+- do not attempt to preserve old test payloads without `identityId`
+
+#### Step 1: Finalize `identityId`
+
+- choose the exact derivation method for `identityId`
+- derive it from the canonical export of the long-term identity public key
+- use canonical JSON + `SHA-256` + `base64url` encoding unless there is a strong reason to change it before implementation starts
+- verify that the same restored identity produces the same `identityId`
+- verify that a newly-created accidental identity under the same username produces a different `identityId`
+
+#### Step 2: Upgrade Local Vault State
+
+- persist `identityId` in the persisted vault payload itself, and make sure runtime can load it again after reload/restore
+- ensure newly-created identities always get an `identityId`
+- ensure restored identities load the same `identityId` again
+
+#### Step 3: Upgrade Backup Payload To Version 2
+
+- add `identityId` to the encrypted backup payload
+- move backup export logic to `version: 2`
+- treat payloads without `identityId` as legacy and fail them on the `v2` path
+
+#### Step 4: Upgrade Mongo `identity_backups`
+
+- store `identityId` in `identity_backups`
+- keep the chosen active-backup semantics stable during this phase
+- verify backup save/get returns data consistent with the same identity
+
+#### Step 5: Upgrade Mongo `certs`
+
+- store `identityId` in `certs`
+- keep the chosen active-cert semantics stable during this phase
+- verify cert metadata no longer relies on username alone
+
+#### Step 6: Upgrade Register / Session Runtime
+
+- include `identityId` in register/session metadata
+- keep current semantics: `1 active session / username`
+- ensure that active session also knows the bound `identityId`
+
+#### Step 7: Upgrade Restore Validation And UX
+
+- validate backup payload by both `username` and `identityId`
+- if browser already has a different local identity for the same username, show the stronger overwrite warning
+- do not silently treat different local identities as equivalent just because the username matches
+- if validation fails, restore must fail completely and must not write any partial local state
+
+#### Step 8: Regression Test Foundation
+
+- same identity across 2 browsers -> same `identityId`
+- same username but accidental new identity -> different `identityId`
+- browser A has old identity A, browser C creates accidental new identity B under the same username, then restoring the old backup must warn correctly and bring the browser back to identity A
+- export backup from identity A and confirm the backup payload metadata is `version: 2` and includes `identityId`
+- `identity_backups` contains `identityId`
+- `certs` contains `identityId`
+- register/session carries `identityId`
+- restore validation rejects legacy payloads without `identityId`
+- restart server and verify backup retrieval + restore still bind to the correct `identityId`
+
+#### Step 9: Stop Scope Here
+
+- do not start recent-message catch-up until the above checklist is stable
+- do not start Google login/auth redesign in the same phase
+
+### Main Risks
+
+The biggest risks in this phase are:
+
+1. Halfway adoption
+   - some paths use `identityId`
+   - other paths still behave purely by `username`
+2. Regression in existing flows
+   - login
+   - cert publication/retrieval
+   - cloud backup save/restore
+   - single active session
+3. Over-investing in compatibility for old test data
+   - not worth it for current project stage
+
+### Success Criteria For V2 Foundation
+
+This phase should be considered successful if:
+
+1. Every local identity has a stable `identityId`.
+2. Restored copies of the same identity keep the same `identityId`.
+3. Newly-created accidental identities under the same username get a different `identityId`.
+4. Cloud backup documents include `identityId`.
+5. Cert documents include `identityId`.
+6. Register/session metadata includes `identityId`.
+7. Restore validation no longer reasons by username alone.
+8. Restarting the server does not break backup retrieval or identity binding.
+
+### Additional Test For V2 Foundation
+
+#### Restart Server
+
+After backup has been saved:
+
+1. restart the server
+2. restore the backup in another browser
+3. confirm the backup is still retrievable
+4. confirm the restored payload still resolves to the correct `identityId`
+5. confirm `Start` after restore still binds to the correct identity
+
+### What Comes After
+
+Only after this foundation is stable should the next phase begin:
+
+- recent-message catch-up
+
+That later phase should still be intentionally limited to:
+
+- recent window only
+- conversation-scoped fetch
+- dedupe and merge
+- no full history rebuild yet
+
 ## Practical Guidance For Future Context Windows
 
 If a future session needs to continue work:
