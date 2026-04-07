@@ -118,9 +118,9 @@ async function importECDHPrivateKeyFromJwk(jwk) {
 }
 
 // ===== In-memory state =====
-const wsToUser = new Map(); // ws -> username (normalized)
+const wsToSession = new Map(); // ws -> { user, identityId }
 const userToWs = new Map(); // username -> ws (latest active)
-const signedCerts = new Map(); // username -> { certificate, signatureB64 }
+const signedCerts = new Map(); // username -> { certificate, signatureB64, identityId }
 
 // ===== PATCH: pending offline messages (ciphertext only) =====
 const pendingMsgs = new Map(); // username -> Array<msgObj>
@@ -135,6 +135,22 @@ let GOV_PUB_JWK = null;
 // ===== Helpers =====
 function normalizeUsername(u) {
   return String(u || "").trim(); // IMPORTANT: trim only, keep case
+}
+
+function normalizeIdentityId(v) {
+  return String(v || "").trim();
+}
+
+function getSession(ws) {
+  return wsToSession.get(ws) || null;
+}
+
+function getSessionUser(ws) {
+  return getSession(ws)?.user || null;
+}
+
+function getSessionIdentityId(ws) {
+  return getSession(ws)?.identityId || null;
 }
 
 function sendJson(ws, obj) {
@@ -339,6 +355,7 @@ async function getCertCacheWithFallback() {
       signedCerts.set(doc.username, {
         certificate: doc.certificate,
         signatureB64: doc.signatureB64,
+        identityId: doc.identityId || doc.certificate?.identityId || null,
       });
     }
 
@@ -474,6 +491,7 @@ const server = http.createServer((req, res) => {
         return writeJson(res, 200, {
           ok: true,
           username: doc.username,
+          identityId: doc.identityId || null,
           version: doc.version,
           ciphertextB64: doc.ciphertextB64,
           ivB64: doc.ivB64,
@@ -543,6 +561,7 @@ wss.on("connection", (ws) => {
     // 1) Register
     if (data.type === "register" && typeof data.user === "string") {
       const user = normalizeUsername(data.user);
+      const identityId = normalizeIdentityId(data.identityId);
       if (!user) {
         return sendJson(ws, { type: "error", error: "Empty username" });
       }
@@ -558,10 +577,10 @@ wss.on("connection", (ws) => {
         } catch {}
       }
 
-      wsToUser.set(ws, user);
+      wsToSession.set(ws, { user, identityId: identityId || null });
       userToWs.set(user, ws);
 
-      sendJson(ws, { type: "registered", user });
+      sendJson(ws, { type: "registered", user, identityId: identityId || null });
 
       // ===== send certs BEFORE flushing offline messages =====
       const all = await getCertCacheWithFallback();
@@ -573,13 +592,32 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    if (data.type === "identity_bind") {
+      const session = getSession(ws);
+      const identityId = normalizeIdentityId(data.identityId);
+      if (!session?.user || !identityId) {
+        return sendJson(ws, { type: "error", error: "Invalid identity binding" });
+      }
+
+      wsToSession.set(ws, {
+        user: session.user,
+        identityId,
+      });
+      return sendJson(ws, {
+        type: "identity_bound",
+        user: session.user,
+        identityId,
+      });
+    }
+
     // 2) Client submits certificate
     if (
       data.type === "cert_submit" &&
       data.certificate &&
       typeof data.certificate.username === "string"
     ) {
-      const registeredUser = wsToUser.get(ws);
+      const registeredUser = getSessionUser(ws);
+      const registeredIdentityId = getSessionIdentityId(ws);
       if (!registeredUser) {
         return sendJson(ws, { type: "error", error: "Not registered" });
       }
@@ -595,16 +633,33 @@ wss.on("connection", (ws) => {
       }
 
       const cert = data.certificate;
+      const certIdentityId = normalizeIdentityId(cert.identityId);
+      if (!certIdentityId) {
+        return sendJson(ws, { type: "error", error: "Certificate identity mismatch" });
+      }
+      if (registeredIdentityId && certIdentityId !== registeredIdentityId) {
+        return sendJson(ws, { type: "error", error: "Certificate identity mismatch" });
+      }
+      if (!registeredIdentityId) {
+        wsToSession.set(ws, {
+          user: registeredUser,
+          identityId: certIdentityId,
+        });
+      }
 
       // Sign exact string verified by clients
       const certString = JSON.stringify(cert);
       const sigAb = await signWithECDSA(CA.sec, certString);
       const signatureB64 = abToB64(sigAb);
 
-      signedCerts.set(certUser, { certificate: cert, signatureB64 });
+      signedCerts.set(certUser, {
+        certificate: cert,
+        signatureB64,
+        identityId: certIdentityId,
+      });
 
       try {
-        await saveCert(certUser, cert, signatureB64);
+        await saveCert(certUser, certIdentityId, cert, signatureB64);
       } catch (e) {
         console.warn("[certs] mongo save failed, keeping memory cache only:", e);
       }
@@ -621,13 +676,13 @@ wss.on("connection", (ws) => {
     if (data.type === "send" && typeof data.to === "string") {
       console.log(
         "[send] from=",
-        wsToUser.get(ws),
+        getSessionUser(ws),
         "to=",
         data.to,
         "hasCipher=",
         !!data.ciphertextB64
       );
-      const from = wsToUser.get(ws) ?? "unknown";
+      const from = getSessionUser(ws) ?? "unknown";
       const to = normalizeUsername(data.to);
       if (!to) {
         return sendJson(ws, { type: "error", error: "Empty recipient" });
@@ -669,10 +724,21 @@ wss.on("connection", (ws) => {
 
     if (data.type === "backup_save") {
       const requestId = typeof data.requestId === "string" ? data.requestId : null;
-      const registeredUser = wsToUser.get(ws);
+      const registeredUser = getSessionUser(ws);
+      const registeredIdentityId = getSessionIdentityId(ws);
       const username = normalizeUsername(data.username);
+      const identityId = normalizeIdentityId(data.identityId);
 
       if (!registeredUser || !username || username !== registeredUser) {
+        return sendJson(ws, {
+          type: "backup_saved",
+          ok: false,
+          requestId,
+          error: "Backup save failed",
+        });
+      }
+
+      if (!identityId || (registeredIdentityId && identityId !== registeredIdentityId)) {
         return sendJson(ws, {
           type: "backup_saved",
           ok: false,
@@ -708,7 +774,8 @@ wss.on("connection", (ws) => {
 
       try {
         await saveIdentityBackup(username, {
-          version: Number(data.version || 1),
+          identityId,
+          version: Number(data.version || 2),
           ciphertextB64: data.ciphertextB64,
           ivB64: data.ivB64,
           saltB64: data.saltB64,
@@ -739,8 +806,8 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    const user = wsToUser.get(ws);
-    wsToUser.delete(ws);
+    const user = getSessionUser(ws);
+    wsToSession.delete(ws);
     if (user && userToWs.get(user) === ws) {
       userToWs.delete(user);
     }

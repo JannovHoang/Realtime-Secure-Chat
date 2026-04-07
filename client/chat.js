@@ -694,15 +694,19 @@ export async function initChat(username, password) {
   // IMPORTANT FIX: If we generate a new keypair, we MUST save immediately to avoid rotation.
   if (!messenger.EGKeyPair?.pub || !messenger.EGKeyPair?.sec) {
     const cert = await messenger.generateCertificate(myUser);
-    await ensureMessengerIdentityId();
+    const identityId = await ensureMessengerIdentityId();
+    wsSend({ type: "identity_bind", identityId });
+    cert.identityId = identityId;
     wsSend({ type: "cert_submit", certificate: cert });
 
     // CRITICAL: hard flush state NOW (prevents losing EGKeyPair if tab closes)
     await saveStateNow();
   } else {
-    await ensureMessengerIdentityId();
+    const identityId = await ensureMessengerIdentityId();
+    wsSend({ type: "identity_bind", identityId });
     const cert = {
       username: myUser,
+      identityId,
       pub: await crypto.subtle.exportKey("jwk", messenger.EGKeyPair.pub),
     };
     wsSend({ type: "cert_submit", certificate: cert });

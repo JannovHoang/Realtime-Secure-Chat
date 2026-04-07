@@ -82,15 +82,19 @@ async function deletePendingMessagesByIds(ids) {
   });
 }
 
-async function saveCert(username, certificate, signatureB64) {
+async function saveCert(username, identityId, certificate, signatureB64) {
   const currentDb = getDb();
   await currentDb.collection("certs").updateOne(
     { username },
     {
       $set: {
         username,
+        identityId,
         certificate,
         signatureB64,
+        updatedAt: new Date(),
+      },
+      $setOnInsert: {
         createdAt: new Date(),
       },
     },
@@ -120,6 +124,7 @@ async function saveIdentityBackup(username, backupDoc) {
     {
       $set: {
         username,
+        identityId: backupDoc.identityId,
         version: backupDoc.version,
         ciphertextB64: backupDoc.ciphertextB64,
         ivB64: backupDoc.ivB64,
