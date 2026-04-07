@@ -10,12 +10,14 @@ import {
   fetchCloudBackup,
 } from "../chat.js";
 import {
+  initVault,
   hasPersistedVault,
   exportIdentityPayload,
   verifyPersistedVaultPassword,
   encryptIdentityPayload,
   decryptIdentityPayload,
   importIdentityPayload,
+  loadIdentityMetadata,
 } from "../storage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -272,6 +274,19 @@ function markDisconnectedForReconnect() {
   toast("Reconnect required. Re-enter password and press Start.", "error");
 }
 
+async function inspectPersistedLocalIdentity(username, password) {
+  if (!(await hasPersistedVault(username))) {
+    return null;
+  }
+
+  try {
+    await initVault(password, username);
+    return await loadIdentityMetadata();
+  } catch {
+    return null;
+  }
+}
+
 async function runRestoreFlow() {
   const username = normalizeKeepCase($("username").value);
   const password = $("password").value;
@@ -280,21 +295,40 @@ async function runRestoreFlow() {
     return;
   }
 
-  if (await hasPersistedVault(username)) {
-    const confirmed = window.confirm(
-      `Restore will overwrite the current local identity for ${username} in this browser. Continue?`
-    );
-    if (!confirmed) return;
-  }
-
   restoring = true;
   setButtons();
   setStatus("Restoring...", true);
 
   try {
+    const hasLocalVault = await hasPersistedVault(username);
     const blob = await fetchCloudBackup(username);
-    const payload = await decryptIdentityPayload(blob, password, username);
-    await importIdentityPayload(payload, username);
+    const payload = await decryptIdentityPayload(
+      blob,
+      password,
+      username,
+      blob.identityId || null
+    );
+    const localIdentityMeta = hasLocalVault
+      ? await inspectPersistedLocalIdentity(username, password)
+      : null;
+
+    if (hasLocalVault) {
+      const sameLocalIdentity =
+        localIdentityMeta?.identityId &&
+        localIdentityMeta.identityId === payload.identityId;
+
+      const confirmMessage = !localIdentityMeta?.identityId || sameLocalIdentity
+        ? `Restore will overwrite the current local identity for ${username} in this browser. Continue?`
+        : `This backup belongs to a different local identity than the one currently stored in this browser. Restoring will overwrite the current local identity for ${username}. Continue?`;
+
+      const confirmed = window.confirm(confirmMessage);
+      if (!confirmed) {
+        setStatus("Restore cancelled", true);
+        return;
+      }
+    }
+
+    await importIdentityPayload(payload, username, blob.identityId || null);
 
     restoredThisSession = true;
     continueWithoutRestoreFor.delete(username);

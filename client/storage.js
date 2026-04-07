@@ -142,7 +142,11 @@ function canonicalize(value) {
   return value;
 }
 
-function validateImportedPayload(payload, expectedUsername = null) {
+function validateImportedPayload(
+  payload,
+  expectedUsername = null,
+  expectedIdentityId = null
+) {
   if (!payload || typeof payload !== "object") {
     throw new Error("Invalid backup payload");
   }
@@ -166,6 +170,12 @@ function validateImportedPayload(payload, expectedUsername = null) {
   const expectedUser = normalizeKeyName(expectedUsername || "");
   if (expectedUser && payloadUser !== expectedUser) {
     throw new Error("Backup username mismatch");
+  }
+
+  const payloadIdentityId = normalizeKeyName(payload.identityId);
+  const expectedId = normalizeKeyName(expectedIdentityId || "");
+  if (expectedId && payloadIdentityId !== expectedId) {
+    throw new Error("Backup identity mismatch");
   }
 }
 
@@ -537,7 +547,12 @@ export async function encryptIdentityPayload(payload, password) {
   };
 }
 
-export async function decryptIdentityPayload(blob, password, expectedUsername = null) {
+export async function decryptIdentityPayload(
+  blob,
+  password,
+  expectedUsername = null,
+  expectedIdentityId = null
+) {
   if (!blob || typeof blob !== "object") {
     throw new Error("Invalid encrypted backup");
   }
@@ -574,12 +589,20 @@ export async function decryptIdentityPayload(blob, password, expectedUsername = 
     throw new Error("Backup payload is not valid JSON");
   }
 
-  validateImportedPayload(payload, expectedUsername || blob.username || null);
+  validateImportedPayload(
+    payload,
+    expectedUsername || blob.username || null,
+    expectedIdentityId || blob.identityId || null
+  );
   return payload;
 }
 
-export async function importIdentityPayload(payload, expectedUsername = null) {
-  validateImportedPayload(payload, expectedUsername);
+export async function importIdentityPayload(
+  payload,
+  expectedUsername = null,
+  expectedIdentityId = null
+) {
+  validateImportedPayload(payload, expectedUsername, expectedIdentityId);
 
   const username = normalizeKeyName(payload.username);
   await writePersistedForUser(username, {
