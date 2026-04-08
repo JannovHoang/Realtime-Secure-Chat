@@ -273,6 +273,18 @@ function describeForcedLogout(payload) {
   };
 }
 
+function buildRestoreOverwriteMessage(username, localIdentityMeta, payload) {
+  const sameLocalIdentity =
+    localIdentityMeta?.identityId &&
+    localIdentityMeta.identityId === payload.identityId;
+
+  if (!localIdentityMeta?.identityId || sameLocalIdentity) {
+    return `Restore will overwrite the current local identity for account ${username} in this browser. Continue?`;
+  }
+
+  return `This backup belongs to a different local identity than the one currently stored for account ${username} in this browser. Restoring will overwrite the current local identity. Continue?`;
+}
+
 function markDisconnected() {
   if (!started || disconnected) return;
   disconnected = true;
@@ -339,14 +351,11 @@ async function runRestoreFlow() {
       : null;
 
     if (hasLocalVault) {
-      const sameLocalIdentity =
-        localIdentityMeta?.identityId &&
-        localIdentityMeta.identityId === payload.identityId;
-
-      const confirmMessage = !localIdentityMeta?.identityId || sameLocalIdentity
-        ? `Restore will overwrite the current local identity for ${username} in this browser. Continue?`
-        : `This backup belongs to a different local identity than the one currently stored in this browser. Restoring will overwrite the current local identity for ${username}. Continue?`;
-
+      const confirmMessage = buildRestoreOverwriteMessage(
+        username,
+        localIdentityMeta,
+        payload
+      );
       const confirmed = window.confirm(confirmMessage);
       if (!confirmed) {
         setStatus("Restore cancelled", true);
@@ -366,7 +375,7 @@ async function runRestoreFlow() {
     console.error("[Restore error]", e);
     setStatus("Restore failed", false);
     toast(
-      "Restore failed. Check your username/password or backup availability.",
+      "Restore failed. Check your account/password or backup availability.",
       "error"
     );
   } finally {
