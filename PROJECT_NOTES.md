@@ -792,9 +792,9 @@ This phase should do one thing cleanly:
 
 ### Current Implementation Status For Restore Targeting
 
-This follow-up phase is now in progress and has already passed the first two checkpoints in code.
+This follow-up phase has now completed the intended implementation checkpoints in code.
 
-What is implemented so far:
+What is implemented:
 
 - server exposes a minimal backup metadata list per username
 - that metadata list is limited to:
@@ -812,10 +812,46 @@ Important implication:
 
 - once an account has both backup A and backup B, entering only `username + password` is no longer enough to know which backup should be restored
 - the restore UI must therefore target the chosen `identityId` explicitly
+- in the current model, this is still one account label with multiple backup identities, not yet two fully separate authenticated accounts
 
 Current UX rule:
 
 - when the browser already stores a different local identity, overwrite warning now says that restore will replace the current browser identity with the selected target identity
+
+### Manual Testing Observed For Restore Targeting
+
+The following have now been observed manually during testing:
+
+- when the same username has multiple backup identities, `Restore from Cloud` now shows a selector instead of restoring an arbitrary latest backup silently
+- the selector shows a shortened identity fragment plus `updatedAt`
+- if the user chooses identity A and enters password A, restore can target identity A specifically
+- if the user chooses identity B and enters password B, restore can target identity B specifically
+- if the user chooses one identity but enters the wrong password for that identity, restore fails generically and does not partially import local state
+- when the browser is clean, the restore selector appears because the account has multiple backup identities, not because the browser already stores a local identity
+- canceling the selector leaves restore canceled and does not import anything
+
+### Important Current Limitation After Restore Targeting
+
+The project still does not support smooth identity switching inside the same browser by username + password alone.
+
+Practical example:
+
+- browser previously used local identity A
+- user logs out
+- user then enters the same username but password for identity B
+- pressing `Start` still tries to open the existing local vault for A
+- this fails with incorrect password rather than automatically switching to B
+
+Reason:
+
+- `Logout` ends the runtime session
+- it does not replace or clear the persisted local vault already stored in that browser
+- `Start` still means "open the local vault already stored in this browser for this username"
+- switching that browser to another identity still requires:
+  - targeted restore of the other identity
+  - or clearing site data
+
+This is currently a known UX limitation, not a cryptographic failure.
 
 ### Phase 3 - Account To Active Device Routing
 
