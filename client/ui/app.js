@@ -362,12 +362,13 @@ function buildRestoreOverwriteMessage(username, localIdentityMeta, payload) {
   const sameLocalIdentity =
     localIdentityMeta?.identityId &&
     localIdentityMeta.identityId === payload.identityId;
+  const targetIdentityShort = formatIdentityShort(payload.identityId);
 
   if (!localIdentityMeta?.identityId || sameLocalIdentity) {
     return `Restore will overwrite the current local identity for account ${username} in this browser. Continue?`;
   }
 
-  return `This backup belongs to a different local identity than the one currently stored for account ${username} in this browser. Restoring will overwrite the current local identity. Continue?`;
+  return `This browser currently stores a different local identity for account ${username}. Restoring this backup will replace the current identity with identity ${targetIdentityShort}. Continue?`;
 }
 
 function markDisconnected() {

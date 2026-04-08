@@ -577,6 +577,246 @@ Recommended next step after Phase 2:
 
 This should happen before recent-message catch-up.
 
+## Restore Targeting By `identityId`
+
+This is the next recommended focused phase after Phase 2.
+
+### Why This Phase Exists
+
+After Phase 2, backup persistence is now identity-aware:
+
+- the same username/account can have backup `A`
+- and backup `B`
+
+That means restore-by-username alone is no longer sufficient.
+
+This phase exists to remove that ambiguity.
+
+### Goal
+
+Make restore explicitly target:
+
+- `username`
+- `identityId`
+
+so that:
+
+- selecting backup `A` and entering password `A` restores identity `A`
+- selecting backup `B` and entering password `B` restores identity `B`
+- restore no longer fails just because the server returned the wrong backup for the same username
+
+### Scope
+
+This phase will:
+
+- make restore target a specific `identityId`
+- add the smallest necessary backup-identity selection flow in the client
+- keep decrypt/validation/import all-or-nothing
+- keep restore and `Start` as separate actions
+
+This phase will not:
+
+- implement recent-message catch-up
+- implement full linked-device UI
+- implement Google login
+- implement backup history with many versions per identity
+
+### Server Direction
+
+Server may temporarily keep the old username-only fallback path so legacy code does not break immediately.
+
+But:
+
+- the new client/UI must not rely on that fallback
+- the official path for this phase must be `username + identityId`
+
+Recommended server behavior:
+
+- if `identityId` is provided:
+  - restore must use `username + identityId`
+- if `identityId` is missing:
+  - fallback may still exist temporarily
+  - but should be treated as legacy/transitional only
+
+### Metadata List Endpoint
+
+To support explicit restore targeting, the client needs a small metadata listing step.
+
+Recommended endpoint shape:
+
+- `GET /api/backups/:username`
+
+This endpoint is sensitive and must be treated carefully.
+
+Minimum requirements:
+
+- apply rate limiting
+- return only minimal metadata
+- keep errors generic enough for the current prototype level
+- when public, serve only behind HTTPS/WSS
+
+Recommended response fields per item:
+
+- `identityId`
+- `updatedAt`
+- optionally `createdAt`
+
+Do not return unnecessary data here.
+
+### Client / UI Direction
+
+The new UI should not have a "just restore by username anyway" branch.
+
+Instead:
+
+1. user enters `username`
+2. user enters `password`
+3. user clicks `Restore from Cloud`
+4. client fetches backup metadata list for that username
+5. if there is exactly one backup identity:
+   - select it automatically
+6. if there are multiple backup identities:
+   - show a small selection UI
+   - user chooses the target `identityId`
+7. client fetches encrypted blob by `username + identityId`
+8. client decrypts using the entered password
+9. client validates payload by:
+   - version
+   - username
+   - identityId
+10. if local browser currently has a different identity:
+    - show strong overwrite warning
+11. if confirmed:
+    - import all-or-nothing
+    - clear password
+    - show `Backup restored. Enter password and press Start.`
+
+### UI Display Rule For `identityId`
+
+Do not show the full raw `identityId` string in the selector UI unless necessary.
+
+Preferred display:
+
+- short identity fragment
+- plus timestamp
+
+Example:
+
+- `ab12cd34 - updated 2026-04-09 09:42`
+- `9f88e120 - updated 2026-04-09 20:15`
+
+This keeps the selector usable without pretending the user understands full cryptographic identifiers.
+
+### Warning Requirement
+
+When the browser already stores a different local identity, the overwrite warning should be explicit.
+
+It should make clear:
+
+- the browser currently has one local identity
+- the chosen backup belongs to another identity
+- restore will replace the current local identity with the selected one
+
+The warning should not remain username-generic.
+
+### Things That Should Explicitly Wait
+
+This phase should not try to be "smart" in ways that enlarge scope.
+
+Do not do these yet:
+
+- auto-guess the correct identity from local state
+- auto-try multiple passwords
+- auto-merge identities
+- auto-login immediately after restore
+
+This phase should do one thing cleanly:
+
+- restore the identity explicitly selected by `identityId`
+
+### Main Files Likely To Change
+
+- `server/mongo.js`
+  - helper for listing backup metadata by username
+- `server/server.js`
+  - metadata list endpoint
+  - strict backup-get by `username + identityId`
+- `client/chat.js`
+  - fetch metadata list
+  - fetch backup blob by `identityId`
+- `client/ui/app.js`
+  - selection flow
+  - overwrite warning
+- `client/ui/index.html`
+  - lightweight restore selection modal if needed
+
+### Phase Checklist
+
+1. add backup metadata list endpoint
+2. rate-limit that endpoint
+3. keep response metadata minimal
+4. client restore flow fetches backup identities first
+5. if one identity exists, select automatically
+6. if multiple identities exist, user chooses one
+7. client fetches encrypted blob by `username + identityId`
+8. decrypt/validate/import remains all-or-nothing
+9. overwrite warning explicitly references identity conflict
+10. UI no longer relies on username-only restore fallback
+
+### Tests For This Phase
+
+1. One backup identity only:
+   - restore still works with no extra friction
+
+2. Two identities A and B:
+   - user selects A
+   - enters password A
+   - restore succeeds
+
+3. Two identities A and B:
+   - user selects B
+   - enters password B
+   - restore succeeds
+
+4. User selects A but enters password B:
+   - decrypt fails
+   - no partial import occurs
+
+5. Browser currently stores identity B:
+   - user selects backup A
+   - overwrite warning clearly explains that the browser currently stores a different local identity
+
+6. After restore, user presses `Start`:
+   - runtime/session must bind to the selected identity
+   - restore must not silently bind back to some other identity
+
+### Current Implementation Status For Restore Targeting
+
+This follow-up phase is now in progress and has already passed the first two checkpoints in code.
+
+What is implemented so far:
+
+- server exposes a minimal backup metadata list per username
+- that metadata list is limited to:
+  - `username`
+  - `identityId`
+  - `createdAt`
+  - `updatedAt`
+- client restore flow now fetches backup identities first
+- if there is one backup identity, client selects it automatically
+- if there are multiple backup identities, UI now requires explicit identity selection
+- after selection, client fetches the encrypted blob by `username + identityId`
+- the new restore UI path no longer relies on username-only fallback behavior
+
+Important implication:
+
+- once an account has both backup A and backup B, entering only `username + password` is no longer enough to know which backup should be restored
+- the restore UI must therefore target the chosen `identityId` explicitly
+
+Current UX rule:
+
+- when the browser already stores a different local identity, overwrite warning now says that restore will replace the current browser identity with the selected target identity
+
 ### Phase 3 - Account To Active Device Routing
 
 Goal:
