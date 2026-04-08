@@ -23,6 +23,7 @@ const {
   saveCiphertextMessage,
   saveIdentityBackup,
   getIdentityBackup,
+  listIdentityBackups,
 } = require("./mongo");
 
 const {
@@ -453,13 +454,64 @@ async function initKeysOnce() {
 const server = http.createServer((req, res) => {
   const reqUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
-  if (req.method === "OPTIONS" && reqUrl.pathname.startsWith("/api/backup/")) {
+  if (
+    req.method === "OPTIONS" &&
+    (reqUrl.pathname.startsWith("/api/backup/") ||
+      reqUrl.pathname.startsWith("/api/backups/"))
+  ) {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     });
     return res.end();
+  }
+
+  if (req.method === "GET" && reqUrl.pathname.startsWith("/api/backups/")) {
+    const username = normalizeUsername(
+      decodeURIComponent(reqUrl.pathname.slice("/api/backups/".length))
+    );
+    const ip = getRequestIp(req);
+
+    if (!username) {
+      return writeJson(res, 400, {
+        ok: false,
+        error: "Restore unavailable",
+      });
+    }
+
+    if (isRateLimited(ip)) {
+      return writeJson(res, 429, {
+        ok: false,
+        error: "Restore unavailable",
+      });
+    }
+
+    void (async () => {
+      try {
+        const items = await listIdentityBackups(username);
+        const safeItems = items
+          .filter((doc) => doc?.identityId)
+          .map((doc) => ({
+            identityId: doc.identityId,
+            createdAt: doc.createdAt || null,
+            updatedAt: doc.updatedAt || null,
+          }));
+
+        return writeJson(res, 200, {
+          ok: true,
+          username,
+          items: safeItems,
+        });
+      } catch (err) {
+        console.warn("[backup_list] failed:", err);
+        return writeJson(res, 200, {
+          ok: false,
+          error: "Restore unavailable",
+        });
+      }
+    })();
+    return;
   }
 
   if (req.method === "GET" && reqUrl.pathname.startsWith("/api/backup/")) {

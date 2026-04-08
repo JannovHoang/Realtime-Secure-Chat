@@ -154,6 +154,16 @@ async function getIdentityBackup(username, identityId = null) {
     .next();
 }
 
+async function listIdentityBackups(username) {
+  const currentDb = getDb();
+  return currentDb
+    .collection("identity_backups")
+    .find({ username })
+    .project({ _id: 0, username: 1, identityId: 1, createdAt: 1, updatedAt: 1 })
+    .sort({ updatedAt: -1, createdAt: -1, identityId: 1 })
+    .toArray();
+}
+
 async function dropLegacyUniqueIndexIfPresent(collection, indexName) {
   try {
     const indexes = await collection.indexes();
@@ -197,5 +207,6 @@ module.exports = {
   saveCiphertextMessage,
   saveIdentityBackup,
   getIdentityBackup,
+  listIdentityBackups,
   ensureIndexes,
 };
