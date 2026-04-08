@@ -875,6 +875,29 @@ export async function fetchCloudBackup(username, identityId = null) {
   return data;
 }
 
+export async function fetchCloudBackupIdentities(username) {
+  const user = normalizeUsername(username);
+  if (!user) {
+    throw new Error("Username is required");
+  }
+
+  const url = `${getServerHttpBase()}/api/backups/${encodeURIComponent(user)}`;
+  const res = await fetch(url);
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("Restore failed");
+  }
+
+  if (!res.ok || !data?.ok || !Array.isArray(data.items)) {
+    throw new Error("Restore failed");
+  }
+
+  return data.items;
+}
+
 /* ===================== logout / cleanup ===================== */
 export async function destroyChat() {
   try {

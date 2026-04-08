@@ -8,6 +8,7 @@ import {
   onPeerReady,
   saveCloudBackup,
   fetchCloudBackup,
+  fetchCloudBackupIdentities,
 } from "../chat.js";
 import {
   initVault,
@@ -31,6 +32,7 @@ let backingUp = false;
 let unsubPeerReady = null;
 let backupModalResolver = null;
 let startGuardResolver = null;
+let restoreChoiceResolver = null;
 let restoredThisSession = false;
 const continueWithoutRestoreFor = new Set();
 
@@ -163,6 +165,22 @@ function resolveStartGuard(value) {
   if (resolver) resolver(value);
 }
 
+function closeRestoreChoiceModal() {
+  const modal = $("restoreChoiceModal");
+  const list = $("restoreIdentityList");
+  if (!modal || !list) return;
+  modal.classList.add("is-hidden");
+  modal.setAttribute("aria-hidden", "true");
+  list.innerHTML = "";
+}
+
+function resolveRestoreChoice(value) {
+  const resolver = restoreChoiceResolver;
+  restoreChoiceResolver = null;
+  closeRestoreChoiceModal();
+  if (resolver) resolver(value);
+}
+
 function askStartGuard() {
   const modal = $("startGuardModal");
   if (!modal) {
@@ -194,6 +212,73 @@ function askBackupPassword() {
     backupModalResolver = resolve;
     queueMicrotask(() => input.focus());
   });
+}
+
+function formatIdentityShort(identityId) {
+  const normalized = String(identityId || "").trim();
+  if (!normalized) return "unknown";
+  return normalized.slice(0, 8);
+}
+
+function formatRestoreUpdatedAt(value) {
+  if (!value) return "unknown time";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "unknown time";
+  return dt.toLocaleString("vi-VN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function askRestoreIdentityChoice(items) {
+  const modal = $("restoreChoiceModal");
+  const list = $("restoreIdentityList");
+  if (!modal || !list) {
+    return Promise.resolve(null);
+  }
+
+  closeRestoreChoiceModal();
+  list.innerHTML = "";
+
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "restore-choice-item";
+    button.dataset.identityId = item.identityId;
+    button.innerHTML = `
+      <span class="restore-choice-id">${formatIdentityShort(item.identityId)}</span>
+      <span class="restore-choice-time">updated ${formatRestoreUpdatedAt(item.updatedAt)}</span>
+    `;
+    button.addEventListener("click", () => resolveRestoreChoice(item.identityId));
+    list.appendChild(button);
+  }
+
+  modal.classList.remove("is-hidden");
+  modal.setAttribute("aria-hidden", "false");
+
+  return new Promise((resolve) => {
+    restoreChoiceResolver = resolve;
+    queueMicrotask(() => list.querySelector("button")?.focus());
+  });
+}
+
+async function chooseRestoreIdentity(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("Restore failed");
+  }
+
+  if (items.length === 1) {
+    return items[0].identityId;
+  }
+
+  const selectedIdentityId = await askRestoreIdentityChoice(items);
+  if (!selectedIdentityId) {
+    throw new Error("Restore cancelled");
+  }
+  return selectedIdentityId;
 }
 
 function appendMsg(type, text) {
@@ -339,12 +424,14 @@ async function runRestoreFlow() {
 
   try {
     const hasLocalVault = await hasPersistedVault(username);
-    const blob = await fetchCloudBackup(username);
+    const backups = await fetchCloudBackupIdentities(username);
+    const selectedIdentityId = await chooseRestoreIdentity(backups);
+    const blob = await fetchCloudBackup(username, selectedIdentityId);
     const payload = await decryptIdentityPayload(
       blob,
       password,
       username,
-      blob.identityId || null
+      selectedIdentityId
     );
     const localIdentityMeta = hasLocalVault
       ? await inspectPersistedLocalIdentity(username, password)
@@ -363,7 +450,7 @@ async function runRestoreFlow() {
       }
     }
 
-    await importIdentityPayload(payload, username, blob.identityId || null);
+    await importIdentityPayload(payload, username, selectedIdentityId);
 
     restoredThisSession = true;
     continueWithoutRestoreFor.delete(username);
@@ -373,6 +460,10 @@ async function runRestoreFlow() {
     toast("Backup restored. Enter password and press Start.", "success");
   } catch (e) {
     console.error("[Restore error]", e);
+    if ((e?.message || "") === "Restore cancelled") {
+      setStatus("Restore cancelled", true);
+      return;
+    }
     setStatus("Restore failed", false);
     toast(
       "Restore failed. Check your account/password or backup availability.",
@@ -713,6 +804,16 @@ $("startGuardContinue").onclick = () => {
 $("startGuardModal").addEventListener("click", (e) => {
   if (e.target === $("startGuardModal")) {
     resolveStartGuard("cancel");
+  }
+});
+
+$("restoreChoiceCancel").onclick = () => {
+  resolveRestoreChoice(null);
+};
+
+$("restoreChoiceModal").addEventListener("click", (e) => {
+  if (e.target === $("restoreChoiceModal")) {
+    resolveRestoreChoice(null);
   }
 });
 
