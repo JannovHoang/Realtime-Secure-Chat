@@ -247,6 +247,32 @@ function resetUiAfterLogout(reason) {
   renderPeerList();
 }
 
+function describeForcedLogout(payload) {
+  const reason =
+    typeof payload === "string" ? payload : payload?.reason || "logged_in_elsewhere";
+  const previousIdentityId =
+    typeof payload === "object" ? payload?.previousIdentityId || null : null;
+  const replacedByIdentityId =
+    typeof payload === "object" ? payload?.replacedByIdentityId || null : null;
+
+  if (
+    reason === "logged_in_elsewhere" &&
+    previousIdentityId &&
+    replacedByIdentityId &&
+    previousIdentityId !== replacedByIdentityId
+  ) {
+    return {
+      status: "Logged out (other identity active)",
+      toast: "Logged out: another identity for this account became active.",
+    };
+  }
+
+  return {
+    status: reason === "logged_in_elsewhere" ? "Logged out (other login)" : "Logged out",
+    toast: "Logged out: this account was used elsewhere.",
+  };
+}
+
 function markDisconnected() {
   if (!started || disconnected) return;
   disconnected = true;
@@ -681,11 +707,15 @@ $("startGuardModal").addEventListener("click", (e) => {
   }
 });
 
-window.onForcedLogout = (reason) => {
+window.onForcedLogout = (payload) => {
   if (unsubPeerReady) unsubPeerReady();
   unsubPeerReady = null;
-  resetUiAfterLogout(reason);
-  toast("Logged out: this account was used elsewhere.", "error");
+  const details = describeForcedLogout(payload);
+  resetUiAfterLogout(
+    typeof payload === "string" ? payload : payload?.reason || "logged_in_elsewhere"
+  );
+  setStatus(details.status, true);
+  toast(details.toast, "error");
 };
 
 window.onChatDisconnected = () => {

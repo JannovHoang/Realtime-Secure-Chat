@@ -64,6 +64,10 @@ function normalizeUsername(u) {
   return String(u || "").trim(); // keep case, trim only
 }
 
+function normalizeIdentityId(v) {
+  return String(v || "").trim();
+}
+
 function wsSend(obj) {
   const s = JSON.stringify(obj);
   if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -400,9 +404,9 @@ function drainInboundAllSoon() {
   }
 }
 
-async function handleForceLogout(reason) {
+async function handleForceLogout(payload) {
   try {
-    if (window.onForcedLogout) window.onForcedLogout(reason);
+    if (window.onForcedLogout) window.onForcedLogout(payload);
   } catch {}
   await destroyChat();
 }
@@ -627,7 +631,11 @@ export async function initChat(username, password) {
     }
 
     if (data.type === "force_logout") {
-      await handleForceLogout(data.reason || "logged_in_elsewhere");
+      await handleForceLogout({
+        reason: data.reason || "logged_in_elsewhere",
+        previousIdentityId: data.previousIdentityId || null,
+        replacedByIdentityId: data.replacedByIdentityId || null,
+      });
       return;
     }
 
@@ -837,15 +845,21 @@ export async function saveCloudBackup(blobDoc) {
   });
 }
 
-export async function fetchCloudBackup(username) {
+export async function fetchCloudBackup(username, identityId = null) {
   const user = normalizeUsername(username);
   if (!user) {
     throw new Error("Username is required");
   }
 
-  const res = await fetch(
+  const url = new URL(
     `${getServerHttpBase()}/api/backup/${encodeURIComponent(user)}`
   );
+  const normalizedIdentityId = normalizeIdentityId(identityId || "");
+  if (normalizedIdentityId) {
+    url.searchParams.set("identityId", normalizedIdentityId);
+  }
+
+  const res = await fetch(url.toString());
 
   let data = null;
   try {
