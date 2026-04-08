@@ -120,7 +120,7 @@ async function importECDHPrivateKeyFromJwk(jwk) {
 // ===== In-memory state =====
 const wsToSession = new Map(); // ws -> { user, identityId }
 const userToWs = new Map(); // username -> ws (latest active)
-const signedCerts = new Map(); // username -> { certificate, signatureB64, identityId }
+const signedCerts = new Map(); // username:identityId -> { certificate, signatureB64, identityId }
 
 // ===== PATCH: pending offline messages (ciphertext only) =====
 const pendingMsgs = new Map(); // username -> Array<msgObj>
@@ -151,6 +151,10 @@ function getSessionUser(ws) {
 
 function getSessionIdentityId(ws) {
   return getSession(ws)?.identityId || null;
+}
+
+function makeIdentityScopedKey(username, identityId) {
+  return `${normalizeUsername(username)}::${normalizeIdentityId(identityId)}`;
 }
 
 function sendJson(ws, obj) {
@@ -345,6 +349,7 @@ async function getCertCacheWithFallback() {
   try {
     const docs = await getAllCerts();
     const items = [];
+    signedCerts.clear();
 
     for (const doc of docs) {
       if (!doc?.username || !doc?.certificate || !doc?.signatureB64) continue;
@@ -352,7 +357,11 @@ async function getCertCacheWithFallback() {
         certificate: doc.certificate,
         signatureB64: doc.signatureB64,
       });
-      signedCerts.set(doc.username, {
+      const key = makeIdentityScopedKey(
+        doc.username,
+        doc.identityId || doc.certificate?.identityId || ""
+      );
+      signedCerts.set(key, {
         certificate: doc.certificate,
         signatureB64: doc.signatureB64,
         identityId: doc.identityId || doc.certificate?.identityId || null,
@@ -457,6 +466,7 @@ const server = http.createServer((req, res) => {
     const username = normalizeUsername(
       decodeURIComponent(reqUrl.pathname.slice("/api/backup/".length))
     );
+    const identityId = normalizeIdentityId(reqUrl.searchParams.get("identityId"));
     const ip = getRequestIp(req);
 
     if (!username) {
@@ -475,7 +485,7 @@ const server = http.createServer((req, res) => {
 
     void (async () => {
       try {
-        const doc = await getIdentityBackup(username);
+        const doc = await getIdentityBackup(username, identityId || null);
         if (
           !doc?.username ||
           typeof doc.ciphertextB64 !== "string" ||
@@ -568,9 +578,20 @@ wss.on("connection", (ws) => {
 
       const existing = userToWs.get(user);
       if (existing && existing !== ws) {
+        const previousIdentityId = getSessionIdentityId(existing);
+        console.log(
+          "[session] replacing active session",
+          JSON.stringify({
+            username: user,
+            previousIdentityId: previousIdentityId || null,
+            nextIdentityId: identityId || null,
+          })
+        );
         sendJson(existing, {
           type: "force_logout",
           reason: "logged_in_elsewhere",
+          previousIdentityId: previousIdentityId || null,
+          replacedByIdentityId: identityId || null,
         });
         try {
           existing.close(4001, "Logged in elsewhere");
@@ -597,6 +618,17 @@ wss.on("connection", (ws) => {
       const identityId = normalizeIdentityId(data.identityId);
       if (!session?.user || !identityId) {
         return sendJson(ws, { type: "error", error: "Invalid identity binding" });
+      }
+
+      if (session.identityId && session.identityId !== identityId) {
+        console.log(
+          "[session] identity rebind",
+          JSON.stringify({
+            username: session.user,
+            previousIdentityId: session.identityId,
+            nextIdentityId: identityId,
+          })
+        );
       }
 
       wsToSession.set(ws, {
@@ -652,7 +684,7 @@ wss.on("connection", (ws) => {
       const sigAb = await signWithECDSA(CA.sec, certString);
       const signatureB64 = abToB64(sigAb);
 
-      signedCerts.set(certUser, {
+      signedCerts.set(makeIdentityScopedKey(certUser, certIdentityId), {
         certificate: cert,
         signatureB64,
         identityId: certIdentityId,
