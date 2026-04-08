@@ -23,6 +23,11 @@ The project is no longer at the original local-only stage. As of now:
 - Offline queue is persisted in MongoDB.
 - Signed certificate cache is persisted in MongoDB.
 - Ciphertext message history is persisted in MongoDB.
+- Encrypted cloud backup `v1` is implemented and working in the backup/restore branch database.
+- Cloud restore is implemented and working as a separate pre-`Start` flow.
+- Soft `Start` guard is implemented for fresh browsers with no local vault.
+- Backup modal with hidden password + show/hide toggle is implemented.
+- `v2 foundation` is partially implemented and already tested through the main identity-binding flows.
 - The server still keeps a small in-memory cache and `pending.json` fallback for offline queue safety.
 - Disconnect UX has been improved so the UI becomes `Disconnected` instead of silently looking active.
 - Single active session per username still works for one Node server process.
@@ -31,9 +36,10 @@ What is still missing:
 
 - No Google login or account system.
 - No QR device linking.
-- No cloud backup yet.
 - No fetch-from-Mongo history restore flow on the client.
 - WebSocket URL still needs future work before public tunnel demo.
+- Full identity-policy cleanup is not done yet; several policies still remain username-based.
+- Recent-message catch-up is not started yet.
 
 ## Repo Structure
 
@@ -343,6 +349,476 @@ The following have already been tested and reported working:
 - ciphertext message history being stored in Mongo
 - `force_logout` behavior across browsers
 - disconnect/reconnect UX flow after stopping the server
+- encrypted cloud backup save to Mongo
+- encrypted cloud restore on another browser
+- restore requiring `Start` afterward
+- overwrite warning when restoring over an existing local identity
+- soft `Start` guard on a browser with no local vault
+
+## Implementation Status As Of 2026-04-07
+
+This section is the short operational summary of what has actually been completed in code and manually tested.
+
+### Completed: Encrypted Cloud Backup v1
+
+The following are implemented in code and manually tested:
+
+- `identity_backups` collection exists in MongoDB.
+- Cloud backup save works through WebSocket `backup_save`.
+- Cloud backup fetch works through `GET /api/backup/:username`.
+- Backup blob is encrypted on the client before upload.
+- Server stores encrypted blob only and does not decrypt it.
+- Backup payload uses the local vault dump rather than piecing Double Ratchet state together manually.
+- Backup save enforces a blob size limit.
+- Backup import is all-or-nothing.
+- Restore is a separate flow from `Start`.
+- After successful restore, the password field is cleared and the user must type the password again before `Start`.
+- Restore on a browser that already has local state shows an overwrite warning.
+- A soft `Start` guard exists on browsers that do not yet have a local vault.
+- Backup modal now uses a hidden password field with a show/hide toggle instead of a plain prompt.
+
+### Completed: V2 Foundation
+
+The following `v2 foundation` work is implemented in code:
+
+- `identityId` is derived from the canonical export of the long-term identity public key using deterministic hashing.
+- `identityId` is persisted in the local vault-related state and is available again after reload/restore.
+- Backup payload has been upgraded to `version: 2`.
+- Backup payload `version: 2` includes `identityId`.
+- Legacy backup payloads without `identityId` are rejected on the `v2` path.
+- Mongo `identity_backups` now stores `identityId`.
+- Mongo `certs` now stores `identityId`.
+- Session/runtime metadata now carries both `username` and `identityId`.
+- Cert submit/save flow now binds the active session to `identityId`.
+- Restore validation now reasons about both `username` and `identityId`.
+- Restore UI now distinguishes between:
+  - generic overwrite of current local identity
+  - overwrite of a different local identity under the same username
+
+### Manually Tested And Observed For V2 Foundation
+
+The following have already been observed manually during testing:
+
+- Browser A can create a new identity, `Start`, and save a cloud backup.
+- Mongo `certs` contains `identityId`.
+- Mongo `identity_backups` contains `identityId` and `version: 2`.
+- Browser B can restore the same backup and then `Start`.
+- In the clean restore case, the restored browser continues with the same identity rather than creating a new one.
+- Browser C can intentionally create an accidental new identity under the same username by choosing `Continue` instead of restore.
+- In that accidental-new-identity case:
+  - the active cert for the username changes to the new identity
+  - the cloud backup remains on the old identity until a new backup is saved
+- Restoring the old backup over the accidental new identity brings the browser back to the original identity.
+- After restoring back to the original identity, the cert and active identity metadata return to the original `identityId`.
+- Restarting the server does not break backup retrieval or restore of the persisted identity.
+
+### Important Transitional Limitation Still Present
+
+Even after the current `v2 foundation` work, some policy is still username-based:
+
+- active session is still `1 active session / username`
+- active cert is still effectively `1 active cert / username`
+- active backup is still effectively `1 active backup / username`
+
+So the project now understands `identityId` in the data model, but policy cleanup is not finished yet.
+
+### Most Likely Next Step
+
+The recommended next phase is not `recent-message catch-up` yet.
+
+The more appropriate next step is:
+
+- `v2.1 identity policy cleanup`
+
+Meaning:
+
+- reduce the remaining username-based overwrite policies
+- move cert / backup / session policy to become more identity-aware
+- only after that begin recent-message catch-up
+
+## Current Strategic Roadmap
+
+This is the current preferred roadmap after the completed `v2 foundation` work.
+
+Core model:
+
+- `username` currently acts as the temporary account label
+- `identityId` acts as the device identity / crypto identity of a browser or machine
+- session runtime should always understand both `username` and `identityId`
+
+Important interpretation:
+
+- same username + different password does **not** automatically mean different accounts
+- under the current model, that is still better understood as:
+  - one account label
+  - potentially different device identities
+
+### Phase 0 - Lock The Current State And Keep Test Data Clean
+
+Goal:
+
+- avoid letting stale test data pollute later phases
+
+Rules:
+
+- use a dedicated branch for the next phase
+- use a clean Mongo DB or fully clear the current test DB
+- clear browser site data before serious testing
+- do not try to preserve old payloads without `identityId` on the new path
+
+### Phase 1 - V2 Foundation
+
+Status:
+
+- implemented in code
+- manually tested
+- should be considered complete for the intended scope
+
+What this phase achieved:
+
+- `identityId` is introduced consistently across vault, backup payload, cert metadata, and session metadata
+- restore validation now reasons about both `username` and `identityId`
+- same username but different identities are no longer treated as blindly equivalent everywhere
+
+Important note:
+
+- this phase fixed the identity model foundation
+- it did **not** finish the policy model
+
+### Phase 2 - V2.1 Identity Policy Cleanup
+
+This is now the recommended next implementation phase.
+
+Goal:
+
+- move remaining policy from username-blind behavior toward identity-aware behavior
+- do that before any message catch-up work
+
+Main tasks:
+
+- stop cert overwrite from being blindly username-only
+- stop cloud backup overwrite from being blindly username-only
+- keep session/runtime logs and replacement behavior identity-aware
+- tighten UX wording so identity conflicts are described as identity conflicts, not just username conflicts
+
+Expected direction:
+
+- `certs` should move toward `username + identityId`
+- `identity_backups` should move toward `username + identityId`
+- session logic should explicitly say which identity replaced which identity
+
+Current implementation status inside Phase 2:
+
+- Phase 2 has started.
+- Checkpoint 1 is completed at the Mongo persistence layer.
+- Checkpoint 2 is completed at the server runtime layer.
+- Client/runtime/UI cleanup for Phase 2 is not finished yet.
+
+What is already done in code for Phase 2:
+
+- Mongo `certs` persistence now stores records by `username + identityId`.
+- Mongo `identity_backups` persistence now stores records by `username + identityId`.
+- Mongo indexes for `certs` and `identity_backups` have been moved away from username-only uniqueness toward composite uniqueness on `username + identityId`.
+- Backup lookup helper now supports reading by `username + identityId`, while still keeping a fallback path for the latest record by username during the transition.
+- Server in-memory cert cache is now identity-scoped rather than username-only.
+- Server session replacement logging is now identity-aware and records which identity replaced which identity.
+- Server `force_logout` payload now carries replacement identity metadata.
+
+What is intentionally still true after Phase 2 checkpoint 2:
+
+- session semantics are still `1 active session / username`
+- client/runtime wording has not been fully cleaned up for Phase 2 yet
+- full runtime behavior is not yet fully policy-cleaned until the later checkpoints are done
+
+Phase 2 completion update:
+
+- Phase 2 has now been completed for the intended scope.
+- Client/runtime/UI wording cleanup has been finished.
+
+Additional work completed after checkpoint 2:
+
+- client backup fetch path now supports passing `identityId`
+- client `force_logout` handling now surfaces a more identity-aware message when another identity under the same account becomes active
+- restore/start-guard wording now talks about account plus local identity rather than only username
+
+What Phase 2 achieved in practice:
+
+- cert persistence is no longer blindly username-only
+- backup persistence is no longer blindly username-only
+- server/runtime replacement behavior is more identity-aware
+- the system now exposes account-vs-identity ambiguity instead of silently hiding it
+
+What manual testing confirmed during Phase 2:
+
+- identity A and identity B under the same username can both exist in Mongo persistence
+- backup B does not blindly overwrite backup A
+- cert B does not blindly erase all trace of cert A in persistence
+- session replacement still happens by username, but logs/runtime are more identity-aware
+
+Important discovery after Phase 2 testing:
+
+- once multiple backups exist for the same username, restore-by-username alone becomes ambiguous
+- if account `Giang` has backup `A` and backup `B`, entering password `A` does not guarantee that restore will target backup `A`
+- the server may return the latest backup for that username, which may instead be `B`
+
+Correct interpretation of that failure mode:
+
+- this is not necessarily a crypto bug
+- it is a restore-selection ambiguity that appears once backup persistence becomes identity-aware
+
+Important testing rule after Phase 2:
+
+- the old assumption that `username + password A` always means "restore identity A" is no longer valid once multiple backups exist under the same username
+- restore-by-username should now be treated as a transitional path only
+
+Recommended next step after Phase 2:
+
+- add restore targeting by `identityId`
+
+This should happen before recent-message catch-up.
+
+### Phase 3 - Account To Active Device Routing
+
+Goal:
+
+- stop treating realtime routing as "send to username blindly"
+- move toward:
+  - send to account
+  - route to the current active/preferred device identity
+
+Why this comes before catch-up:
+
+- if routing is still username-blind, later catch-up and pending behavior will inherit that ambiguity
+
+Transitional rule recommended for this phase:
+
+- one active/preferred device per account at a time
+- no full multi-device fan-out yet
+
+### Phase 4 - Backup / Restore Per Device
+
+Goal:
+
+- make cloud backup clearly represent:
+  - account `username`
+  - device identity `identityId`
+
+Expected direction:
+
+- one active backup per `username + identityId`
+- no blind overwrite between different device identities under the same username
+- restore warnings remain strong when current browser identity differs from backup identity
+
+### Phase 5 - Recent-Message Catch-Up
+
+This should only begin after identity model, policy model, and routing model are all stable enough.
+
+Goal:
+
+- fetch a recent window of ciphertext messages
+- per conversation
+- decrypt what is possible
+- merge and dedupe safely
+
+Not in scope for that phase:
+
+- full history rebuild
+- deep pagination
+- global sync of every conversation at login
+
+### Phase 6 - Stronger Account Auth
+
+This remains the last major phase, not the next one.
+
+Goal:
+
+- separate account ownership from crypto identity cleanly
+- move from:
+  - temporary username-as-account
+  - toward a stronger `accountId`
+
+Possible future identity for the account layer:
+
+- Google `sub`
+- or an internal account id
+
+At that point:
+
+- backup ownership can stop being username-based
+- username can become a display/account label only
+- `identityId` remains the device identity
+
+## Phase 2 - V2.1 Identity Policy Cleanup Final Checklist
+
+This is the next recommended implementation phase after the completed `v2 foundation`.
+
+Goal:
+
+- keep the `identityId` data model from Phase 1
+- remove the remaining username-blind overwrite behavior
+- make policy more identity-aware before any recent-message catch-up work begins
+
+### Step 0: Lock The Starting Point
+
+- commit the current `v2 foundation` state first
+- use a clean Mongo test state before Phase 2 testing
+- keep browser site data clean between policy tests
+
+### Step 1: Cert Policy Cleanup
+
+Current limitation:
+
+- certs are still effectively treated as one active cert per username
+
+Target direction:
+
+- cert records must be keyed by `username + identityId`
+- stop blindly overwriting cert state just because username matches
+
+Practical goal for this phase:
+
+- persist certs by both `username` and `identityId`
+- lookup certs by both `username` and `identityId`, not by username alone
+- if an identity changes under the same username, that becomes visible in persistence rather than silently replacing the previous cert record
+
+### Step 2: Backup Policy Cleanup
+
+Current limitation:
+
+- cloud backups are still effectively treated as one active backup per username
+
+Target direction:
+
+- backups must be keyed by `username + identityId`
+
+Practical goal for this phase:
+
+- one active backup per identity
+- lookup backups by both `username` and `identityId`, not by username alone where identity-specific behavior matters
+- no blind overwrite between identity A and identity B under the same username
+
+### Step 3: Session Policy Cleanup
+
+Current limitation:
+
+- runtime session semantics are still effectively `1 active session / username`
+- replacement is still username-driven even though session metadata now knows `identityId`
+
+Target direction for this phase:
+
+- keep the current single-active-session semantics for controlled scope:
+  - `1 active session / username`
+- but make all replacement behavior explicitly identity-aware in logs, warnings, and runtime bookkeeping
+
+Important note:
+
+- this phase does not need to introduce full multi-device parallel delivery
+- it only needs to stop the server from behaving as if username alone fully describes the active identity
+
+### Step 4: Restore / Start UX Cleanup
+
+The UI should now consistently describe identity conflicts as identity conflicts.
+
+What this means:
+
+- overwrite warnings should mention current local identity vs backup identity
+- session replacement messages should make it clear that one identity replaced another under the same username when relevant
+- generic username-only phrasing should be reduced where identity-specific meaning exists
+
+### Step 5: Mongo Schema / Index Direction
+
+Recommended direction:
+
+- `certs`
+  - move toward uniqueness by `{ username, identityId }`
+- `identity_backups`
+  - move toward uniqueness by `{ username, identityId }`
+
+This is the main policy shift for this phase.
+
+It is acceptable if the UI still only exposes a simple active path, as long as persistence is no longer blindly username-only.
+
+### Step 6: File-Level Work
+
+Main files expected to change:
+
+- `server/mongo.js`
+  - cert helpers and backup helpers must become identity-aware in storage and lookup
+- `server/server.js`
+  - runtime policy, replacement behavior, and logging must become identity-aware
+- `client/chat.js`
+  - runtime assumptions around active cert / active identity must align with the new policy
+- `client/ui/app.js`
+  - warnings and user-facing conflict messages should reflect identity-aware policy
+
+### Step 7: Regression Tests For Phase 2
+
+Minimum tests:
+
+1. Same username, two different identities:
+   - creating identity B after identity A does not silently destroy all record of A in persistence
+
+2. Cert persistence:
+   - certs for A and B under the same username are distinguishable by `identityId`
+
+3. Backup persistence:
+   - backup for A and backup for B under the same username are distinguishable by `identityId`
+   - backup for identity B does not blindly overwrite backup for identity A just because the username matches
+
+4. Restore from identity A while local browser currently has identity B:
+   - this is only fully testable once the restore path can target a specific `identityId`
+   - after Phase 2 persistence cleanup alone, restore by username is no longer sufficient if multiple backups exist under the same username
+
+5. Session replacement visibility:
+   - logs and runtime metadata make it clear which identity replaced which identity
+
+### Step 8: Stop Scope Here
+
+Do not start recent-message catch-up in this phase.
+
+This phase is finished only when:
+
+- cert policy is no longer blindly username-only
+- backup policy is no longer blindly username-only
+- session/runtime behavior is identity-aware enough to support later account-to-device routing work
+
+### Important Discovery After Phase 2 Checkpoint Testing
+
+During manual testing, an important limitation became explicit:
+
+- after `identity_backups` started being stored by `username + identityId`
+- restore-by-username became ambiguous whenever the same username has more than one backup identity
+
+Practical consequence:
+
+- if account `Giang` has backup `A` and backup `B`
+- and the current restore UI still only requests:
+  - `username`
+  - `password`
+- then `Restore from Cloud` cannot reliably mean "restore A"
+
+At the current transition point, the server read path may return the latest backup for that username when no explicit `identityId` is supplied.
+
+This means:
+
+- entering password `A` does **not** guarantee restore of identity `A`
+- restore may fail simply because the server returned backup `B`
+- this is not a crypto bug; it is a restore-selection ambiguity introduced once persistence became identity-aware
+
+Correct interpretation:
+
+- Phase 2 made persistence and policy more correct
+- but that correctness exposes that the older username-only restore flow is no longer sufficient
+
+Implication for later phases:
+
+- a later phase must add restore targeting by `identityId`
+- or otherwise introduce an explicit backup/device selection flow
+
+Until that is added:
+
+- restore-by-username should be treated as a transitional path only
+- and tests that assume "username + password A" always restores identity A are no longer valid once multiple backups exist for the same username
 
 ## Recommended Next Major Feature
 
