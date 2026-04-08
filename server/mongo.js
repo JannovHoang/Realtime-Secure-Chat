@@ -85,7 +85,7 @@ async function deletePendingMessagesByIds(ids) {
 async function saveCert(username, identityId, certificate, signatureB64) {
   const currentDb = getDb();
   await currentDb.collection("certs").updateOne(
-    { username },
+    { username, identityId },
     {
       $set: {
         username,
@@ -107,7 +107,7 @@ async function getAllCerts() {
   return currentDb
     .collection("certs")
     .find({})
-    .sort({ username: 1 })
+    .sort({ username: 1, updatedAt: -1, identityId: 1 })
     .toArray();
 }
 
@@ -120,7 +120,7 @@ async function saveIdentityBackup(username, backupDoc) {
   const currentDb = getDb();
   const now = new Date();
   await currentDb.collection("identity_backups").updateOne(
-    { username },
+    { username, identityId: backupDoc.identityId },
     {
       $set: {
         username,
@@ -140,9 +140,29 @@ async function saveIdentityBackup(username, backupDoc) {
   );
 }
 
-async function getIdentityBackup(username) {
+async function getIdentityBackup(username, identityId = null) {
   const currentDb = getDb();
-  return currentDb.collection("identity_backups").findOne({ username });
+  if (identityId) {
+    return currentDb.collection("identity_backups").findOne({ username, identityId });
+  }
+
+  return currentDb
+    .collection("identity_backups")
+    .find({ username })
+    .sort({ updatedAt: -1, createdAt: -1, identityId: 1 })
+    .limit(1)
+    .next();
+}
+
+async function dropLegacyUniqueIndexIfPresent(collection, indexName) {
+  try {
+    const indexes = await collection.indexes();
+    const found = indexes.find((idx) => idx.name === indexName);
+    if (!found) return;
+    await collection.dropIndex(indexName);
+  } catch {
+    // Ignore when the index does not exist or cannot be dropped yet.
+  }
 }
 
 async function ensureIndexes() {
@@ -152,17 +172,18 @@ async function ensureIndexes() {
     .collection("pending_messages")
     .createIndex({ to: 1, ts: 1 });
 
-  await currentDb
-    .collection("certs")
-    .createIndex({ username: 1 }, { unique: true });
+  const certs = currentDb.collection("certs");
+  const backups = currentDb.collection("identity_backups");
+
+  await dropLegacyUniqueIndexIfPresent(certs, "username_1");
+  await certs.createIndex({ username: 1, identityId: 1 }, { unique: true });
 
   await currentDb
     .collection("messages")
     .createIndex({ conversationId: 1, ts: 1 });
 
-  await currentDb
-    .collection("identity_backups")
-    .createIndex({ username: 1 }, { unique: true });
+  await dropLegacyUniqueIndexIfPresent(backups, "username_1");
+  await backups.createIndex({ username: 1, identityId: 1 }, { unique: true });
 }
 
 module.exports = {
