@@ -404,21 +404,33 @@ async function getCertCacheWithFallback() {
     const docs = await getAllCerts();
     const items = [];
     signedCerts.clear();
+    const activeByUser = new Map();
+
+    for (const [username, session] of accountSessions.entries()) {
+      if (session?.activeIdentityId) {
+        activeByUser.set(username, session.activeIdentityId);
+      }
+    }
 
     for (const doc of docs) {
       if (!doc?.username || !doc?.certificate || !doc?.signatureB64) continue;
+      const identityId = doc.identityId || doc.certificate?.identityId || null;
+      const activeIdentityId = activeByUser.get(doc.username) || null;
       items.push({
         certificate: doc.certificate,
         signatureB64: doc.signatureB64,
+        identityId,
+        activeIdentityId,
+        active: !!activeIdentityId && identityId === activeIdentityId,
       });
       const key = makeIdentityScopedKey(
         doc.username,
-        doc.identityId || doc.certificate?.identityId || ""
+        identityId || ""
       );
       signedCerts.set(key, {
         certificate: doc.certificate,
         signatureB64: doc.signatureB64,
-        identityId: doc.identityId || doc.certificate?.identityId || null,
+        identityId,
       });
     }
 
@@ -429,7 +441,15 @@ async function getCertCacheWithFallback() {
 
   const all = [];
   for (const { certificate, signatureB64 } of signedCerts.values()) {
-    all.push({ certificate, signatureB64 });
+    const identityId = certificate?.identityId || null;
+    const activeIdentityId = accountSessions.get(certificate?.username)?.activeIdentityId || null;
+    all.push({
+      certificate,
+      signatureB64,
+      identityId,
+      activeIdentityId,
+      active: !!activeIdentityId && identityId === activeIdentityId,
+    });
   }
   return all;
 }
@@ -772,7 +792,15 @@ wss.on("connection", (ws) => {
       }
 
       // Broadcast signed cert
-      const msg = { type: "cert_signed", certificate: cert, signatureB64 };
+      const activeIdentityId = accountSessions.get(certUser)?.activeIdentityId || null;
+      const msg = {
+        type: "cert_signed",
+        certificate: cert,
+        signatureB64,
+        identityId: certIdentityId,
+        activeIdentityId,
+        active: !!activeIdentityId && certIdentityId === activeIdentityId,
+      };
       for (const peer of wss.clients) {
         sendJson(peer, msg);
       }

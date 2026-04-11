@@ -359,6 +359,12 @@ function certPubChanged(oldCert, newCert) {
   }
 }
 
+function certMatchesActiveIdentity(item, cert) {
+  const activeIdentityId = normalizeIdentityId(item?.activeIdentityId);
+  if (!activeIdentityId) return true;
+  return normalizeIdentityId(cert?.identityId) === activeIdentityId;
+}
+
 /* ===================== inbound queue helpers ===================== */
 function queueInbound(from, pkt) {
   const key = normalizeUsername(from);
@@ -462,6 +468,7 @@ async function handleIncoming(data) {
       if (!it?.certificate || !it?.signatureB64) continue;
       const cert = it.certificate;
       if (!cert?.username || cert.username === myUser) continue;
+      if (!certMatchesActiveIdentity(it, cert)) continue;
 
       const old = messenger.certs?.[cert.username];
       if (old && certPubChanged(old, cert)) resetPeerConn(cert.username);
@@ -486,6 +493,7 @@ async function handleIncoming(data) {
   if (data.type === "cert_signed" && data.certificate?.username) {
     const u = data.certificate.username;
     if (u !== myUser) {
+      if (!certMatchesActiveIdentity(data, data.certificate)) return;
       const old = messenger.certs?.[u];
       if (old && certPubChanged(old, data.certificate)) resetPeerConn(u);
 

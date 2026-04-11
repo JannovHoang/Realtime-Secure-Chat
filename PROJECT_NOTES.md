@@ -996,6 +996,39 @@ Checkpoint 1 implementation status:
 - realtime `send` lookup now uses the active account session instead of a raw username-to-socket map
 - session semantics are still intentionally `1 active session / username`
 
+Checkpoint 2 implementation status:
+
+- cert cache items now include active identity metadata for the account when available
+- server `cert_signed` broadcasts now include:
+  - `identityId`
+  - `activeIdentityId`
+  - whether the cert is for the active identity
+- client now ignores non-active certs when active identity metadata is present
+- this keeps the current client `certs[username]` structure transitional, but ensures it points at the active device cert where the server can identify the active device
+
+Remaining limitation:
+
+- client still does not store a full multi-cert map per account
+- this is still not full linked-device cert management
+
+Manual testing observed for Account -> Active Device Routing:
+
+- a browser logged in as `Giang` identity B becomes the active account session
+- another user such as `Minh` can send to account `Giang`
+- server routes the message through `accountSessions` to the active identity/socket
+- server logs show the target account plus active identity and an open target socket
+- after active cert selection was added, `Minh` encrypts to the active cert for `Giang`
+- `Giang` active browser decrypts and displays the message
+- after `Giang` identity B receives messages, saving a backup and restoring that backup in another browser preserves enough local state to see the backed-up messages and continue messaging
+
+Current status:
+
+- this phase is working for the intended transitional scope
+- runtime routing is now account -> active identity -> socket
+- active cert selection works for the current single-active-session model
+- session semantics are still intentionally `1 active session / username`
+- pending/offline delivery is still transitional and not yet fully per-device
+
 ### Phase 4 - Backup / Restore Per Device
 
 Goal:
