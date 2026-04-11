@@ -855,7 +855,7 @@ This is currently a known UX limitation, not a cryptographic failure.
 
 ## Browser-Local Identity Switching / Start Failure Guidance
 
-This is the next small UX cleanup phase after restore targeting.
+This small UX cleanup phase after restore targeting is now implemented and manually tested.
 
 Goal:
 
@@ -901,6 +901,22 @@ Important:
 
 - the UI must not claim the entered password belongs to another identity
 - the app only knows that the entered password did not unlock the local identity currently stored in this browser
+
+### Manual Testing Observed For Start Failure Guidance
+
+The following have been manually tested:
+
+- browser stores identity A, user enters password A, then `Start` succeeds
+- browser stores identity A, user enters password B or another wrong password, then `Start` fails with the new identity-aware guidance message
+- switching from A to B works by using `Restore from Cloud`, choosing backup identity B, confirming overwrite, then pressing `Start` with password B
+- canceling the overwrite warning leaves the current browser identity unchanged
+- after canceling overwrite, `Start` with the original identity password still succeeds
+
+Current status:
+
+- this phase is complete for the intended UX scope
+- it does not add multiple local identity profiles inside one browser
+- it does not change `Start` semantics
 
 ### Restore-As-Switch Flow
 
