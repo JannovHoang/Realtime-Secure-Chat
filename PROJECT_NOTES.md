@@ -1029,6 +1029,44 @@ Current status:
 - session semantics are still intentionally `1 active session / username`
 - pending/offline delivery is still transitional and not yet fully per-device
 
+### Account -> Active Device Routing Checkpoint Summary
+
+Checkpoint 1 - server runtime structure:
+
+- completed
+- server now keeps `accountSessions`
+- `register` creates a temporary websocket session
+- `identity_bind` activates the session for routing
+- active session replacement is now based on account plus active identity
+- semantics remain `1 active session / username`
+
+Checkpoint 2 - message routing through active account session:
+
+- completed
+- realtime `send` now looks up the recipient via `accountSessions`
+- logs include recipient account and active recipient identity
+- messages route to the currently active identity socket
+
+Checkpoint 3 - minimal client/runtime compatibility:
+
+- completed
+- server cert cache and cert broadcasts include active identity metadata
+- client filters certs using `activeIdentityId` when present
+- this prevents senders from encrypting to an old cert when the recipient account has switched active identity
+
+Checkpoint 4 - notes and regression:
+
+- completed
+- manual regression confirmed active account routing and active cert selection work in the tested flows
+- notes now record that this is still a transitional single-active-device model
+
+Phase conclusion:
+
+- Account -> Active Device Routing is complete for the intended transitional scope
+- the system is now closer to `account -> active device identity -> socket`
+- the project still does not support full multi-device fan-out or multiple simultaneous active devices under one account
+- pending/offline delivery should be the next identity-aware cleanup candidate before large catch-up work
+
 ### Phase 4 - Backup / Restore Per Device
 
 Goal:
