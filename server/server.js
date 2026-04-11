@@ -120,7 +120,7 @@ async function importECDHPrivateKeyFromJwk(jwk) {
 
 // ===== In-memory state =====
 const wsToSession = new Map(); // ws -> { user, identityId }
-const userToWs = new Map(); // username -> ws (latest active)
+const accountSessions = new Map(); // username -> { activeIdentityId, ws }
 const signedCerts = new Map(); // username:identityId -> { certificate, signatureB64, identityId }
 
 // ===== PATCH: pending offline messages (ciphertext only) =====
@@ -152,6 +152,59 @@ function getSessionUser(ws) {
 
 function getSessionIdentityId(ws) {
   return getSession(ws)?.identityId || null;
+}
+
+function getActiveAccountSession(username) {
+  const user = normalizeUsername(username);
+  if (!user) return null;
+  const session = accountSessions.get(user);
+  if (!session?.ws || session.ws.readyState !== WebSocket.OPEN) return null;
+  return session;
+}
+
+function isActiveAccountSocket(ws) {
+  const session = getSession(ws);
+  if (!session?.user || !session.identityId) return false;
+  const active = getActiveAccountSession(session.user);
+  return active?.ws === ws && active.activeIdentityId === session.identityId;
+}
+
+async function sendCertCacheAndPending(user, ws) {
+  const all = await getCertCacheWithFallback();
+  sendJson(ws, { type: "cert_cache", items: all });
+
+  const flushed = await flushPendingWithFallback(user, ws);
+  sendJson(ws, { type: "pending_flushed", count: flushed });
+}
+
+async function activateAccountSession(ws, user, identityId) {
+  const active = getActiveAccountSession(user);
+  if (active?.ws && active.ws !== ws) {
+    console.log(
+      "[session] replacing active account device",
+      JSON.stringify({
+        username: user,
+        previousIdentityId: active.activeIdentityId || null,
+        nextIdentityId: identityId || null,
+      })
+    );
+    sendJson(active.ws, {
+      type: "force_logout",
+      reason: "logged_in_elsewhere",
+      previousIdentityId: active.activeIdentityId || null,
+      replacedByIdentityId: identityId || null,
+    });
+    try {
+      active.ws.close(4001, "Logged in elsewhere");
+    } catch {}
+  }
+
+  accountSessions.set(user, {
+    activeIdentityId: identityId,
+    ws,
+  });
+
+  await sendCertCacheAndPending(user, ws);
 }
 
 function makeIdentityScopedKey(username, identityId) {
@@ -628,40 +681,13 @@ wss.on("connection", (ws) => {
         return sendJson(ws, { type: "error", error: "Empty username" });
       }
 
-      const existing = userToWs.get(user);
-      if (existing && existing !== ws) {
-        const previousIdentityId = getSessionIdentityId(existing);
-        console.log(
-          "[session] replacing active session",
-          JSON.stringify({
-            username: user,
-            previousIdentityId: previousIdentityId || null,
-            nextIdentityId: identityId || null,
-          })
-        );
-        sendJson(existing, {
-          type: "force_logout",
-          reason: "logged_in_elsewhere",
-          previousIdentityId: previousIdentityId || null,
-          replacedByIdentityId: identityId || null,
-        });
-        try {
-          existing.close(4001, "Logged in elsewhere");
-        } catch {}
-      }
-
       wsToSession.set(ws, { user, identityId: identityId || null });
-      userToWs.set(user, ws);
 
       sendJson(ws, { type: "registered", user, identityId: identityId || null });
 
-      // ===== send certs BEFORE flushing offline messages =====
-      const all = await getCertCacheWithFallback();
-      sendJson(ws, { type: "cert_cache", items: all });
-
-      // ===== THEN flush pending offline messages =====
-      const flushed = await flushPendingWithFallback(user, ws);
-      sendJson(ws, { type: "pending_flushed", count: flushed });
+      if (identityId) {
+        await activateAccountSession(ws, user, identityId);
+      }
       return;
     }
 
@@ -687,6 +713,7 @@ wss.on("connection", (ws) => {
         user: session.user,
         identityId,
       });
+      await activateAccountSession(ws, session.user, identityId);
       return sendJson(ws, {
         type: "identity_bound",
         user: session.user,
@@ -704,6 +731,9 @@ wss.on("connection", (ws) => {
       const registeredIdentityId = getSessionIdentityId(ws);
       if (!registeredUser) {
         return sendJson(ws, { type: "error", error: "Not registered" });
+      }
+      if (!registeredIdentityId || !isActiveAccountSocket(ws)) {
+        return sendJson(ws, { type: "error", error: "Identity not bound" });
       }
 
       const certUser = normalizeUsername(data.certificate.username);
@@ -724,13 +754,6 @@ wss.on("connection", (ws) => {
       if (registeredIdentityId && certIdentityId !== registeredIdentityId) {
         return sendJson(ws, { type: "error", error: "Certificate identity mismatch" });
       }
-      if (!registeredIdentityId) {
-        wsToSession.set(ws, {
-          user: registeredUser,
-          identityId: certIdentityId,
-        });
-      }
-
       // Sign exact string verified by clients
       const certString = JSON.stringify(cert);
       const sigAb = await signWithECDSA(CA.sec, certString);
@@ -767,6 +790,9 @@ wss.on("connection", (ws) => {
         !!data.ciphertextB64
       );
       const from = getSessionUser(ws) ?? "unknown";
+      if (!isActiveAccountSocket(ws)) {
+        return sendJson(ws, { type: "error", error: "Identity not bound" });
+      }
       const to = normalizeUsername(data.to);
       if (!to) {
         return sendJson(ws, { type: "error", error: "Empty recipient" });
@@ -783,10 +809,13 @@ wss.on("connection", (ws) => {
 
       await saveCiphertextHistoryWithFallback(msgObj);
 
-      const toWs = userToWs.get(to);
+      const activeTargetSession = getActiveAccountSession(to);
+      const toWs = activeTargetSession?.ws || null;
       console.log(
         "[send] toNormalized=",
         to,
+        "activeIdentityId=",
+        activeTargetSession?.activeIdentityId || null,
         "toWs?",
         !!toWs,
         "readyState=",
@@ -822,7 +851,12 @@ wss.on("connection", (ws) => {
         });
       }
 
-      if (!identityId || (registeredIdentityId && identityId !== registeredIdentityId)) {
+      if (
+        !identityId ||
+        !registeredIdentityId ||
+        identityId !== registeredIdentityId ||
+        !isActiveAccountSocket(ws)
+      ) {
         return sendJson(ws, {
           type: "backup_saved",
           ok: false,
@@ -892,8 +926,9 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     const user = getSessionUser(ws);
     wsToSession.delete(ws);
-    if (user && userToWs.get(user) === ws) {
-      userToWs.delete(user);
+    const active = user ? accountSessions.get(user) : null;
+    if (user && active?.ws === ws) {
+      accountSessions.delete(user);
     }
   });
 });

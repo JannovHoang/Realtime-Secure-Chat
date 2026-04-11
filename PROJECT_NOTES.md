@@ -979,6 +979,23 @@ Transitional rule recommended for this phase:
 - one active/preferred device per account at a time
 - no full multi-device fan-out yet
 
+Safety notes for this phase:
+
+- a websocket session is not considered active/routable until `identity_bind` has completed
+- cert selection remains a transitional limitation; this phase does not fully solve active-device certificate selection on the client
+- pending/offline delivery remains a transitional limitation; this phase does not make pending queues fully per-device yet
+
+Checkpoint 1 implementation status:
+
+- server runtime now has `accountSessions`
+  - `username -> { activeIdentityId, ws }`
+- `register` now creates only a temporary websocket session
+- session becomes active/routable only after `identity_bind`
+- active session replacement is now performed through `accountSessions`
+- `cert_submit`, `send`, and `backup_save` now require an active identity-bound account socket
+- realtime `send` lookup now uses the active account session instead of a raw username-to-socket map
+- session semantics are still intentionally `1 active session / username`
+
 ### Phase 4 - Backup / Restore Per Device
 
 Goal:
