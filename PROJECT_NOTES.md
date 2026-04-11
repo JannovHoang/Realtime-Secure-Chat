@@ -853,6 +853,98 @@ Reason:
 
 This is currently a known UX limitation, not a cryptographic failure.
 
+## Browser-Local Identity Switching / Start Failure Guidance
+
+This is the next small UX cleanup phase after restore targeting.
+
+Goal:
+
+- make it clear what happens when a browser already stores one local identity but the user tries to `Start` with a password that does not unlock it
+- keep `Start` semantics narrow and predictable
+- keep `Restore from Cloud` as the official way to switch the browser to another identity
+
+### Semantics
+
+`Start` means:
+
+- open the local identity currently stored in this browser for the entered username
+
+`Start` must not:
+
+- guess another identity
+- try multiple cloud backups
+- auto-restore
+- auto-create a new identity if the browser already has a local vault
+
+`Restore from Cloud` means:
+
+- restore a selected cloud identity backup
+- if the browser already has a different local identity, overwrite it only after explicit confirmation
+
+`Continue` means:
+
+- create a new local identity when no local vault exists in this browser
+
+It does not mean:
+
+- recover an existing identity just because the user typed a password that was previously used elsewhere
+
+### Implemented Start Failure Guidance
+
+When `Start` fails because the browser already has a local vault but the entered password does not unlock it, the UI should not only say `Incorrect password`.
+
+Current user-facing guidance:
+
+- `The password did not unlock the local identity currently stored in this browser. To use a different identity, restore it from cloud first.`
+
+Important:
+
+- the UI must not claim the entered password belongs to another identity
+- the app only knows that the entered password did not unlock the local identity currently stored in this browser
+
+### Restore-As-Switch Flow
+
+If the browser currently stores identity A and the user wants to use identity B:
+
+1. if currently inside chat, `Logout` to return to the pre-start UI
+2. enter username
+3. enter password B
+4. click `Restore from Cloud`
+5. choose backup identity B
+6. confirm the overwrite warning
+7. restore completes
+8. enter password B again
+9. click `Start`
+
+Important:
+
+- switching happens because restore overwrites the local browser identity
+- `Logout` is only a UI step to return to the restore-capable state
+
+### Required Tests
+
+1. Browser stores identity A, user starts with password A:
+   - `Start` succeeds
+
+2. Browser stores identity A, user starts with a wrong password or password B:
+   - `Start` fails
+   - UI explains that the password did not unlock the local identity currently stored in this browser
+   - UI suggests restoring another identity from cloud first
+
+3. Browser stores identity A, user restores identity B and confirms overwrite:
+   - restore succeeds
+   - `Start` with password B succeeds
+   - browser now runs as identity B
+
+4. Browser stores identity A, user starts restore of identity B but cancels overwrite:
+   - no partial import occurs
+   - browser still stores identity A
+   - `Start` with password A still succeeds
+
+5. Browser is clean and user chooses `Continue`:
+   - app creates a new local identity
+   - this is not treated as recovery of an older identity
+
 ### Phase 3 - Account To Active Device Routing
 
 Goal:

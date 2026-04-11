@@ -371,6 +371,12 @@ function buildRestoreOverwriteMessage(username, localIdentityMeta, payload) {
   return `This browser currently stores a different local identity for account ${username}. Restoring this backup will replace the current identity with identity ${targetIdentityShort}. Continue?`;
 }
 
+function isIncorrectPasswordError(err) {
+  return String(err?.message || err || "")
+    .toLowerCase()
+    .includes("incorrect password");
+}
+
 function markDisconnected() {
   if (!started || disconnected) return;
   disconnected = true;
@@ -662,6 +668,7 @@ $("password").addEventListener("input", () => setButtons());
 
 /* ===================== Start ===================== */
 $("startBtn").onclick = async () => {
+  let startHadLocalVault = false;
   try {
     const username = normalizeKeepCase($("username").value);
     const password = $("password").value;
@@ -673,6 +680,7 @@ $("startBtn").onclick = async () => {
     }
 
     const hasLocalVault = await hasPersistedVault(username);
+    startHadLocalVault = hasLocalVault;
     if (!hasLocalVault && !restoredThisSession && !continueWithoutRestoreFor.has(username)) {
       const choice = await askStartGuard();
       if (choice === "restore") {
@@ -727,7 +735,14 @@ $("startBtn").onclick = async () => {
     disconnected = false;
     setButtons();
     setStatus("Start failed", false);
-    toast("Start failed: " + (e?.message || e), "error");
+    if (startHadLocalVault && isIncorrectPasswordError(e)) {
+      toast(
+        "The password did not unlock the local identity currently stored in this browser. To use a different identity, restore it from cloud first.",
+        "error"
+      );
+    } else {
+      toast("Start failed: " + (e?.message || e), "error");
+    }
   }
 };
 
