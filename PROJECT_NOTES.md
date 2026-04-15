@@ -1294,6 +1294,35 @@ Bug found during testing:
 - offline pending may be tagged for identity B, but the sender can still encrypt using an old cert if the recipient is offline and cert cache only knows live `accountSessions`
 - fix: cert cache now uses persisted active device metadata so senders can select the last active cert even when recipient is offline
 
+Manual testing observed for Pending / Offline Delivery Identity-Aware Cleanup:
+
+- `account_active_devices` is created and updated when an account identity becomes active
+- logging in with a different identity under the same username updates the same active-device document rather than creating duplicate account records
+- offline pending messages now store `recipientIdentityId` when the target identity can be resolved
+- `senderIdentityId` is stored on new pending messages when available
+- login with the matching identity flushes the targeted pending message
+- after the cert-cache fix, offline messages sent to the last active identity can be decrypted and displayed when that identity logs back in
+- legacy pending without `recipientIdentityId` remains supported as transitional fallback
+
+Checkpoint 4 - docs and regression:
+
+- completed
+- manual testing confirmed active-device persistence, pending metadata, identity-aware flush, and the offline cert-cache fix
+
+Phase conclusion:
+
+- Pending / Offline Delivery Identity-Aware Cleanup is complete for the intended transitional scope
+- pending is no longer completely username-blind for new messages
+- pending delivery now aligns better with account -> active identity routing
+- legacy fallback remains only for old or identity-unknown pending messages
+
+Remaining limitations:
+
+- still no multi-device fan-out
+- still no simultaneous active devices under one account
+- legacy pending fallback can still flush old username-only items
+- recent-message catch-up has not started yet
+
 Checkpoint 4 - docs and regression:
 
 - document results
