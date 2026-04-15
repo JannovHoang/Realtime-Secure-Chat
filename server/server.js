@@ -24,6 +24,7 @@ const {
   saveIdentityBackup,
   getIdentityBackup,
   listIdentityBackups,
+  saveAccountActiveDevice,
 } = require("./mongo");
 
 const {
@@ -203,6 +204,12 @@ async function activateAccountSession(ws, user, identityId) {
     activeIdentityId: identityId,
     ws,
   });
+
+  try {
+    await saveAccountActiveDevice(user, identityId);
+  } catch (e) {
+    console.warn("[account_active_devices] mongo save failed:", e);
+  }
 
   await sendCertCacheAndPending(user, ws);
 }

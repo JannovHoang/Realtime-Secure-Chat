@@ -1067,6 +1067,277 @@ Phase conclusion:
 - the project still does not support full multi-device fan-out or multiple simultaneous active devices under one account
 - pending/offline delivery should be the next identity-aware cleanup candidate before large catch-up work
 
+## Pending / Offline Delivery Identity-Aware Cleanup Plan
+
+This is the recommended next phase after Account -> Active Device Routing.
+
+### Why This Phase Exists
+
+Realtime routing now follows the transitional model:
+
+- `account(username) -> activeIdentityId -> socket`
+
+But pending/offline delivery is still transitional and mostly username-based.
+
+That means offline messages can still be queued/flushed too broadly by username, even though the runtime now understands active device identity.
+
+This phase should make pending delivery aware of:
+
+- recipient account
+- recipient identity
+
+without implementing full multi-device fan-out.
+
+### Scope
+
+This phase should do:
+
+- persist the last active identity for an account
+- queue offline messages with `recipientIdentityId` when known
+- flush pending only to the matching identity, plus legacy pending items without identity metadata
+
+This phase should not do:
+
+- multi-device fan-out
+- pending delivery to all linked devices
+- recent-message catch-up
+- full history restore
+- Google login/account auth
+- full device management UI
+
+### Core Semantics
+
+Current account label:
+
+- `username`
+
+Current device identity:
+
+- `identityId`
+
+When a sender sends to account `Giang`, server should determine the intended recipient identity:
+
+1. if `Giang` is online:
+   - use `accountSessions.get("Giang").activeIdentityId`
+2. if `Giang` is offline:
+   - use the last persisted active identity for `Giang`
+3. if no identity is known:
+   - fall back to legacy username-only pending
+   - log this as transitional fallback
+
+### Recommended Mongo Addition
+
+Add collection:
+
+- `account_active_devices`
+
+Document shape:
+
+```json
+{
+  "username": "Giang",
+  "activeIdentityId": "abc...",
+  "updatedAt": "..."
+}
+```
+
+Index:
+
+```js
+{ "username": 1 } unique
+```
+
+Purpose:
+
+- remember the last active identity for an account across server restarts
+
+### Pending Message Metadata
+
+Pending messages should add:
+
+```json
+{
+  "recipientIdentityId": "abc..."
+}
+```
+
+Recommended if straightforward:
+
+```json
+{
+  "senderIdentityId": "..."
+}
+```
+
+Minimum required for this phase:
+
+- `recipientIdentityId`
+
+### Queue Rules
+
+Online recipient:
+
+- route realtime to the active account socket
+- no pending write
+
+Offline recipient with known active identity:
+
+- queue pending with:
+  - `to`
+  - `recipientIdentityId`
+
+Offline recipient without known active identity:
+
+- queue legacy pending without `recipientIdentityId`
+- log:
+  - `pending queued without recipientIdentityId`
+
+### Flush Rules
+
+When account `Giang` logs in with identity B:
+
+Flush pending messages where:
+
+- `to = Giang`
+- and either:
+  - `recipientIdentityId = B`
+  - or `recipientIdentityId` is missing / legacy
+
+Do not flush messages targeted at identity A into identity B.
+
+Reason:
+
+- ciphertext created for identity A should not be delivered to identity B
+
+### Files Expected To Change
+
+`server/mongo.js`:
+
+- add active device helpers:
+  - `saveAccountActiveDevice(username, identityId)`
+  - `getAccountActiveDevice(username)`
+- add/update pending helpers:
+  - enqueue with `recipientIdentityId`
+  - fetch pending by `username + identityId`
+
+`server/server.js`:
+
+- persist active device when account session becomes active
+- choose offline pending target identity from:
+  1. live `accountSessions`
+  2. Mongo `account_active_devices`
+  3. legacy fallback
+- flush pending by matching identity
+
+`client/chat.js`:
+
+- likely no required change if pending message format remains compatible
+- client can ignore sender/recipient identity metadata for now
+
+`PROJECT_NOTES.md`:
+
+- track implementation status and test results
+
+### Checkpoints
+
+Checkpoint 1 - active device persistence:
+
+- add `account_active_devices`
+- add helpers and index
+- persist active identity on session activation
+
+Checkpoint 1 implementation status:
+
+- `account_active_devices` persistence has been added
+- Mongo helpers added:
+  - `saveAccountActiveDevice(username, activeIdentityId)`
+  - `getAccountActiveDevice(username)`
+- unique index on `{ username: 1 }` has been added for `account_active_devices`
+- server now persists the active identity whenever an account session is activated
+
+Checkpoint 2 - pending metadata on enqueue:
+
+- add `recipientIdentityId` to pending messages when known
+- add `senderIdentityId` if straightforward
+- keep fallback legacy path if no target identity is known
+
+Checkpoint 3 - identity-aware pending flush:
+
+- login identity B flushes:
+  - pending targeted to B
+  - legacy pending without identity metadata
+- login identity B does not flush pending targeted to A
+
+Checkpoint 4 - docs and regression:
+
+- document results
+- confirm pending identity behavior manually
+
+### Tests
+
+Test 1 - active device persistence:
+
+- login `Giang` identity B
+- Mongo `account_active_devices` contains:
+  - `username = Giang`
+  - `activeIdentityId = B`
+
+Test 2 - offline pending to known identity:
+
+- `Giang` identity B goes offline
+- `Minh` sends to `Giang`
+- pending message contains:
+  - `to = Giang`
+  - `recipientIdentityId = B`
+
+Test 3 - matching identity flush:
+
+- `Giang` logs back in as identity B
+- pending targeted B flushes
+- `Giang` receives/decrypts it
+
+Test 4 - do not flush wrong identity:
+
+- create or preserve pending targeted A
+- login `Giang` as identity B
+- pending targeted A must not flush into B
+
+Test 5 - legacy pending fallback:
+
+- old pending item without `recipientIdentityId` still flushes
+- this remains transitional support
+
+Test 6 - restart server:
+
+- active identity B is persisted
+- restart server
+- while `Giang` is offline, `Minh` sends to `Giang`
+- pending still targets B using Mongo active device record
+
+### Success Criteria
+
+This phase is successful if:
+
+- active account identity survives server restart through Mongo
+- offline pending messages get `recipientIdentityId` when possible
+- pending targeted to identity A is not flushed into identity B
+- legacy pending still does not break
+- existing realtime routing remains unchanged
+
+### Expected Limitations After This Phase
+
+Still not implemented:
+
+- fan-out to multiple linked devices
+- multiple simultaneous active devices per account
+- full per-device message history
+- recent-message catch-up
+
+But the project becomes safer because:
+
+- pending is no longer completely username-blind
+- offline delivery aligns better with active account/device routing
+
 ### Phase 4 - Backup / Restore Per Device
 
 Goal:

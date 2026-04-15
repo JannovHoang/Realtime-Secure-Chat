@@ -164,6 +164,30 @@ async function listIdentityBackups(username) {
     .toArray();
 }
 
+async function saveAccountActiveDevice(username, activeIdentityId) {
+  const currentDb = getDb();
+  const now = new Date();
+  await currentDb.collection("account_active_devices").updateOne(
+    { username },
+    {
+      $set: {
+        username,
+        activeIdentityId,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        createdAt: now,
+      },
+    },
+    { upsert: true }
+  );
+}
+
+async function getAccountActiveDevice(username) {
+  const currentDb = getDb();
+  return currentDb.collection("account_active_devices").findOne({ username });
+}
+
 async function dropLegacyUniqueIndexIfPresent(collection, indexName) {
   try {
     const indexes = await collection.indexes();
@@ -184,6 +208,7 @@ async function ensureIndexes() {
 
   const certs = currentDb.collection("certs");
   const backups = currentDb.collection("identity_backups");
+  const activeDevices = currentDb.collection("account_active_devices");
 
   await dropLegacyUniqueIndexIfPresent(certs, "username_1");
   await certs.createIndex({ username: 1, identityId: 1 }, { unique: true });
@@ -194,6 +219,8 @@ async function ensureIndexes() {
 
   await dropLegacyUniqueIndexIfPresent(backups, "username_1");
   await backups.createIndex({ username: 1, identityId: 1 }, { unique: true });
+
+  await activeDevices.createIndex({ username: 1 }, { unique: true });
 }
 
 module.exports = {
@@ -208,5 +235,7 @@ module.exports = {
   saveIdentityBackup,
   getIdentityBackup,
   listIdentityBackups,
+  saveAccountActiveDevice,
+  getAccountActiveDevice,
   ensureIndexes,
 };
