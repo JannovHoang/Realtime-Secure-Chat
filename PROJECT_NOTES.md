@@ -1279,6 +1279,21 @@ Checkpoint 3 - identity-aware pending flush:
   - legacy pending without identity metadata
 - login identity B does not flush pending targeted to A
 
+Checkpoint 3 implementation status:
+
+- Mongo pending fetch now supports `username + identityId`
+- login identity B flushes:
+  - pending messages with `recipientIdentityId = B`
+  - legacy pending messages without `recipientIdentityId`
+- login identity B does not fetch pending messages targeted to identity A
+- file fallback pending flush now applies the same identity filter
+- cert cache active identity selection now also consults persisted `account_active_devices`, not only currently-online sessions
+
+Bug found during testing:
+
+- offline pending may be tagged for identity B, but the sender can still encrypt using an old cert if the recipient is offline and cert cache only knows live `accountSessions`
+- fix: cert cache now uses persisted active device metadata so senders can select the last active cert even when recipient is offline
+
 Checkpoint 4 - docs and regression:
 
 - document results

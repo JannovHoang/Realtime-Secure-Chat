@@ -17,6 +17,7 @@ const {
   ensureIndexes,
   enqueuePendingMessage,
   getPendingMessagesForUser,
+  getPendingMessagesForUserIdentity,
   deletePendingMessagesByIds,
   saveCert,
   getAllCerts,
@@ -171,11 +172,11 @@ function isActiveAccountSocket(ws) {
   return active?.ws === ws && active.activeIdentityId === session.identityId;
 }
 
-async function sendCertCacheAndPending(user, ws) {
+async function sendCertCacheAndPending(user, ws, identityId = null) {
   const all = await getCertCacheWithFallback();
   sendJson(ws, { type: "cert_cache", items: all });
 
-  const flushed = await flushPendingWithFallback(user, ws);
+  const flushed = await flushPendingWithFallback(user, ws, identityId);
   sendJson(ws, { type: "pending_flushed", count: flushed });
 }
 
@@ -212,7 +213,7 @@ async function activateAccountSession(ws, user, identityId) {
     console.warn("[account_active_devices] mongo save failed:", e);
   }
 
-  await sendCertCacheAndPending(user, ws);
+  await sendCertCacheAndPending(user, ws, identityId);
 }
 
 async function resolvePendingRecipientIdentityId(username, activeTargetSession = null) {
@@ -349,26 +350,37 @@ function enqueuePending(to, msgObj) {
   schedulePendingSave();
 }
 
-function flushPending(user, ws) {
+function pendingMatchesIdentity(msg, identityId) {
+  const targetIdentityId = normalizeIdentityId(msg?.recipientIdentityId);
+  if (!targetIdentityId) return true;
+  return !!identityId && targetIdentityId === identityId;
+}
+
+function flushPending(user, ws, identityId = null) {
   const key = normalizeUsername(user);
   const q = pendingMsgs.get(key);
   if (!q || q.length === 0) return 0;
 
   let sent = 0;
-  while (q.length) {
-    const msg = q.shift();
+  const remaining = [];
+
+  for (const msg of q) {
+    if (!pendingMatchesIdentity(msg, identityId)) {
+      remaining.push(msg);
+      continue;
+    }
     const ok = sendJson(ws, msg);
     if (!ok) {
-      q.unshift(msg);
+      remaining.push(msg);
       break;
     }
     sent++;
   }
 
-  if (q.length === 0) {
+  if (remaining.length === 0) {
     pendingMsgs.delete(key);
   } else {
-    pendingMsgs.set(key, q);
+    pendingMsgs.set(key, remaining);
   }
 
   schedulePendingSave();
@@ -390,12 +402,19 @@ async function enqueuePendingWithFallback(to, msgObj) {
   enqueuePending(key, msgObj);
 }
 
-async function flushPendingWithFallback(user, ws) {
+async function flushPendingWithFallback(user, ws, identityId = null) {
   const key = normalizeUsername(user);
+  const normalizedIdentityId = normalizeIdentityId(identityId);
   let sent = 0;
 
   try {
-    const docs = await getPendingMessagesForUser(key, MAX_PENDING_PER_USER);
+    const docs = normalizedIdentityId
+      ? await getPendingMessagesForUserIdentity(
+          key,
+          normalizedIdentityId,
+          MAX_PENDING_PER_USER
+        )
+      : await getPendingMessagesForUser(key, MAX_PENDING_PER_USER);
     const deliveredIds = [];
 
     for (const doc of docs) {
@@ -424,7 +443,7 @@ async function flushPendingWithFallback(user, ws) {
     console.warn("[pending] mongo flush failed, using file fallback:", e);
   }
 
-  sent += flushPending(key, ws);
+  sent += flushPending(key, ws, normalizedIdentityId || null);
   return sent;
 }
 
@@ -438,6 +457,22 @@ async function getCertCacheWithFallback() {
     for (const [username, session] of accountSessions.entries()) {
       if (session?.activeIdentityId) {
         activeByUser.set(username, session.activeIdentityId);
+      }
+    }
+
+    const usernames = Array.from(
+      new Set(docs.map((doc) => doc?.username).filter(Boolean))
+    );
+    for (const username of usernames) {
+      if (activeByUser.has(username)) continue;
+      try {
+        const activeDoc = await getAccountActiveDevice(username);
+        const activeIdentityId = normalizeIdentityId(activeDoc?.activeIdentityId);
+        if (activeIdentityId) {
+          activeByUser.set(username, activeIdentityId);
+        }
+      } catch (e) {
+        console.warn("[certs] active device lookup failed:", e);
       }
     }
 

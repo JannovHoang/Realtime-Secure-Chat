@@ -76,6 +76,23 @@ async function getPendingMessagesForUser(to, limit = 500) {
     .toArray();
 }
 
+async function getPendingMessagesForUserIdentity(to, identityId, limit = 500) {
+  const currentDb = getDb();
+  return currentDb
+    .collection("pending_messages")
+    .find({
+      to,
+      $or: [
+        { recipientIdentityId: identityId },
+        { recipientIdentityId: null },
+        { recipientIdentityId: { $exists: false } },
+      ],
+    })
+    .sort({ ts: 1, _id: 1 })
+    .limit(limit)
+    .toArray();
+}
+
 async function deletePendingMessagesByIds(ids) {
   if (!Array.isArray(ids) || ids.length === 0) return;
   const currentDb = getDb();
@@ -233,6 +250,7 @@ module.exports = {
   getDb,
   enqueuePendingMessage,
   getPendingMessagesForUser,
+  getPendingMessagesForUserIdentity,
   deletePendingMessagesByIds,
   saveCert,
   getAllCerts,
