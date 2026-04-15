@@ -25,6 +25,7 @@ const {
   getIdentityBackup,
   listIdentityBackups,
   saveAccountActiveDevice,
+  getAccountActiveDevice,
 } = require("./mongo");
 
 const {
@@ -214,6 +215,25 @@ async function activateAccountSession(ws, user, identityId) {
   await sendCertCacheAndPending(user, ws);
 }
 
+async function resolvePendingRecipientIdentityId(username, activeTargetSession = null) {
+  const liveIdentityId = normalizeIdentityId(activeTargetSession?.activeIdentityId);
+  if (liveIdentityId) return liveIdentityId;
+
+  try {
+    const doc = await getAccountActiveDevice(username);
+    const persistedIdentityId = normalizeIdentityId(doc?.activeIdentityId);
+    if (persistedIdentityId) return persistedIdentityId;
+  } catch (e) {
+    console.warn("[pending] active device lookup failed:", e);
+  }
+
+  console.warn(
+    "[pending] queueing without recipientIdentityId",
+    JSON.stringify({ username })
+  );
+  return null;
+}
+
 function makeIdentityScopedKey(username, identityId) {
   return `${normalizeUsername(username)}::${normalizeIdentityId(identityId)}`;
 }
@@ -383,6 +403,8 @@ async function flushPendingWithFallback(user, ws) {
         type: "message",
         from: doc.from,
         to: doc.to,
+        senderIdentityId: doc.senderIdentityId || null,
+        recipientIdentityId: doc.recipientIdentityId || null,
         header: doc.header,
         ciphertextB64: doc.ciphertextB64,
         ts: doc.ts,
@@ -828,15 +850,24 @@ wss.on("connection", (ws) => {
       if (!isActiveAccountSocket(ws)) {
         return sendJson(ws, { type: "error", error: "Identity not bound" });
       }
+      const senderIdentityId = getSessionIdentityId(ws);
       const to = normalizeUsername(data.to);
       if (!to) {
         return sendJson(ws, { type: "error", error: "Empty recipient" });
       }
 
+      const activeTargetSession = getActiveAccountSession(to);
+      const recipientIdentityId = await resolvePendingRecipientIdentityId(
+        to,
+        activeTargetSession
+      );
+
       const msgObj = {
         type: "message",
         from,
         to,
+        senderIdentityId: senderIdentityId || null,
+        recipientIdentityId: recipientIdentityId || null,
         header: data.header,
         ciphertextB64: data.ciphertextB64,
         ts: Date.now(),
@@ -844,13 +875,14 @@ wss.on("connection", (ws) => {
 
       await saveCiphertextHistoryWithFallback(msgObj);
 
-      const activeTargetSession = getActiveAccountSession(to);
       const toWs = activeTargetSession?.ws || null;
       console.log(
         "[send] toNormalized=",
         to,
         "activeIdentityId=",
         activeTargetSession?.activeIdentityId || null,
+        "pendingRecipientIdentityId=",
+        recipientIdentityId || null,
         "toWs?",
         !!toWs,
         "readyState=",

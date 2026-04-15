@@ -43,6 +43,8 @@ async function enqueuePendingMessage(to, msgObj, maxPerUser = 500) {
   await pending.insertOne({
     to,
     from: msgObj.from,
+    senderIdentityId: msgObj.senderIdentityId || null,
+    recipientIdentityId: msgObj.recipientIdentityId || null,
     header: msgObj.header,
     ciphertextB64: msgObj.ciphertextB64,
     ts: msgObj.ts,
@@ -205,6 +207,9 @@ async function ensureIndexes() {
   await currentDb
     .collection("pending_messages")
     .createIndex({ to: 1, ts: 1 });
+  await currentDb
+    .collection("pending_messages")
+    .createIndex({ to: 1, recipientIdentityId: 1, ts: 1 });
 
   const certs = currentDb.collection("certs");
   const backups = currentDb.collection("identity_backups");

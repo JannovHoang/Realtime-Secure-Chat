@@ -1261,6 +1261,17 @@ Checkpoint 2 - pending metadata on enqueue:
 - add `senderIdentityId` if straightforward
 - keep fallback legacy path if no target identity is known
 
+Checkpoint 2 implementation status:
+
+- pending messages now store `recipientIdentityId` when the server can resolve the intended target identity
+- pending messages also store `senderIdentityId` when available from the active sender session
+- recipient identity resolution order is:
+  1. live `accountSessions`
+  2. Mongo `account_active_devices`
+  3. legacy fallback with no `recipientIdentityId`
+- pending Mongo indexes now include `{ to, recipientIdentityId, ts }`
+- legacy fallback remains in place when no active identity can be resolved
+
 Checkpoint 3 - identity-aware pending flush:
 
 - login identity B flushes:
