@@ -1747,6 +1747,18 @@ Checkpoint 4 - open conversation / UI integration:
 - merge/dedupe and rerender
 - fetch/decrypt failures should not break chat
 
+Checkpoint 4 implementation status:
+
+- `client/ui/app.js` now imports `fetchRecentMessages` and `mergeRecentMessagesForDisplay`.
+- `loadHistory(peer)` renders local history first.
+- After local render, UI shows a small `Loading recent messages...` pill.
+- UI then fetches recent messages with limit `50`.
+- UI calls the safe merge path and rerenders merged history.
+- If recent fetch/decrypt/merge fails, the local conversation remains usable and a non-blocking info toast is shown.
+- `client/ui/style.css` now includes `.history-loading`.
+- `client/ui/app.js` syntax check passed through Node's module parser.
+- `npm run build` still cannot complete in the current environment because Vite/esbuild fails to spawn with `EPERM`.
+
 Checkpoint 5 - watermark / docs / regression:
 
 - optionally store local watermark per conversation:
