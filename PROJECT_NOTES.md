@@ -137,10 +137,14 @@ Important implication:
 
 Current MongoDB collections used by the project:
 
+- `account_active_devices`
+  Tracks the currently preferred/active identity for each username/account label.
 - `pending_messages`
   Offline queue, ciphertext only.
 - `certs`
   Persisted signed certificate cache.
+- `identity_backups`
+  Client-encrypted identity backup blobs, scoped by `username + identityId`.
 - `messages`
   Durable ciphertext history for direct messages.
 - `test_connection`
@@ -157,41 +161,212 @@ MongoDB is now part of the normal running system, not just a future plan.
 
 ## Current MongoDB Behavior
 
+### `account_active_devices`
+
+Purpose:
+
+- remember which identity is currently the active/preferred device for a username/account label
+- let the server route and encrypt toward the correct device identity even after restart
+- support the transitional model: one active device per username/account label
+
+Typical document shape:
+
+```js
+{
+  username: "Giang",
+  activeIdentityId: "8x6zfkOuU2_xGslMp6JR...",
+  updatedAt: ISODate("...")
+}
+```
+
+Behavior:
+
+- when a browser successfully starts and binds an identity, the server updates this collection
+- there should be one document per `username`
+- logging in with another identity under the same username updates the existing document, not creates many active-device documents
+- when the recipient is offline, the server can consult this collection to know which identity should receive pending messages
+- when building the certificate cache, the server can mark the active identity so the sender encrypts to the correct device
+
+Important implication:
+
+- this is not a full multi-device linked-device model yet
+- it is a transitional account -> active device pointer
+- it does not mean all devices receive every message
+
+Security note:
+
+- `activeIdentityId` is not secret
+- it is derived from public identity material and is used as routing metadata
+- private keys and ratchet state are not stored here
+
 ### `pending_messages`
 
 Purpose:
 
 - durable offline queue
+- store ciphertext messages waiting for the target active identity to come online
 
 Behavior:
 
 - when recipient is offline, ciphertext is inserted into Mongo
 - if Mongo queue write fails during runtime, server falls back to `pending.json`
-- when recipient logs in, server flushes pending messages
+- when recipient logs in, server flushes pending messages matching that recipient identity
 - successfully flushed pending items are deleted from Mongo
+
+Typical document shape:
+
+```js
+{
+  from: "Minh",
+  to: "Giang",
+  senderIdentityId: "identity_of_Minh",
+  recipientIdentityId: "active_identity_of_Giang",
+  envelope: {
+    header: "...",
+    ciphertextB64: "..."
+  },
+  ts: 1710000000000
+}
+```
+
+Important implication:
+
+- new pending messages are identity-aware when the target identity can be resolved
+- legacy pending messages without `recipientIdentityId` may still be flushed as fallback
+- the server still cannot decrypt message content because the stored message body is ciphertext
+
+Security note:
+
+- this collection stores routing metadata and ciphertext
+- it must not contain plaintext chat text
 
 ### `certs`
 
 Purpose:
 
 - preserve signed certificate cache across server restarts
+- let clients fetch peer public identity material needed for encrypted messaging
 
 Behavior:
 
 - on `cert_submit`, server signs the certificate and upserts it into Mongo
 - on `register`, server loads cert cache from Mongo and sends it before pending flush
+- cert persistence is now scoped by `username + identityId`
+- this avoids overwriting cert A just because cert B has the same username
+
+Typical document shape:
+
+```js
+{
+  username: "Giang",
+  identityId: "8x6zfkOuU2_xGslMp6JR...",
+  certificate: {
+    username: "Giang",
+    identityId: "8x6zfkOuU2_xGslMp6JR...",
+    pub: { /* long-term public key material */ },
+    signerPub: "...",
+    signatureB64: "..."
+  },
+  createdAt: ISODate("..."),
+  updatedAt: ISODate("...")
+}
+```
+
+Important implication:
+
+- one username can now have multiple cert records if it has multiple identity records
+- the sender should use the active identity metadata to choose the right cert
+- this is why `account_active_devices` matters for message routing
+
+Security note:
+
+- certificates and public keys are public metadata
+- they are used to verify identity and establish encrypted sessions
+- private keys are not stored in Mongo
+
+### `identity_backups`
+
+Purpose:
+
+- store encrypted cloud backups of local identity state
+- allow a browser to restore the same identity on another browser/machine
+- support explicit restore targeting by `username + identityId`
+
+Behavior:
+
+- backup is encrypted on the client before upload
+- server stores only encrypted backup blob plus metadata
+- backup persistence is scoped by `username + identityId`
+- one username can have multiple backup identities
+- restore UI lists available backup identities and fetches the selected identity explicitly
+
+Typical document shape:
+
+```js
+{
+  username: "Giang",
+  identityId: "8x6zfkOuU2_xGslMp6JR...",
+  version: 2,
+  ciphertextB64: "...",
+  ivB64: "...",
+  saltB64: "...",
+  kdf: { /* PBKDF2 metadata */ },
+  createdAt: ISODate("..."),
+  updatedAt: ISODate("...")
+}
+```
+
+Important implication:
+
+- backup A and backup B under the same username no longer overwrite each other blindly
+- restore-by-username alone is ambiguous once more than one backup identity exists
+- the official restore path must choose a specific `identityId`
+
+Security note:
+
+- the backup blob is encrypted client-side
+- the server cannot decrypt it without the user's backup password
+- `identityId`, timestamps, and version are metadata, not encrypted secrets
 
 ### `messages`
 
 Purpose:
 
 - durable ciphertext message history
+- future source for recent-message catch-up
 
 Behavior:
 
 - on every `send`, server saves ciphertext history into Mongo before relay/queue handling
 - this history survives restarts
 - current client UI does not yet fetch and rebuild from it
+
+Typical document shape:
+
+```js
+{
+  from: "Minh",
+  to: "Giang",
+  senderIdentityId: "identity_of_Minh",
+  recipientIdentityId: "active_identity_of_Giang",
+  envelope: {
+    header: "...",
+    ciphertextB64: "..."
+  },
+  ts: 1710000000000
+}
+```
+
+Important implication:
+
+- this is not the same as local UI history
+- browser UI currently still relies mostly on local vault state for displayed history
+- recent-message catch-up will later query this collection and let the client decrypt/merge recent messages
+
+Security note:
+
+- this collection stores ciphertext history, not plaintext messages
+- if MongoDB is exposed, attackers may see metadata such as sender, recipient, time, and identity ids, but not message plaintext
 
 ## Current Session Model
 
