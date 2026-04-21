@@ -1727,6 +1727,18 @@ Checkpoint 3 - safe catch-up decrypt path:
 - skip decrypt failures without resetting live state
 - outgoing local messages should remain sourced from existing local plaintext history
 
+Checkpoint 3 implementation status:
+
+- `client/chat.js` now clones the live messenger state using the existing export/import state helpers before catch-up decrypt.
+- Recent catch-up decrypt is attempted only against the cloned `MessengerClient`.
+- The live `messenger` instance is not passed to catch-up decrypt and is not saved/committed after catch-up.
+- Catch-up currently attempts only inbound `peer -> myUser` messages.
+- Outgoing `myUser -> peer` messages remain sourced from existing local plaintext history.
+- Successfully decrypted inbound recent messages are converted to local display history entries with `serverId` metadata.
+- Decrypt failures are skipped without resetting peer state and without affecting live chat state.
+- `mergeRecentMessagesForDisplay(peer, recentItems)` was added as the safe merge entry point for the later UI/open-conversation integration.
+- `client/chat.js` syntax check passed through Node's module parser.
+
 Checkpoint 4 - open conversation / UI integration:
 
 - when opening a conversation, render local history first

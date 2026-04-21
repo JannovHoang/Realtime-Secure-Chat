@@ -210,6 +210,117 @@ function normalizeHistoryRecentItems(items) {
   return normalized;
 }
 
+function localHistoryDedupeKey(item) {
+  if (item?.serverId) return `server:${item.serverId}`;
+  return `local:${item?.from || ""}|${item?.ts || ""}|${item?.text || ""}`;
+}
+
+async function cloneMessengerForCatchUp() {
+  if (!messenger || !caPubKey || !govPubKey) {
+    throw new Error("Call initChat() first");
+  }
+
+  const state = await exportMessengerState(messenger);
+  const clone = new MessengerClient(caPubKey, govPubKey);
+  await importMessengerState(clone, state);
+  return clone;
+}
+
+async function decryptRecentMessagesForDisplay(peer, recentItems) {
+  const p = normalizeUsername(peer);
+  if (!p || !myUser) return [];
+
+  const items = normalizeHistoryRecentItems(recentItems);
+  if (items.length === 0) return [];
+
+  const temp = await cloneMessengerForCatchUp();
+  const display = [];
+
+  for (const item of items) {
+    // Phase 1 catch-up only attempts inbound peer -> me. Outgoing messages
+    // should come from existing local plaintext history.
+    if (item.from !== p || item.to !== myUser) continue;
+
+    try {
+      const ciphertext = b64ToAb(item.envelope.ciphertextB64);
+      const plaintext = await temp.receiveMessage(p, [
+        item.envelope.header,
+        ciphertext,
+      ]);
+      display.push({
+        from: p,
+        text: plaintext,
+        ts: item.ts,
+        serverId: item._id,
+        source: "recent_catchup",
+      });
+    } catch {
+      // Best-effort only. Never reset or mutate the live ratchet state here.
+    }
+  }
+
+  return display;
+}
+
+async function loadLocalConversationHistory(peer) {
+  const p = normalizeUsername(peer);
+  if (!p) return [];
+
+  const key = await threadKey(p);
+  const history = (await loadRecord(key)) || "[]";
+  try {
+    const arr = JSON.parse(history);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+async function mergeDisplayMessagesIntoLocalHistory(peer, displayMessages) {
+  const p = normalizeUsername(peer);
+  if (!p) return [];
+  if (!Array.isArray(displayMessages) || displayMessages.length === 0) {
+    return loadLocalConversationHistory(p);
+  }
+
+  const key = await threadKey(p);
+  const history = (await loadRecord(key)) || "[]";
+  let arr;
+  try {
+    arr = JSON.parse(history);
+    if (!Array.isArray(arr)) arr = [];
+  } catch {
+    arr = [];
+  }
+
+  const seen = new Set(arr.map(localHistoryDedupeKey));
+  for (const msg of displayMessages) {
+    if (!msg || typeof msg.text !== "string" || !msg.from) continue;
+    const next = {
+      from: msg.from,
+      text: msg.text,
+      ts: Number.isFinite(Number(msg.ts)) ? Number(msg.ts) : Date.now(),
+    };
+    if (msg.serverId) next.serverId = msg.serverId;
+    if (msg.source) next.source = msg.source;
+
+    const dedupeKey = localHistoryDedupeKey(next);
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    arr.push(next);
+  }
+
+  arr.sort((a, b) => {
+    const at = Number(a?.ts) || 0;
+    const bt = Number(b?.ts) || 0;
+    return at - bt;
+  });
+
+  await storeRecord(key, JSON.stringify(arr));
+  await addConversationPeer(p);
+  return arr;
+}
+
 /* ===================== Persist / Restore Double Ratchet state ===================== */
 async function exportHmacKeyRawB64(hmacKey) {
   const raw = await crypto.subtle.exportKey("raw", hmacKey);
@@ -972,6 +1083,12 @@ export async function fetchRecentMessages(peer, limit = HISTORY_RECENT_DEFAULT_L
       limit: safeLimit,
     });
   });
+}
+
+export async function mergeRecentMessagesForDisplay(peer, recentItems) {
+  if (!messenger) throw new Error("Call initChat() first");
+  const displayMessages = await decryptRecentMessagesForDisplay(peer, recentItems);
+  return mergeDisplayMessagesIntoLocalHistory(peer, displayMessages);
 }
 
 export async function fetchCloudBackup(username, identityId = null) {
