@@ -135,6 +135,19 @@ async function saveCiphertextMessage(msgDoc) {
   await currentDb.collection("messages").insertOne(msgDoc);
 }
 
+async function getRecentMessagesForConversation(conversationId, limit = 50) {
+  const currentDb = getDb();
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 100));
+  const docs = await currentDb
+    .collection("messages")
+    .find({ conversationId })
+    .sort({ ts: -1, _id: -1 })
+    .limit(safeLimit)
+    .toArray();
+
+  return docs.reverse();
+}
+
 async function saveIdentityBackup(username, backupDoc) {
   const currentDb = getDb();
   const now = new Date();
@@ -255,6 +268,7 @@ module.exports = {
   saveCert,
   getAllCerts,
   saveCiphertextMessage,
+  getRecentMessagesForConversation,
   saveIdentityBackup,
   getIdentityBackup,
   listIdentityBackups,

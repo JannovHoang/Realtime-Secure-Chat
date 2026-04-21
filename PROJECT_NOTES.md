@@ -1685,6 +1685,16 @@ Checkpoint 1 - server recent history query:
 - add WebSocket `history_fetch_recent`
 - return ciphertext + metadata + Mongo `_id`
 
+Checkpoint 1 implementation status:
+
+- `server/mongo.js` now has `getRecentMessagesForConversation(conversationId, limit)`.
+- The helper queries `messages` by `conversationId`, sorts by `ts` descending for the recent window, limits to a safe maximum, then reverses to ascending before returning.
+- `server/server.js` now accepts WebSocket `history_fetch_recent`.
+- The handler requires an active identity-bound account socket.
+- The server replies with `history_recent`, including `_id`, `from`, `to`, `senderIdentityId`, `recipientIdentityId`, `envelope`, and `ts`.
+- New saved `messages` documents now include `senderIdentityId` and `recipientIdentityId` for catch-up metadata.
+- Syntax checks passed for `server/mongo.js` and `server/server.js`.
+
 Checkpoint 2 - client fetch / validate / dedupe skeleton:
 
 - add `fetchRecentMessages(peer, limit)` in `client/chat.js`

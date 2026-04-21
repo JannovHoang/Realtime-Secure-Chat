@@ -22,6 +22,7 @@ const {
   saveCert,
   getAllCerts,
   saveCiphertextMessage,
+  getRecentMessagesForConversation,
   saveIdentityBackup,
   getIdentityBackup,
   listIdentityBackups,
@@ -52,6 +53,8 @@ const MAX_BACKUP_BLOB_B64_LEN = process.env.MAX_BACKUP_BLOB_B64_LEN
   : 8 * 1024 * 1024;
 const BACKUP_GET_WINDOW_MS = 5 * 60 * 1000;
 const BACKUP_GET_LIMIT = 10;
+const HISTORY_RECENT_DEFAULT_LIMIT = 50;
+const HISTORY_RECENT_MAX_LIMIT = 100;
 const backupGetRateLimit = new Map(); // ip -> timestamps[]
 
 function loadKeysFile() {
@@ -302,6 +305,32 @@ function makeConversationId(a, b) {
   return left < right ? `dm:${left}<->${right}` : `dm:${right}<->${left}`;
 }
 
+function normalizeRecentLimit(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return HISTORY_RECENT_DEFAULT_LIMIT;
+  return Math.max(1, Math.min(Math.floor(n), HISTORY_RECENT_MAX_LIMIT));
+}
+
+function toHistoryRecentItem(doc) {
+  if (!doc?._id || !doc.from || !doc.to || !Number.isFinite(doc.ts)) return null;
+  if (typeof doc.header !== "object" || typeof doc.ciphertextB64 !== "string") {
+    return null;
+  }
+
+  return {
+    _id: String(doc._id),
+    from: doc.from,
+    to: doc.to,
+    senderIdentityId: doc.senderIdentityId || null,
+    recipientIdentityId: doc.recipientIdentityId || null,
+    envelope: {
+      header: doc.header,
+      ciphertextB64: doc.ciphertextB64,
+    },
+    ts: doc.ts,
+  };
+}
+
 // ===== Pending persistence =====
 function loadPendingFile() {
   if (!fs.existsSync(PENDING_PATH)) return;
@@ -524,6 +553,8 @@ async function saveCiphertextHistoryWithFallback(msgObj) {
       conversationId: makeConversationId(msgObj.from, msgObj.to),
       from: msgObj.from,
       to: msgObj.to,
+      senderIdentityId: msgObj.senderIdentityId || null,
+      recipientIdentityId: msgObj.recipientIdentityId || null,
       header: msgObj.header,
       ciphertextB64: msgObj.ciphertextB64,
       ts: msgObj.ts,
@@ -935,6 +966,48 @@ wss.on("connection", (ws) => {
 
       // Tell sender it was queued
       return sendJson(ws, { type: "delivery", ok: true, to, queued: true });
+    }
+
+    if (data.type === "history_fetch_recent") {
+      const requestId = typeof data.requestId === "string" ? data.requestId : null;
+      const user = getSessionUser(ws);
+      const identityId = getSessionIdentityId(ws);
+      const peer = normalizeUsername(data.peer);
+      const limit = normalizeRecentLimit(data.limit);
+
+      if (!requestId || !user || !identityId || !peer || !isActiveAccountSocket(ws)) {
+        return sendJson(ws, {
+          type: "history_recent",
+          ok: false,
+          requestId,
+          peer: peer || null,
+          messages: [],
+          error: "History unavailable",
+        });
+      }
+
+      try {
+        const conversationId = makeConversationId(user, peer);
+        const docs = await getRecentMessagesForConversation(conversationId, limit);
+        const messages = docs.map(toHistoryRecentItem).filter(Boolean);
+        return sendJson(ws, {
+          type: "history_recent",
+          ok: true,
+          requestId,
+          peer,
+          messages,
+        });
+      } catch (err) {
+        console.warn("[history_recent] failed:", err);
+        return sendJson(ws, {
+          type: "history_recent",
+          ok: false,
+          requestId,
+          peer,
+          messages: [],
+          error: "History unavailable",
+        });
+      }
     }
 
     if (data.type === "backup_save") {
