@@ -1588,16 +1588,152 @@ This should only begin after identity model, policy model, and routing model are
 
 Goal:
 
-- fetch a recent window of ciphertext messages
-- per conversation
-- decrypt what is possible
-- merge and dedupe safely
+- fetch a recent window of ciphertext messages from Mongo
+- per conversation, only when the user opens that conversation
+- decrypt what is possible as a best-effort display recovery
+- merge and dedupe safely without breaking live chat state
 
 Not in scope for that phase:
 
 - full history rebuild
 - deep pagination
 - global sync of every conversation at login
+- Google login / account auth
+- React UI migration
+- committing catch-up ratchet state into the live ratchet state
+
+Core rules to lock before implementation:
+
+- Mongo should query recent messages with `ts` descending for efficient `limit`.
+- Server should reverse the selected window to ascending `ts` before returning `history_recent`.
+- Client should still sort ascending defensively before any processing.
+- Catch-up decrypt must not mutate the live Double Ratchet state.
+- This phase only merges display/local history; it does not commit temporary catch-up ratchet state into live state in any case.
+- Incoming messages from peer to me may be decrypted best-effort from a temporary/cloned state.
+- Outgoing messages from me to peer should prefer existing local plaintext history; do not force re-decrypt outgoing messages in this phase.
+- Pending flush happens after login/start and before the user-triggered recent fetch.
+- Dedupe must prioritize Mongo `_id`; hash-based dedupe is only a fallback for older local history.
+
+Recommended implementation transport:
+
+- Use WebSocket message types instead of adding a new public HTTP endpoint.
+- Client sends:
+
+```js
+{
+  type: "history_fetch_recent",
+  peer: "Minh",
+  limit: 50,
+  requestId: "..."
+}
+```
+
+- Server replies:
+
+```js
+{
+  type: "history_recent",
+  peer: "Minh",
+  requestId: "...",
+  messages: [
+    {
+      _id: "...",
+      from: "Minh",
+      to: "Giang",
+      senderIdentityId: "...",
+      recipientIdentityId: "...",
+      envelope: {
+        header: "...",
+        ciphertextB64: "..."
+      },
+      ts: 1710000000000
+    }
+  ]
+}
+```
+
+Database direction:
+
+- Do not add a new collection for this phase.
+- Use the existing `messages` collection.
+- Add or verify indexes for recent pair queries.
+- Query by `(from = currentUser and to = peer) OR (from = peer and to = currentUser)` for this first phase.
+- A normalized `conversationId` is a better long-term schema target, but it is not required for the first catch-up checkpoint.
+
+Client validation rules:
+
+- Validate each server message before decrypt/merge.
+- Skip invalid items instead of failing the whole conversation.
+- Required minimum fields:
+  - `_id`
+  - `from`
+  - `to`
+  - `ts`
+  - `envelope.header` or equivalent header field
+  - `envelope.ciphertextB64` or equivalent ciphertext field
+- Prefer also validating:
+  - `senderIdentityId`
+  - `recipientIdentityId`
+
+Checkpoint plan:
+
+Checkpoint 1 - server recent history query:
+
+- add Mongo helper for recent messages between two users
+- query descending by `ts`, limit to a small window such as 50
+- reverse to ascending before returning to the WebSocket layer
+- add WebSocket `history_fetch_recent`
+- return ciphertext + metadata + Mongo `_id`
+
+Checkpoint 2 - client fetch / validate / dedupe skeleton:
+
+- add `fetchRecentMessages(peer, limit)` in `client/chat.js`
+- send request with `requestId`
+- await `history_recent`
+- validate response shape
+- sort ascending defensively
+- dedupe by `_id` first, fallback hash only if needed
+- do not decrypt yet unless the safe temporary-state path is ready
+
+Checkpoint 3 - safe catch-up decrypt path:
+
+- decrypt recent messages only against a cloned/temporary conversation state
+- never mutate live Double Ratchet state during catch-up
+- merge only successfully decrypted display messages
+- skip decrypt failures without resetting live state
+- outgoing local messages should remain sourced from existing local plaintext history
+
+Checkpoint 4 - open conversation / UI integration:
+
+- when opening a conversation, render local history first
+- then fetch recent messages
+- show a small loading state
+- merge/dedupe and rerender
+- fetch/decrypt failures should not break chat
+
+Checkpoint 5 - watermark / docs / regression:
+
+- optionally store local watermark per conversation:
+  - `lastSeenServerTs`
+  - or `lastSeenServerMessageId`
+- document limitations and manual test results
+- keep watermark as an optimization, not a blocker for phase completion
+
+Regression tests:
+
+- existing local history reload does not duplicate messages
+- clean browser restores identity, starts, opens conversation, and fetches recent messages
+- pending flush plus recent fetch does not duplicate messages
+- wrong identity does not decrypt/merge messages targeted to another identity
+- out-of-order/skipped case: sender sends several messages while recipient is offline; catch-up processes ascending and does not break live chat after that
+- server restart does not remove the ability to fetch recent ciphertext history from Mongo
+
+Branch / DB guidance:
+
+- create a dedicated branch such as `feature/recent-message-catchup`
+- a new Mongo collection is not needed
+- a new Mongo database is optional
+- use a clean test database if the current DB contains important regression data that should not be disturbed
 
 ### Phase 6 - Stronger Account Auth
 
