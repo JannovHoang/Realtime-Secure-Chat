@@ -2,6 +2,8 @@ import {
   initChat,
   sendMessage,
   openConversation,
+  fetchRecentMessages,
+  mergeRecentMessagesForDisplay,
   destroyChat,
   listConversationPeers,
   isPeerReady,
@@ -585,6 +587,26 @@ async function loadHistory(peer) {
     appendMsg(m.from === peer ? "peer" : "me", m.text);
   });
   $("messages").scrollTop = $("messages").scrollHeight;
+
+  const loading = document.createElement("div");
+  loading.className = "history-loading";
+  loading.textContent = "Loading recent messages...";
+  $("messages").appendChild(loading);
+  $("messages").scrollTop = $("messages").scrollHeight;
+
+  try {
+    const recent = await fetchRecentMessages(peer, 50);
+    const merged = await mergeRecentMessagesForDisplay(peer, recent);
+    clearMessages();
+    merged.forEach((m) => {
+      appendMsg(m.from === peer ? "peer" : "me", m.text);
+    });
+    $("messages").scrollTop = $("messages").scrollHeight;
+  } catch (err) {
+    loading.remove();
+    console.warn("[ui] recent history fetch/merge failed:", err);
+    toast("Recent history unavailable. Local chat is still usable.", "info");
+  }
 }
 
 /* ===================== peer datalist (NEW) ===================== */

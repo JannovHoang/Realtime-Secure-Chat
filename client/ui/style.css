@@ -309,6 +309,18 @@ button.secondary:hover {
   border-bottom-left-radius: 6px;
 }
 
+.history-loading {
+  width: fit-content;
+  margin: 8px auto 12px;
+  padding: 7px 11px;
+  border: 1px solid rgba(96, 114, 138, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--muted);
+  font-size: 12px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
 .composer {
   display: flex;
   gap: 10px;
