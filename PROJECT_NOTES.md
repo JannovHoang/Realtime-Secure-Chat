@@ -1705,6 +1705,20 @@ Checkpoint 2 - client fetch / validate / dedupe skeleton:
 - dedupe by `_id` first, fallback hash only if needed
 - do not decrypt yet unless the safe temporary-state path is ready
 
+Checkpoint 2 implementation status:
+
+- `client/chat.js` now tracks pending recent-history requests by `requestId`.
+- Added `fetchRecentMessages(peer, limit)`.
+- Client sends WebSocket `history_fetch_recent`.
+- Client handles `history_recent`.
+- Response items are validated before being returned to callers.
+- Client sorts returned items ascending defensively even though the server already returns ascending.
+- Client dedupes by Mongo `_id` first.
+- Hash-style dedupe fallback exists for older/non-standard local comparisons, but `_id` is the primary key.
+- No decrypt or UI merge is done in this checkpoint.
+- `client/chat.js` syntax check passed through Node's module parser.
+- `npm run build` could not complete in the current environment because Vite/esbuild failed to spawn with `EPERM`; this appears environment-related rather than a syntax error.
+
 Checkpoint 3 - safe catch-up decrypt path:
 
 - decrypt recent messages only against a cloned/temporary conversation state

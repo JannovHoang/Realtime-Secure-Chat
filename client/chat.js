@@ -23,6 +23,9 @@ import { MessengerClient } from "../crypto/dr/messenger.browser.js";
 
 const WS_URL = "ws://localhost:3000/ws";
 const BACKUP_REQUEST_TIMEOUT_MS = 10000;
+const HISTORY_REQUEST_TIMEOUT_MS = 10000;
+const HISTORY_RECENT_DEFAULT_LIMIT = 50;
+const HISTORY_RECENT_MAX_LIMIT = 100;
 
 // ===== runtime state =====
 let socket = null;
@@ -42,6 +45,8 @@ let preQueue = [];
 const peerReadyListeners = new Set();
 const backupSaveRequests = new Map();
 let backupRequestSeq = 0;
+const historyFetchRequests = new Map();
+let historyRequestSeq = 0;
 
 // Persisted DR state key (per-username)
 const drStateKey = (u) => `dr:state:${u}`;
@@ -88,6 +93,11 @@ function nextBackupRequestId() {
   return `backup-${Date.now()}-${backupRequestSeq}`;
 }
 
+function nextHistoryRequestId() {
+  historyRequestSeq += 1;
+  return `history-${Date.now()}-${historyRequestSeq}`;
+}
+
 function getServerHttpBase() {
   const u = new URL(WS_URL);
   u.protocol = u.protocol === "wss:" ? "https:" : "http:";
@@ -109,6 +119,18 @@ function settleBackupSaveRequest(requestId, ok, error = "Backup save failed") {
   return true;
 }
 
+function settleHistoryFetchRequest(requestId, ok, messages = [], error = "History fetch failed") {
+  if (!requestId) return false;
+  const pendingReq = historyFetchRequests.get(requestId);
+  if (!pendingReq) return false;
+
+  historyFetchRequests.delete(requestId);
+  clearTimeout(pendingReq.timer);
+  if (ok) pendingReq.resolve(messages);
+  else pendingReq.reject(new Error(error));
+  return true;
+}
+
 function abToB64(ab) {
   const bytes = new Uint8Array(ab);
   let bin = "";
@@ -126,6 +148,66 @@ async function threadKey(peer) {
   const label = myUser < peer ? `dm:${myUser}<->${peer}` : `dm:${peer}<->${myUser}`;
   const h = await hmacRecordKey(label);
   return `dmh:${h}`;
+}
+
+function normalizeRecentLimit(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return HISTORY_RECENT_DEFAULT_LIMIT;
+  return Math.max(1, Math.min(Math.floor(n), HISTORY_RECENT_MAX_LIMIT));
+}
+
+function historyDedupeFallbackKey(item) {
+  const cipher = item?.envelope?.ciphertextB64 || "";
+  return `${item?.from || ""}|${item?.to || ""}|${item?.ts || ""}|${cipher}`;
+}
+
+function validateHistoryRecentItem(item) {
+  if (!item || typeof item !== "object") return null;
+  const id = typeof item._id === "string" ? item._id.trim() : "";
+  const from = normalizeUsername(item.from);
+  const to = normalizeUsername(item.to);
+  const ts = Number(item.ts);
+  const envelope = item.envelope && typeof item.envelope === "object" ? item.envelope : null;
+  const header = envelope?.header;
+  const ciphertextB64 = envelope?.ciphertextB64;
+
+  if (!id || !from || !to || !Number.isFinite(ts)) return null;
+  if (!header || typeof header !== "object") return null;
+  if (typeof ciphertextB64 !== "string" || !ciphertextB64) return null;
+
+  return {
+    _id: id,
+    from,
+    to,
+    senderIdentityId: normalizeIdentityId(item.senderIdentityId) || null,
+    recipientIdentityId: normalizeIdentityId(item.recipientIdentityId) || null,
+    envelope: {
+      header,
+      ciphertextB64,
+    },
+    ts,
+  };
+}
+
+function normalizeHistoryRecentItems(items) {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set();
+  const normalized = [];
+
+  for (const raw of items) {
+    const item = validateHistoryRecentItem(raw);
+    if (!item) continue;
+    const dedupeKey = item._id || historyDedupeFallbackKey(item);
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    normalized.push(item);
+  }
+
+  normalized.sort((a, b) => {
+    if (a.ts !== b.ts) return a.ts - b.ts;
+    return String(a._id).localeCompare(String(b._id));
+  });
+  return normalized;
 }
 
 /* ===================== Persist / Restore Double Ratchet state ===================== */
@@ -657,6 +739,17 @@ export async function initChat(username, password) {
       return;
     }
 
+    if (data.type === "history_recent") {
+      const messages = normalizeHistoryRecentItems(data.messages);
+      settleHistoryFetchRequest(
+        data.requestId,
+        data.ok === true,
+        messages,
+        data.error
+      );
+      return;
+    }
+
     if (!messenger) {
       preQueue.push(data);
       return;
@@ -853,6 +946,34 @@ export async function saveCloudBackup(blobDoc) {
   });
 }
 
+export async function fetchRecentMessages(peer, limit = HISTORY_RECENT_DEFAULT_LIMIT) {
+  if (!myUser || !socket || socket.readyState !== WebSocket.OPEN) {
+    throw new Error("Recent history requires an active session");
+  }
+
+  const p = normalizeUsername(peer);
+  if (!p) {
+    throw new Error("Peer is required");
+  }
+
+  const requestId = nextHistoryRequestId();
+  const safeLimit = normalizeRecentLimit(limit);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      historyFetchRequests.delete(requestId);
+      reject(new Error("History fetch timed out"));
+    }, HISTORY_REQUEST_TIMEOUT_MS);
+
+    historyFetchRequests.set(requestId, { resolve, reject, timer });
+    wsSend({
+      type: "history_fetch_recent",
+      requestId,
+      peer: p,
+      limit: safeLimit,
+    });
+  });
+}
+
 export async function fetchCloudBackup(username, identityId = null) {
   const user = normalizeUsername(username);
   if (!user) {
@@ -947,6 +1068,12 @@ export async function destroyChat() {
     req.reject(new Error("Backup save interrupted"));
   }
   backupSaveRequests.clear();
+
+  for (const req of historyFetchRequests.values()) {
+    clearTimeout(req.timer);
+    req.reject(new Error("History fetch interrupted"));
+  }
+  historyFetchRequests.clear();
 
   myUser = null;
 }
