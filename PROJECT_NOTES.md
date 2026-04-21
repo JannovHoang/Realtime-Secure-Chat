@@ -1767,6 +1767,57 @@ Checkpoint 5 - watermark / docs / regression:
 - document limitations and manual test results
 - keep watermark as an optimization, not a blocker for phase completion
 
+Checkpoint 5 implementation status:
+
+- No watermark code was added in this checkpoint.
+- Watermark remains a future optimization because the current recent catch-up path already dedupes by Mongo `_id` and because adding persistent watermark now would expand scope.
+- Documentation was updated to record manual testing observations and current limitations.
+- Current phase is considered functionally complete at the first safe catch-up level:
+  - server can return recent ciphertext history
+  - client can fetch and validate it
+  - client can attempt safe best-effort decrypt on a cloned ratchet state
+  - UI fetches recent history when opening a conversation
+  - live chat state is not intentionally mutated by catch-up
+
+Manual testing observed:
+
+- Existing browser/local vault can start normally after this phase.
+- Console showed normal startup logs such as `[chat] restored DR state from vault` and `[chat] ready: Giang`.
+- No browser-side `Uncaught` error was observed during the reported console check.
+- WebSocket connection appears in DevTools Network as `/ws`.
+- `history_fetch_recent` and `history_recent` should be verified under the `/ws` Messages/Frames panel.
+- The `requestId` in `history_recent` must match the `history_fetch_recent` request.
+- When the user forgot to restore from cloud first and started from an older local vault, local history did not fully match the expected cloud/latest state.
+- After the user explicitly used `Restore from Cloud`, the conversation history matched better.
+
+Important limitation discovered:
+
+- `Start` only opens the local vault currently stored in the browser.
+- `Start` does not compare local state with cloud backup metadata.
+- `Start` does not warn when a newer cloud backup may exist.
+- If a user forgets to restore from cloud first, the browser may continue with an older local snapshot.
+- This is expected for the current model and should be treated as a UX limitation, not a recent catch-up crash.
+
+Current catch-up limitations:
+
+- Catch-up is recent-window only.
+- Catch-up is best-effort.
+- Catch-up does not guarantee decrypting every recent message.
+- Catch-up currently attempts inbound `peer -> me` messages only.
+- Outgoing `me -> peer` messages remain sourced from existing local plaintext history.
+- Catch-up does not commit the temporary ratchet state into live state.
+- Full history restore is still not implemented.
+- No pagination is implemented.
+- No cloud/local freshness warning is implemented yet.
+
+Future improvements:
+
+- Add local/cloud backup freshness comparison before or around `Start`.
+- Add a non-blocking warning such as: `A cloud backup may be newer than this browser's local data. Restore first if you want the latest backed-up state.`
+- Add per-conversation watermark such as `lastSeenServerTs` or `lastSeenServerMessageId`.
+- Consider encrypted recent history snapshots if stronger history recovery becomes a product goal.
+- Consider IndexedDB for more robust encrypted local history storage.
+
 Regression tests:
 
 - existing local history reload does not duplicate messages
