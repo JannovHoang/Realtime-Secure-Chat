@@ -133,6 +133,19 @@ function normalizeWsUrl(rawUrl, baseHref) {
   return url.toString();
 }
 
+function normalizeHttpBaseUrl(rawUrl, baseHref) {
+  const url = new URL(rawUrl, baseHref);
+  if (url.protocol === "ws:") url.protocol = "http:";
+  else if (url.protocol === "wss:") url.protocol = "https:";
+  else if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`Unsupported HTTP protocol: ${url.protocol}`);
+  }
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  url.search = "";
+  url.hash = "";
+  return url.origin + url.pathname;
+}
+
 function getDefaultWsUrl() {
   const loc =
     typeof window !== "undefined" && window.location
@@ -162,13 +175,31 @@ function getServerWsUrl() {
   return configured ? normalizeWsUrl(configured, baseHref) : getDefaultWsUrl();
 }
 
-function getServerHttpBase() {
+function getDefaultHttpBase() {
   const u = new URL(getServerWsUrl());
   u.protocol = u.protocol === "wss:" ? "https:" : "http:";
   u.pathname = "";
   u.search = "";
   u.hash = "";
   return u.origin;
+}
+
+function getServerHttpBase() {
+  const configured = (
+    getRuntimeConfigValue("API_BASE_URL") ||
+    getRuntimeConfigValue("HTTP_BASE_URL")
+  ).trim();
+  const baseHref =
+    typeof window !== "undefined" && window.location
+      ? window.location.href
+      : `http://localhost:${LOCAL_DEV_UI_PORT}/`;
+  return configured
+    ? normalizeHttpBaseUrl(configured, baseHref)
+    : getDefaultHttpBase();
+}
+
+function buildApiUrl(pathname) {
+  return new URL(pathname, `${getServerHttpBase()}/`);
 }
 
 function settleBackupSaveRequest(requestId, ok, error = "Backup save failed") {
@@ -1161,9 +1192,7 @@ export async function fetchCloudBackup(username, identityId = null) {
     throw new Error("Username is required");
   }
 
-  const url = new URL(
-    `${getServerHttpBase()}/api/backup/${encodeURIComponent(user)}`
-  );
+  const url = buildApiUrl(`/api/backup/${encodeURIComponent(user)}`);
   const normalizedIdentityId = normalizeIdentityId(identityId || "");
   if (normalizedIdentityId) {
     url.searchParams.set("identityId", normalizedIdentityId);
@@ -1191,8 +1220,8 @@ export async function fetchCloudBackupIdentities(username) {
     throw new Error("Username is required");
   }
 
-  const url = `${getServerHttpBase()}/api/backups/${encodeURIComponent(user)}`;
-  const res = await fetch(url);
+  const url = buildApiUrl(`/api/backups/${encodeURIComponent(user)}`);
+  const res = await fetch(url.toString());
 
   let data = null;
   try {
