@@ -39,6 +39,7 @@ const {
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const UI_DIR = path.join(__dirname, "..", "client", "ui");
+const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "").trim();
 
 // ===== Persisted keys file =====
 const KEYS_PATH = path.join(__dirname, "keys.json");
@@ -263,6 +264,25 @@ function getMime(filePath) {
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   if (ext === ".svg") return "image/svg+xml";
   return "application/octet-stream";
+}
+
+function isApiPath(pathname) {
+  return pathname.startsWith("/api/");
+}
+
+function isWsPath(pathname) {
+  return pathname === "/ws" || pathname.startsWith("/ws/");
+}
+
+function resolveUiFilePath(pathname) {
+  let safePath = pathname === "/" ? "/index.html" : pathname;
+  if (safePath.endsWith("/")) safePath += "index.html";
+
+  const filePath = path.resolve(UI_DIR, `.${safePath}`);
+  if (filePath !== UI_DIR && !filePath.startsWith(`${UI_DIR}${path.sep}`)) {
+    return null;
+  }
+  return filePath;
 }
 
 function writeJson(res, statusCode, obj, extraHeaders = {}) {
@@ -739,23 +759,35 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.url && req.url.startsWith("/ws")) {
+  if (isWsPath(reqUrl.pathname)) {
     res.writeHead(426, { "Content-Type": "text/plain; charset=utf-8" });
     return res.end("Use WebSocket to connect.");
   }
 
-  const safePath = req.url === "/" ? "/index.html" : req.url || "/index.html";
-  const filePath = path.join(UI_DIR, safePath);
+  if (isApiPath(reqUrl.pathname)) {
+    return writeJson(res, 404, {
+      ok: false,
+      error: "Not found",
+    });
+  }
 
-  if (!filePath.startsWith(UI_DIR)) {
+  const filePath = resolveUiFilePath(reqUrl.pathname);
+  if (!filePath) {
     res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
     return res.end("Forbidden");
   }
 
   fs.readFile(filePath, (err, data) => {
     if (err) {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      return res.end("Not found");
+      const fallbackPath = path.join(UI_DIR, "index.html");
+      return fs.readFile(fallbackPath, (fallbackErr, fallbackData) => {
+        if (fallbackErr) {
+          res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+          return res.end("Not found");
+        }
+        res.writeHead(200, { "Content-Type": getMime(fallbackPath) });
+        return res.end(fallbackData);
+      });
     }
     res.writeHead(200, { "Content-Type": getMime(filePath) });
     res.end(data);
@@ -766,7 +798,8 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
-  if (!req.url || !req.url.startsWith("/ws")) {
+  const reqUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+  if (!isWsPath(reqUrl.pathname)) {
     socket.destroy();
     return;
   }
@@ -1117,8 +1150,16 @@ wss.on("connection", (ws) => {
     loadPendingFile();
 
     server.listen(PORT, () => {
-      console.log(`HTTP UI (optional): http://localhost:${PORT}`);
-      console.log(`WebSocket: ws://localhost:${PORT}/ws`);
+      const localBase = `http://localhost:${PORT}`;
+      console.log(`HTTP UI/API: ${PUBLIC_BASE_URL || localBase}`);
+      console.log(`WebSocket path: /ws`);
+      if (PUBLIC_BASE_URL) {
+        const publicUrl = new URL(PUBLIC_BASE_URL);
+        const wsProtocol = publicUrl.protocol === "https:" ? "wss:" : "ws:";
+        console.log(`Public WebSocket: ${wsProtocol}//${publicUrl.host}/ws`);
+      } else {
+        console.log(`Local WebSocket: ws://localhost:${PORT}/ws`);
+      }
     });
   } catch (err) {
     console.error("Server startup failed:", err);
