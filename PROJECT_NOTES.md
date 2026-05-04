@@ -2879,3 +2879,193 @@ If a future session needs to continue work:
 - Keep future feature scopes narrow.
 - Prefer working, testable increments over ambitious all-at-once designs.
 - The project is now beyond the purely local prototype stage, but still not at a full account-based multi-device architecture stage.
+
+## Phase: Cloudflare / Public Readiness
+
+### Goal
+
+Prepare the app to run outside `localhost`, especially through Cloudflare Tunnel or a later custom domain.
+
+This phase is intentionally narrow:
+
+- remove direct client dependency on hardcoded `localhost`
+- make WebSocket URL public-ready
+- make backup/restore HTTP API base public-ready
+- make server routing cleaner for `/ws`, `/api/...`, and static UI serving
+- keep all existing crypto, identity, backup payload, pending, and recent catch-up logic unchanged
+
+This is a readiness phase, not a complete production deployment phase.
+
+### Core Network Rule
+
+Default behavior should be same-origin when the app is served publicly.
+
+Example public shape:
+
+- UI: `https://chat.example.com`
+- API: `https://chat.example.com/api/...`
+- WebSocket: `wss://chat.example.com/ws`
+
+Local Vite development remains a special case:
+
+- UI: `http://localhost:5173`
+- backend/API/WS: `http://localhost:3000`, `ws://localhost:3000/ws`
+
+Override config is supported for special debugging/deployment cases, but the normal public path should not rely on hardcoded `localhost`.
+
+### Checkpoint 1: WebSocket URL Resolver
+
+Completed in `client/chat.js`.
+
+Changes:
+
+- replaced direct hardcoded `ws://localhost:3000/ws`
+- added runtime WebSocket URL resolver
+- local Vite dev on `localhost:5173` still maps to `ws://localhost:3000/ws`
+- public `https://...` pages map to `wss://.../ws`
+- public `http://...` pages map to `ws://.../ws`
+- optional overrides are supported through runtime/global/Vite config
+
+Supported override keys include:
+
+- `globalThis.__CHAT_CONFIG__.WS_URL`
+- `globalThis.__CHAT_WS_URL__`
+- `VITE_CHAT_WS_URL`
+- `VITE_WS_URL`
+
+Local regression result:
+
+- WebSocket still connects with status `101`
+- local realtime chat still works
+
+### Checkpoint 2: Backup / Restore API Base
+
+Completed in `client/chat.js`.
+
+Changes:
+
+- added HTTP API base resolver
+- both backup endpoints now use the normalized API base
+- restore identity list endpoint remains covered
+- restore target fetch endpoint remains covered
+
+Relevant endpoints:
+
+- `GET /api/backups/:username`
+- `GET /api/backup/:username?identityId=...`
+
+Supported override keys include:
+
+- `globalThis.__CHAT_CONFIG__.API_BASE_URL`
+- `globalThis.__CHAT_CONFIG__.HTTP_BASE_URL`
+- `VITE_CHAT_API_BASE_URL`
+- `VITE_API_BASE_URL`
+- `VITE_CHAT_HTTP_BASE_URL`
+- `VITE_HTTP_BASE_URL`
+
+Local regression result:
+
+- cloud backup still works
+- cloud restore still works
+- multiple backup identity selection still works
+
+### Checkpoint 3: Server Routing Cleanup
+
+Completed in `server/server.js`.
+
+Changes:
+
+- added explicit route helpers for:
+  - `/api/...`
+  - `/ws`
+  - static UI files
+- HTTP requests to `/ws` return `426 Use WebSocket to connect`
+- unknown `/api/...` paths return JSON, not HTML fallback
+- WebSocket upgrade now checks parsed URL pathname
+- static UI serving resolves paths more safely
+- static UI fallback returns `index.html` for non-API/non-WS paths
+- added optional `PUBLIC_BASE_URL` log support
+
+Local regression result:
+
+- `http://localhost:3000/ws` returns `Use WebSocket to connect.`
+- `http://localhost:3000/api/not-found` returns JSON:
+  - `{"ok":false,"error":"Not found"}`
+- Start, realtime chat, backup, restore, and recent history still work locally
+
+### Local Test Checklist
+
+Use two terminals:
+
+1. `npm start`
+2. `npm run dev`
+
+Then test:
+
+- open `http://localhost:5173`
+- start an existing identity
+- verify WebSocket status is `101`
+- send a realtime message between two users
+- backup to cloud
+- restore from cloud
+- verify recent-message catch-up still triggers when opening a conversation
+- open `http://localhost:3000/ws`
+- open `http://localhost:3000/api/not-found`
+
+Expected local behavior:
+
+- local Vite still works
+- local backend still runs on port `3000`
+- no `No server config` error
+- no WebSocket regression
+- no backup/restore regression
+
+### Cloudflare Tunnel Test Checklist
+
+After local regression passes, test through a public tunnel.
+
+Example tunnel shape:
+
+- Cloudflare public URL: `https://<temporary-name>.trycloudflare.com`
+- local target: `http://localhost:3000`
+
+Expected public behavior:
+
+- UI loads through the public `https://...` URL
+- DevTools Network shows WebSocket connecting to `wss://.../ws`
+- no browser mixed-content error
+- `Start` works
+- realtime chat works
+- `Backup to Cloud` works
+- `Restore from Cloud` works
+- recent-message catch-up still works
+
+Important:
+
+- Cloudflare Tunnel test should happen after local regression, not instead of local regression.
+- The public client must not attempt to connect to `localhost`.
+- If the page is loaded via HTTPS, WebSocket must use WSS.
+
+### Current Non-Goals
+
+This phase does not implement:
+
+- production account authentication
+- Google login / Firebase Auth
+- custom domain purchase
+- production monitoring
+- production-grade rate limiting across all endpoints
+- IndexedDB vault migration
+- React UI rewrite
+- full multi-device fan-out
+- full message history sync
+
+### Next Practical Step
+
+After this phase is committed and pushed:
+
+1. test the app locally one more time
+2. run Cloudflare Tunnel against the local backend
+3. open the temporary Cloudflare HTTPS URL
+4. verify the app uses `wss://.../ws`
+5. only after that consider buying and attaching a custom domain
