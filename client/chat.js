@@ -21,7 +21,9 @@ import {
 } from "./storage.js";
 import { MessengerClient } from "../crypto/dr/messenger.browser.js";
 
-const WS_URL = "ws://localhost:3000/ws";
+const LOCAL_DEV_UI_PORT = "5173";
+const LOCAL_DEV_SERVER_PORT = "3000";
+const DEFAULT_WS_PATH = "/ws";
 const BACKUP_REQUEST_TIMEOUT_MS = 10000;
 const HISTORY_REQUEST_TIMEOUT_MS = 10000;
 const HISTORY_RECENT_DEFAULT_LIMIT = 50;
@@ -98,8 +100,70 @@ function nextHistoryRequestId() {
   return `history-${Date.now()}-${historyRequestSeq}`;
 }
 
+function getRuntimeConfigValue(key) {
+  const globalConfig =
+    typeof globalThis !== "undefined" && globalThis.__CHAT_CONFIG__
+      ? globalThis.__CHAT_CONFIG__
+      : null;
+  if (globalConfig && typeof globalConfig[key] === "string") {
+    return globalConfig[key];
+  }
+
+  const globalKey = `__CHAT_${key}__`;
+  if (
+    typeof globalThis !== "undefined" &&
+    typeof globalThis[globalKey] === "string"
+  ) {
+    return globalThis[globalKey];
+  }
+
+  const viteKey = `VITE_CHAT_${key}`;
+  const viteLegacyKey = `VITE_${key}`;
+  const viteEnv = import.meta?.env || {};
+  return viteEnv[viteKey] || viteEnv[viteLegacyKey] || "";
+}
+
+function normalizeWsUrl(rawUrl, baseHref) {
+  const url = new URL(rawUrl, baseHref);
+  if (url.protocol === "http:") url.protocol = "ws:";
+  else if (url.protocol === "https:") url.protocol = "wss:";
+  else if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+    throw new Error(`Unsupported WebSocket protocol: ${url.protocol}`);
+  }
+  return url.toString();
+}
+
+function getDefaultWsUrl() {
+  const loc =
+    typeof window !== "undefined" && window.location
+      ? window.location
+      : new URL(`http://localhost:${LOCAL_DEV_UI_PORT}/`);
+
+  const isLocalHost =
+    loc.hostname === "localhost" ||
+    loc.hostname === "127.0.0.1" ||
+    loc.hostname === "::1";
+
+  // Vite dev serves the UI on 5173 while the Node/WebSocket server runs on 3000.
+  if (isLocalHost && loc.port === LOCAL_DEV_UI_PORT) {
+    return `ws://${loc.hostname}:${LOCAL_DEV_SERVER_PORT}${DEFAULT_WS_PATH}`;
+  }
+
+  const protocol = loc.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${loc.host}${DEFAULT_WS_PATH}`;
+}
+
+function getServerWsUrl() {
+  const configured = getRuntimeConfigValue("WS_URL").trim();
+  const baseHref =
+    typeof window !== "undefined" && window.location
+      ? window.location.href
+      : `http://localhost:${LOCAL_DEV_UI_PORT}/`;
+  return configured ? normalizeWsUrl(configured, baseHref) : getDefaultWsUrl();
+}
+
 function getServerHttpBase() {
-  const u = new URL(WS_URL);
+  const u = new URL(getServerWsUrl());
   u.protocol = u.protocol === "wss:" ? "https:" : "http:";
   u.pathname = "";
   u.search = "";
@@ -804,7 +868,7 @@ export async function initChat(username, password) {
 
   await initVault(password, myUser);
 
-  socket = new WebSocket(WS_URL);
+  socket = new WebSocket(getServerWsUrl());
 
   let resolveConfig;
   const configPromise = new Promise((resolve, reject) => {
