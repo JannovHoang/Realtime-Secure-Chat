@@ -38,6 +38,8 @@ const {
 } = require("../crypto/dr/lib.js");
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+const PROJECT_ROOT = path.join(__dirname, "..");
+const CLIENT_DIR = path.join(PROJECT_ROOT, "client");
 const UI_DIR = path.join(__dirname, "..", "client", "ui");
 const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "").trim();
 
@@ -274,15 +276,27 @@ function isWsPath(pathname) {
   return pathname === "/ws" || pathname.startsWith("/ws/");
 }
 
-function resolveUiFilePath(pathname) {
+function isPathInside(parentDir, filePath) {
+  return filePath === parentDir || filePath.startsWith(`${parentDir}${path.sep}`);
+}
+
+function resolveStaticFilePath(pathname) {
+  if (pathname === "/chat.js" || pathname === "/storage.js") {
+    const filePath = path.resolve(CLIENT_DIR, `.${pathname}`);
+    return isPathInside(CLIENT_DIR, filePath) ? filePath : null;
+  }
+
+  if (pathname.startsWith("/crypto/")) {
+    const filePath = path.resolve(PROJECT_ROOT, `.${pathname}`);
+    const cryptoDir = path.join(PROJECT_ROOT, "crypto");
+    return isPathInside(cryptoDir, filePath) ? filePath : null;
+  }
+
   let safePath = pathname === "/" ? "/index.html" : pathname;
   if (safePath.endsWith("/")) safePath += "index.html";
 
   const filePath = path.resolve(UI_DIR, `.${safePath}`);
-  if (filePath !== UI_DIR && !filePath.startsWith(`${UI_DIR}${path.sep}`)) {
-    return null;
-  }
-  return filePath;
+  return isPathInside(UI_DIR, filePath) ? filePath : null;
 }
 
 function writeJson(res, statusCode, obj, extraHeaders = {}) {
@@ -771,7 +785,7 @@ const server = http.createServer((req, res) => {
     });
   }
 
-  const filePath = resolveUiFilePath(reqUrl.pathname);
+  const filePath = resolveStaticFilePath(reqUrl.pathname);
   if (!filePath) {
     res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
     return res.end("Forbidden");
@@ -779,6 +793,11 @@ const server = http.createServer((req, res) => {
 
   fs.readFile(filePath, (err, data) => {
     if (err) {
+      if (path.extname(reqUrl.pathname)) {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        return res.end("Not found");
+      }
+
       const fallbackPath = path.join(UI_DIR, "index.html");
       return fs.readFile(fallbackPath, (fallbackErr, fallbackData) => {
         if (fallbackErr) {
