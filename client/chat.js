@@ -412,7 +412,7 @@ async function mergeDisplayMessagesIntoLocalHistory(peer, displayMessages) {
   });
 
   await storeRecord(key, JSON.stringify(arr));
-  await addConversationPeer(p);
+  await rememberConversationPeer(p);
   return arr;
 }
 

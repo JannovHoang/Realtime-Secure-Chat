@@ -597,6 +597,10 @@ async function loadHistory(peer) {
   try {
     const recent = await fetchRecentMessages(peer, 50);
     const merged = await mergeRecentMessagesForDisplay(peer, recent);
+    if (merged.length > 0) {
+      ensurePeerInDirectory(peer);
+      renderPeerList();
+    }
     clearMessages();
     merged.forEach((m) => {
       appendMsg(m.from === peer ? "peer" : "me", m.text);
