@@ -934,14 +934,14 @@ $("msg").addEventListener("keydown", (e) => {
 });
 
 /* ===================== Incoming ===================== */
-window.onChatMessage = ({ from, text }) => {
+window.onChatMessage = ({ from, text, isCurrentPeer }) => {
   if (!from) return;
 
   // Learn peer name from incoming too (case preserved)
   ensurePeerInDirectory(from);
   renderPeerList();
 
-  if (from === currentPeer) {
+  if (isCurrentPeer || from === currentPeer) {
     appendMsg("peer", text);
     return;
   }

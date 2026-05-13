@@ -734,8 +734,13 @@ async function processCipherPacket(from, header, ciphertextB64, ts) {
 
   scheduleSaveState();
 
-  if (window.onChatMessage && from === currentPeer) {
-    window.onChatMessage({ from, text: plaintext, ts });
+  if (window.onChatMessage) {
+    window.onChatMessage({
+      from,
+      text: plaintext,
+      ts,
+      isCurrentPeer: from === currentPeer,
+    });
   }
 }
 
