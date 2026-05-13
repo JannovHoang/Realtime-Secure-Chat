@@ -3238,13 +3238,67 @@ Test result:
 - UI showed a certificate guidance toast instead:
   - `Peer "Random" has no certificate yet. Ask them to click Start.`
 
-#### Checkpoint 4: Docs And Regression
+### Checkpoint 4: Reload Persistence Regression
+
+Completed in `client/ui/app.js`.
 
 Goal:
 
-- update notes
 - test reload behavior
 - confirm learned peers remain after reload because they are stored in the vault conversation index
+- ensure UI does not keep stale active peer state after Start/reload
+
+Implementation notes:
+
+- `currentPeer` is reset to `null` after successful `Start` before peers are reloaded from vault
+- peer list is still loaded from the vault conversation index via `syncPeersFromVault()`
+- this prevents stale active peer/highlight behavior from a previous runtime session
+
+Expected behavior after checkpoint 4:
+
+- Alice has learned Bob and Charlie
+- Alice reloads the page
+- Alice starts again on the same origin
+- Bob and Charlie still appear in `CONVERSATIONS`
+- clicking Bob opens Bob's local history
+- clicking Charlie opens Charlie's local history
+- no old peer remains incorrectly active before user chooses a conversation
+
+Test result:
+
+- reload persistence was tested after checkpoint 3
+- learned peers remained visible after reload/start
+- clicking peers opened the expected local histories
+
+### Checkpoint 5: Final Notes And Regression
+
+Completed in `PROJECT_NOTES.md`.
+
+Final regression checklist for this phase:
+
+- realtime new peer:
+  - Bob sends Alice a first realtime message
+  - Alice's sidebar shows Bob without Alice typing Bob manually
+- pending/offline new peer:
+  - Alice is offline
+  - Charlie sends Alice a message
+  - Alice starts again
+  - Charlie appears in Alice's sidebar after pending flush/decrypt
+- recent/local merge:
+  - opening a conversation with valid history keeps that peer persisted
+  - typing a random peer with no certificate/history does not create a ghost sidebar entry
+- reload persistence:
+  - learned peers remain visible after reload and Start
+  - clicking a learned peer opens the corresponding local history
+- self-peer guard:
+  - local outgoing messages do not add the current user as a peer
+
+Phase result:
+
+- the sidebar now learns peers from successful realtime inbound messages
+- pending/offline messages reuse the same decrypt-success peer discovery path
+- recent/local history merge uses the same peer persistence helper
+- reload persistence is backed by the vault conversation index
 
 ### Non-Goals For This Phase
 
@@ -3255,3 +3309,21 @@ Goal:
 - archive/mute conversation
 - server-side conversation list
 - full history synchronization
+
+### Remaining Limitations
+
+- conversation list is still local-vault based, not a server-side inbox
+- conversations are sorted alphabetically, not by latest message time
+- there is no unread count
+- there is no last-message preview
+- full history synchronization is still a separate future phase
+- if a message cannot be decrypted, the sender is not learned as a conversation peer
+
+### Recommended Next Improvements
+
+After this phase, the most practical follow-up UX improvements are:
+
+1. Sort conversations by latest message time.
+2. Add last-message preview.
+3. Add unread count/badge.
+4. Later, consider a server-side encrypted inbox index if the product needs cross-device conversation discovery.
