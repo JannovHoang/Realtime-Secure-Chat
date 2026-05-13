@@ -698,6 +698,13 @@ function drainInboundAllSoon() {
   }
 }
 
+async function rememberConversationPeer(peer) {
+  const p = normalizeUsername(peer);
+  if (!p || p === myUser) return null;
+  await addConversationPeer(p);
+  return p;
+}
+
 async function handleForceLogout(payload) {
   try {
     if (window.onForcedLogout) window.onForcedLogout(payload);
@@ -730,16 +737,16 @@ async function processCipherPacket(from, header, ciphertextB64, ts) {
 
   arr.push({ from, text: plaintext, ts: ts ?? Date.now() });
   await storeRecord(key, JSON.stringify(arr));
-  await addConversationPeer(from);
+  const discoveredPeer = await rememberConversationPeer(from);
 
   scheduleSaveState();
 
-  if (window.onChatMessage) {
+  if (discoveredPeer && window.onChatMessage) {
     window.onChatMessage({
-      from,
+      from: discoveredPeer,
       text: plaintext,
       ts,
-      isCurrentPeer: from === currentPeer,
+      isCurrentPeer: discoveredPeer === currentPeer,
     });
   }
 }
