@@ -731,6 +731,7 @@ $("startBtn").onclick = async () => {
 
     peers.clear();
     peerByNorm.clear();
+    currentPeer = null;
     refreshPeerDatalist();
     renderPeerList();
 
