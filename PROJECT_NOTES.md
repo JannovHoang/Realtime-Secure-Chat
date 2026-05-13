@@ -2993,6 +2993,37 @@ Local regression result:
   - `{"ok":false,"error":"Not found"}`
 - Start, realtime chat, backup, restore, and recent history still work locally
 
+### Public Tunnel Static Module Fix
+
+Completed in `server/server.js` after testing with Cloudflare Quick Tunnel.
+
+Problem found during public tunnel testing:
+
+- the public URL loaded `index.html`
+- browser then requested module imports such as `/chat.js` and `/storage.js`
+- the backend static server originally served only `client/ui`
+- missing JavaScript module paths fell back to `index.html`
+- browser rejected them because it expected JavaScript but received `text/html`
+
+Observed browser error:
+
+- `Expected a JavaScript-or-Wasm module script but the server responded with a MIME type of text/html`
+
+Fix:
+
+- backend static serving now exposes the required browser modules:
+  - `/chat.js`
+  - `/storage.js`
+  - `/crypto/...`
+- missing file paths with extensions return `404` instead of falling back to `index.html`
+- UI fallback to `index.html` is kept only for non-API/non-WS app routes
+
+Result:
+
+- Cloudflare public URL can load the app without module MIME errors
+- public app can connect through `wss://.../ws`
+- Start and realtime chat can be tested through the temporary Cloudflare URL
+
 ### Local Test Checklist
 
 Use two terminals:
@@ -3069,3 +3100,91 @@ After this phase is committed and pushed:
 3. open the temporary Cloudflare HTTPS URL
 4. verify the app uses `wss://.../ws`
 5. only after that consider buying and attaching a custom domain
+
+## Phase: Conversation Inbox / Auto Peer Discovery
+
+### Goal
+
+Improve chat UX so a user does not need to manually type a peer name after receiving a first message.
+
+Current direction:
+
+- keep scope client-side
+- do not change Double Ratchet
+- do not change Mongo schema
+- do not implement unread badges yet
+- do not implement server-side conversation list yet
+
+The phase focuses on automatically learning conversation peers from real chat activity.
+
+### Checkpoint 1: Realtime Incoming Peer Discovery
+
+Completed in `client/chat.js` and `client/ui/app.js`.
+
+Problem:
+
+- when a new peer sent a realtime message, the message could be decrypted and stored
+- but the UI notification only fired when that peer was already the currently open conversation
+- therefore the sidebar might not immediately show the new sender
+- user could still need to manually type the peer name
+
+Fix:
+
+- `client/chat.js` now calls `window.onChatMessage` for every successfully decrypted inbound realtime message
+- the event includes:
+  - `from`
+  - `text`
+  - `ts`
+  - `isCurrentPeer`
+- `client/ui/app.js` always learns the sender with `ensurePeerInDirectory(from)`
+- sidebar is re-rendered immediately
+- if the sender is the current peer, the message is appended to the open chat
+- if the sender is not the current peer, the UI shows a lightweight `New message from ...` toast
+
+Expected behavior after checkpoint 1:
+
+- Alice is online
+- Bob sends Alice a first realtime message
+- Alice's sidebar automatically shows Bob
+- Alice can click Bob and open that conversation without manually typing Bob's username
+
+Test recommendation:
+
+- use fresh demo accounts to avoid old history/state noise
+- run through Cloudflare public URL or local URL
+- avoid mixing old `Giang`/`Minh` data if those identities have known history inconsistencies
+
+### Planned Checkpoints
+
+#### Checkpoint 2: Pending / Offline Peer Discovery
+
+Goal:
+
+- when a peer sends a message while the user is offline
+- after pending messages are flushed on next Start
+- the sender should appear in the sidebar automatically
+
+#### Checkpoint 3: Recent Catch-Up Peer Discovery
+
+Goal:
+
+- when recent catch-up merges messages involving a peer
+- that peer should be learned and persisted in the local conversation list
+
+#### Checkpoint 4: Docs And Regression
+
+Goal:
+
+- update notes
+- test reload behavior
+- confirm learned peers remain after reload because they are stored in the vault conversation index
+
+### Non-Goals For This Phase
+
+- unread count
+- notification center
+- search UI
+- group chat
+- archive/mute conversation
+- server-side conversation list
+- full history synchronization
