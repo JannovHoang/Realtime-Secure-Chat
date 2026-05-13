@@ -3154,9 +3154,9 @@ Test recommendation:
 - run through Cloudflare public URL or local URL
 - avoid mixing old `Giang`/`Minh` data if those identities have known history inconsistencies
 
-### Planned Checkpoints
+### Checkpoint 2: Pending / Offline Peer Discovery
 
-#### Checkpoint 2: Pending / Offline Peer Discovery
+Completed in `client/chat.js`.
 
 Goal:
 
@@ -3164,12 +3164,79 @@ Goal:
 - after pending messages are flushed on next Start
 - the sender should appear in the sidebar automatically
 
-#### Checkpoint 3: Recent Catch-Up Peer Discovery
+Implementation notes:
+
+- pending/offline messages already flow through the same decrypt path as realtime messages
+- after server flushes pending messages, packets are decrypted by `processCipherPacket(...)`
+- peer discovery now goes through shared helper `rememberConversationPeer(peer)`
+- the helper ignores empty peer names
+- the helper does not add the current user as a peer
+- peer is persisted only after decrypt succeeds and the plaintext message is stored in local history
+
+Important rule locked by this checkpoint:
+
+- do not learn/persist a peer from raw ciphertext alone
+- only learn the peer after successful decrypt and valid local history write
+
+Expected behavior after checkpoint 2:
+
+- Alice is offline
+- Charlie sends Alice a message
+- Alice starts again
+- pending message is flushed and decrypted
+- Alice's sidebar automatically shows Charlie
+- Alice can click Charlie and open the pending message
+
+Regression checks:
+
+- no manual peer typing is required after pending flush
+- the app must not add Alice herself as a conversation peer
+- decrypt failure must not create a ghost peer in the sidebar
+
+Test result:
+
+- checkpoint 2 was tested with demo users after checkpoint 1
+- pending/offline peer discovery behaved as expected
+
+### Checkpoint 3: Recent Merge Peer Persistence
+
+Completed in `client/chat.js` and `client/ui/app.js`.
 
 Goal:
 
 - when recent catch-up merges messages involving a peer
 - that peer should be learned and persisted in the local conversation list
+- this is not full conversation discovery from the server
+- this only ensures the chosen peer remains persisted after recent merge
+
+Implementation notes:
+
+- `mergeDisplayMessagesIntoLocalHistory(peer, displayMessages)` now uses the shared helper `rememberConversationPeer(peer)`
+- this keeps recent merge behavior consistent with realtime and pending peer discovery
+- self-peer guard still applies through the shared helper
+- UI refreshes the sidebar after a successful recent/local merge with non-empty history
+- empty or failed recent fetch does not create a new peer
+
+Important scope clarification:
+
+- this checkpoint does not scan MongoDB for all possible conversations
+- this checkpoint does not implement full history synchronization
+- this checkpoint does not guarantee both sides have identical full timelines
+- it only keeps the currently selected peer persisted after a valid recent/local history merge
+
+Regression checks:
+
+- opening an existing conversation keeps the peer in the sidebar
+- reloading and starting again should keep the peer if it is in the vault conversation index
+- typing a random peer with no certificate/history should not create a sidebar entry
+- recent fetch failure remains non-blocking
+
+Test result:
+
+- test with random peer name showed no ghost peer was added
+- `Random` did not appear in `CONVERSATIONS`
+- UI showed a certificate guidance toast instead:
+  - `Peer "Random" has no certificate yet. Ask them to click Start.`
 
 #### Checkpoint 4: Docs And Regression
 
