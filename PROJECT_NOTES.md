@@ -3452,15 +3452,37 @@ Test result:
 - checkpoint 2 should be tested by sending messages both directions between two demo users
 - UI preview/order is not expected to change yet because checkpoint 4 will render metadata
 
-### Planned Checkpoints
+### Checkpoint 3: Pending + Recent Metadata Updates
 
-#### Checkpoint 3: Pending + Recent Metadata Updates
+Completed in `client/chat.js`.
 
 Goal:
 
 - pending should be covered by inbound decrypt path
 - recent merge should update metadata only when the newest merged/local message is newer than existing metadata
 - recent must not roll preview backward
+
+Implementation notes:
+
+- pending/offline messages already use `processCipherPacket(...)`, so they reuse the realtime inbound metadata update path from checkpoint 2
+- imported `getConversationMetadata(...)` from `client/storage.js`
+- added helper `latestDisplayMessageForPeer(...)`
+- added helper `updateConversationMetadataIfNewer(...)`
+- recent merge checks the latest decrypted/displayable message from the peer
+- recent merge updates metadata only if the candidate timestamp is not older than existing metadata
+
+Important rule:
+
+- recent catch-up must not roll `lastMessagePreview` or `lastMessageAt` backward with older messages
+- failed or empty recent decrypt does not update metadata
+
+Expected behavior after checkpoint 3:
+
+- pending/offline inbound messages update preview metadata after decrypt
+- recent merge can fill metadata for a peer if the merged message is newer
+- recent merge does not overwrite a newer preview with an older recovered message
+
+### Planned Checkpoints
 
 #### Checkpoint 4: Sidebar Ordering + Preview UI
 

@@ -16,6 +16,7 @@ import {
   addConversationPeer,
   listConversationPeers as listConversationPeersFromVault,
   upsertConversationMetadata,
+  getConversationMetadata,
   hmacRecordKey,
   deriveIdentityIdFromPublicJwk,
   saveIdentityMetadata,
@@ -414,6 +415,10 @@ async function mergeDisplayMessagesIntoLocalHistory(peer, displayMessages) {
 
   await storeRecord(key, JSON.stringify(arr));
   await rememberConversationPeer(p);
+  const latest = latestDisplayMessageForPeer(p, arr);
+  if (latest) {
+    await updateConversationMetadataIfNewer(p, latest.text, latest.ts);
+  }
   return arr;
 }
 
@@ -719,6 +724,30 @@ async function updateConversationMetadataFromMessage(peer, text, ts) {
     lastMessageAt: messageTimestamp(ts),
     lastMessagePreview: preview,
   });
+}
+
+function latestDisplayMessageForPeer(peer, messages) {
+  const p = normalizeUsername(peer);
+  if (!p || !Array.isArray(messages)) return null;
+
+  let latest = null;
+  for (const msg of messages) {
+    if (!msg || msg.from !== p || typeof msg.text !== "string") continue;
+    const ts = messageTimestamp(msg.ts);
+    if (!latest || ts > latest.ts) {
+      latest = { text: msg.text, ts };
+    }
+  }
+  return latest;
+}
+
+async function updateConversationMetadataIfNewer(peer, text, ts) {
+  const p = normalizeUsername(peer);
+  const nextTs = messageTimestamp(ts);
+  const current = await getConversationMetadata(p);
+  const currentTs = Number(current?.lastMessageAt) || 0;
+  if (currentTs && nextTs < currentTs) return current;
+  return updateConversationMetadataFromMessage(p, text, nextTs);
 }
 
 async function handleForceLogout(payload) {
