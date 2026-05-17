@@ -15,6 +15,7 @@ import {
   loadRecord,
   addConversationPeer,
   listConversationPeers as listConversationPeersFromVault,
+  upsertConversationMetadata,
   hmacRecordKey,
   deriveIdentityIdFromPublicJwk,
   saveIdentityMetadata,
@@ -705,6 +706,21 @@ async function rememberConversationPeer(peer) {
   return p;
 }
 
+function messageTimestamp(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : Date.now();
+}
+
+async function updateConversationMetadataFromMessage(peer, text, ts) {
+  const p = normalizeUsername(peer);
+  const preview = String(text || "").trim();
+  if (!p || p === myUser || !preview) return null;
+  return upsertConversationMetadata(p, {
+    lastMessageAt: messageTimestamp(ts),
+    lastMessagePreview: preview,
+  });
+}
+
 async function handleForceLogout(payload) {
   try {
     if (window.onForcedLogout) window.onForcedLogout(payload);
@@ -735,9 +751,13 @@ async function processCipherPacket(from, header, ciphertextB64, ts) {
     arr = [];
   }
 
-  arr.push({ from, text: plaintext, ts: ts ?? Date.now() });
+  const messageTs = messageTimestamp(ts);
+  arr.push({ from, text: plaintext, ts: messageTs });
   await storeRecord(key, JSON.stringify(arr));
   const discoveredPeer = await rememberConversationPeer(from);
+  if (discoveredPeer) {
+    await updateConversationMetadataFromMessage(discoveredPeer, plaintext, messageTs);
+  }
 
   scheduleSaveState();
 
@@ -745,7 +765,7 @@ async function processCipherPacket(from, header, ciphertextB64, ts) {
     window.onChatMessage({
       from: discoveredPeer,
       text: plaintext,
-      ts,
+      ts: messageTs,
       isCurrentPeer: discoveredPeer === currentPeer,
     });
   }
@@ -1128,9 +1148,11 @@ export async function sendMessage(peer, text) {
   } catch {
     arr = [];
   }
-  arr.push({ from: myUser, text: msg, ts: Date.now() });
+  const ts = Date.now();
+  arr.push({ from: myUser, text: msg, ts });
   await storeRecord(key, JSON.stringify(arr));
-  await addConversationPeer(p);
+  await rememberConversationPeer(p);
+  await updateConversationMetadataFromMessage(p, msg, ts);
 
   wsSend({
     type: "send",

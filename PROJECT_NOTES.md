@@ -3327,3 +3327,137 @@ After this phase, the most practical follow-up UX improvements are:
 2. Add last-message preview.
 3. Add unread count/badge.
 4. Later, consider a server-side encrypted inbox index if the product needs cross-device conversation discovery.
+
+## Phase: Conversation Ordering + Preview
+
+### Goal
+
+Make the conversation sidebar closer to a real chat app:
+
+- store local conversation metadata
+- show the latest message preview
+- order conversations by newest message first
+- keep fallback compatibility with the old peer index
+
+This phase remains local-vault based. It does not add server-side inbox, unread badges, full history sync, or multi-device conversation sync.
+
+### Metadata Model
+
+Metadata is stored inside the encrypted local vault.
+
+Minimal shape:
+
+- `peer`
+- `lastMessageAt`
+- `lastMessagePreview`
+- `updatedAt`
+
+Rules:
+
+- update metadata only after a message is valid
+- inbound/pending updates happen only after decrypt succeeds
+- outgoing updates happen only after local save succeeds
+- recent merge must not roll preview backward with older messages
+- do not create metadata for the current user as a peer
+- old peer index remains the fallback source for legacy conversations
+
+### Checkpoint 1: Conversation Metadata Storage Foundation
+
+Completed in `client/storage.js`.
+
+Changes:
+
+- added vault key:
+  - `__securechat_conversation_meta_v1__`
+- added helper normalization for:
+  - preview text
+  - timestamps
+- added metadata map helpers:
+  - `readConversationMetadataMap()`
+  - `writeConversationMetadataMap()`
+- added public APIs:
+  - `upsertConversationMetadata(peer, patch)`
+  - `getConversationMetadata(peer)`
+  - `listConversationMetadata()`
+
+Compatibility behavior:
+
+- `__securechat_conversations_v1__` remains supported
+- `listConversationMetadata()` includes peers from the old peer index even if they do not have metadata yet
+- no existing conversation peers should disappear after this checkpoint
+
+Test result:
+
+- checkpoint 1 was tested after fixing MongoDB Atlas Network Access
+- existing user could Start successfully
+- existing sidebar peers remained visible
+- existing conversations could still be opened
+
+### Environment Note: MongoDB Atlas IP Whitelist
+
+During checkpoint 1 testing, `npm start` failed with:
+
+- `MongoServerSelectionError`
+- `ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR`
+- `ReplicaSetNoPrimary`
+
+Root cause:
+
+- current public IP was not allowed in MongoDB Atlas Network Access
+
+Fix:
+
+- add the current IP address in MongoDB Atlas Network Access
+
+Related Cloudflare symptom:
+
+- `cloudflared tunnel --url http://localhost:3000` may still create a public URL
+- but it fails with `Unable to reach the origin service` if `npm start` did not successfully start the backend on port `3000`
+
+Rule:
+
+- always make sure `npm start` reaches `Mongo connected` before testing Cloudflare Tunnel
+
+### Planned Checkpoints
+
+#### Checkpoint 2: Realtime Metadata Updates
+
+Goal:
+
+- update metadata after outgoing message is saved locally
+- update metadata after inbound realtime message is decrypted and saved
+- keep self-peer guard
+- use message timestamp if valid, otherwise fallback to `Date.now()`
+
+#### Checkpoint 3: Pending + Recent Metadata Updates
+
+Goal:
+
+- pending should be covered by inbound decrypt path
+- recent merge should update metadata only when the newest merged/local message is newer than existing metadata
+- recent must not roll preview backward
+
+#### Checkpoint 4: Sidebar Ordering + Preview UI
+
+Goal:
+
+- render sidebar from conversation metadata
+- sort by `lastMessageAt` descending
+- fallback alphabetical for peers without timestamp
+- show truncated preview under peer name
+
+#### Checkpoint 5: Backward Compatibility + Backfill
+
+Goal:
+
+- old peer index still renders
+- opening a legacy conversation can backfill metadata from its latest local message
+- no forced migration on Start
+
+#### Checkpoint 6: Docs + Final Regression
+
+Goal:
+
+- document final metadata behavior
+- document remaining limitations
+- run regression for ordering, preview, pending, recent, reload, and legacy conversations
