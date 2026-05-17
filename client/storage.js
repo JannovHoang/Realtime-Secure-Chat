@@ -17,6 +17,7 @@ let vaultStorageKey = null;   // localStorage key per user
 // Encrypted index keys (inside vault)
 const INDEX_KEY = "__securechat_index_v1__";
 const CONV_INDEX_KEY = "__securechat_conversations_v1__";
+const CONV_META_KEY = "__securechat_conversation_meta_v1__";
 const IDENTITY_META_KEY = "__securechat_identity_meta_v2__";
 
 // Chunking scheme
@@ -61,6 +62,19 @@ function normalizeKeyName(name) {
     .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ") // NBSP & weird spaces -> space
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizePreview(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeTimestamp(value, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return n;
 }
 
 // UTF-8 byte length (accurate)
@@ -352,6 +366,47 @@ async function writeConversationIndex(arr) {
   await setValueChunked(CONV_INDEX_KEY, JSON.stringify(uniq));
 }
 
+async function readConversationMetadataMap() {
+  const s = await getValueChunked(CONV_META_KEY);
+  if (!s) return {};
+
+  try {
+    const raw = JSON.parse(s);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+
+    const out = {};
+    for (const [key, value] of Object.entries(raw)) {
+      const peer = normalizeKeyName(value?.peer || key);
+      if (!peer) continue;
+
+      out[peer] = {
+        peer,
+        lastMessageAt: normalizeTimestamp(value?.lastMessageAt, 0),
+        lastMessagePreview: normalizePreview(value?.lastMessagePreview),
+        updatedAt: normalizeTimestamp(value?.updatedAt, 0),
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+async function writeConversationMetadataMap(map) {
+  const clean = {};
+  for (const value of Object.values(map || {})) {
+    const peer = normalizeKeyName(value?.peer);
+    if (!peer) continue;
+    clean[peer] = {
+      peer,
+      lastMessageAt: normalizeTimestamp(value?.lastMessageAt, 0),
+      lastMessagePreview: normalizePreview(value?.lastMessagePreview),
+      updatedAt: normalizeTimestamp(value?.updatedAt, 0),
+    };
+  }
+  await setValueChunked(CONV_META_KEY, JSON.stringify(clean));
+}
+
 // -------------------- Public API --------------------
 export async function hasPersistedVault(userId = "default") {
   const key = await makeVaultStorageKey(userId);
@@ -632,6 +687,83 @@ export async function addConversationPeer(peer) {
 
 export async function listConversationPeers() {
   return await readConversationIndex();
+}
+
+export async function upsertConversationMetadata(peer, patch = {}) {
+  const p = normalizeKeyName(peer);
+  if (!p) return null;
+
+  const map = await readConversationMetadataMap();
+  const current = map[p] || {
+    peer: p,
+    lastMessageAt: 0,
+    lastMessagePreview: "",
+    updatedAt: 0,
+  };
+
+  const hasPatchTimestamp = Object.prototype.hasOwnProperty.call(
+    patch,
+    "lastMessageAt"
+  );
+  const nextTimestamp = hasPatchTimestamp
+    ? normalizeTimestamp(patch.lastMessageAt, current.lastMessageAt || 0)
+    : current.lastMessageAt || 0;
+
+  const next = {
+    peer: p,
+    lastMessageAt: nextTimestamp,
+    lastMessagePreview: current.lastMessagePreview || "",
+    updatedAt: Date.now(),
+  };
+
+  if (Object.prototype.hasOwnProperty.call(patch, "lastMessagePreview")) {
+    const preview = normalizePreview(patch.lastMessagePreview);
+    if (preview) next.lastMessagePreview = preview;
+  }
+
+  map[p] = next;
+  await writeConversationMetadataMap(map);
+  await addConversationPeer(p);
+  return next;
+}
+
+export async function getConversationMetadata(peer) {
+  const p = normalizeKeyName(peer);
+  if (!p) return null;
+  const map = await readConversationMetadataMap();
+  return map[p] || null;
+}
+
+export async function listConversationMetadata() {
+  const [peers, map] = await Promise.all([
+    readConversationIndex(),
+    readConversationMetadataMap(),
+  ]);
+  const seen = new Set();
+  const out = [];
+
+  for (const peer of peers) {
+    const p = normalizeKeyName(peer);
+    if (!p || seen.has(p)) continue;
+    seen.add(p);
+    out.push(
+      map[p] || {
+        peer: p,
+        lastMessageAt: 0,
+        lastMessagePreview: "",
+        updatedAt: 0,
+      }
+    );
+  }
+
+  for (const meta of Object.values(map)) {
+    const p = normalizeKeyName(meta?.peer);
+    if (!p || seen.has(p)) continue;
+    seen.add(p);
+    out.push(meta);
+  }
+
+  return out;
 }
 
 export async function hmacRecordKey(label) {
