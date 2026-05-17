@@ -3544,12 +3544,82 @@ Expected behavior after checkpoint 5:
 - after opening it, sidebar gains preview and timestamp metadata if local history has a valid latest message
 - reload + Start keeps the backfilled preview because it is persisted in the vault metadata map
 
-### Planned Checkpoints
+### Checkpoint 6: Docs + Final Regression
 
-#### Checkpoint 6: Docs + Final Regression
+Completed in `PROJECT_NOTES.md`.
 
-Goal:
+Final behavior:
 
-- document final metadata behavior
-- document remaining limitations
-- run regression for ordering, preview, pending, recent, reload, and legacy conversations
+- conversation sidebar uses local vault metadata when available
+- each conversation can show:
+  - peer name
+  - latest message preview
+  - ordering based on `lastMessageAt`
+- newest conversation appears first
+- old peers from the legacy peer index still render even if metadata is missing
+- opening an old conversation can backfill metadata from local history
+- metadata is local-vault data, not a server-side inbox
+- metadata is updated only after a message is valid for the relevant path:
+  - outgoing after local save succeeds
+  - realtime inbound after decrypt succeeds
+  - pending inbound after decrypt succeeds
+  - recent merge after a valid display message is merged
+
+Important rules:
+
+- do not create metadata for self conversations
+- do not update metadata from undecrypted ciphertext
+- recent/backfill must not roll preview backward if current metadata is newer
+- Start does not force a full migration; backfill is lazy when opening a conversation
+
+Remaining limitations:
+
+- no unread badge yet
+- no server-side conversation inbox yet
+- conversation metadata is per browser/local vault
+- metadata is not a replacement for backup/restore
+- multi-device metadata consistency is not complete
+- if a browser has no restored/local vault, it cannot infer full conversation state just from the server
+
+Final regression checklist:
+
+- Realtime preview:
+  - Bob sends Alice a message
+  - Alice sidebar shows Bob with preview
+- Ordering:
+  - Charlie sends Alice a newer message
+  - Charlie moves above Bob
+  - Alice sends Bob a newer message
+  - Bob moves back above Charlie
+- Pending/offline:
+  - Alice offline
+  - Bob sends Alice a message
+  - Alice starts again
+  - pending message decrypts
+  - Bob preview/order updates after decrypt
+- Recent merge:
+  - open a conversation that triggers recent catch-up
+  - no duplicate obvious messages
+  - preview does not roll back to an older message
+- Reload persistence:
+  - reload the browser
+  - Start same user
+  - sidebar still shows peers, ordering, and previews
+- Legacy backfill:
+  - old peer without metadata still appears
+  - click the peer
+  - preview appears if local history has a valid latest message
+- Negative checks:
+  - no self peer appears in sidebar
+  - failed decrypt does not create a fake peer/preview
+  - sending to peer without certificate still shows the existing certificate warning
+
+Phase conclusion:
+
+- Conversation Ordering + Preview is complete for local-vault metadata scope
+- the sidebar is now closer to a normal chat app:
+  - learned peers appear automatically
+  - recent conversations rise to the top
+  - previews persist across reload on the same origin
+- next likely UI step is unread state or better visual design
+- next likely architecture step is account/auth or server-side encrypted inbox depending on product priority
