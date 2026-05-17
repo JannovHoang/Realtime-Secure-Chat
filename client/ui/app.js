@@ -21,6 +21,7 @@ import {
   decryptIdentityPayload,
   importIdentityPayload,
   loadIdentityMetadata,
+  listConversationMetadata,
 } from "../storage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -44,6 +45,7 @@ const continueWithoutRestoreFor = new Set();
  */
 const peers = new Set(); // display usernames (case preserved)
 const peerByNorm = new Map(); // norm -> display username
+const peerMetadataByNorm = new Map(); // norm -> local conversation metadata
 
 function normalizeKeepCase(u) {
   return String(u ?? "")
@@ -62,8 +64,8 @@ function findPeerDisplay(input) {
 function ensurePeerInDirectory(peerDisplay) {
   const p = normalizeKeepCase(peerDisplay);
   if (!p) return;
-  peers.add(peerDisplay);
-  peerByNorm.set(p, peerDisplay);
+  peers.add(p);
+  peerByNorm.set(p, p);
   refreshPeerDatalist();
 }
 
@@ -71,8 +73,11 @@ function removePeerFromDirectory(peerDisplay) {
   const p = normalizeKeepCase(peerDisplay);
   if (!p) return;
   peers.delete(peerDisplay);
+  peers.delete(p);
+  peerMetadataByNorm.delete(p);
   // Only delete mapping if it points to this display
   if (peerByNorm.get(p) === peerDisplay) peerByNorm.delete(p);
+  if (peerByNorm.get(p) === p) peerByNorm.delete(p);
   refreshPeerDatalist();
 }
 
@@ -315,6 +320,7 @@ function resetUiAfterLogout(reason) {
 
   peers.clear();
   peerByNorm.clear();
+  peerMetadataByNorm.clear();
   refreshPeerDatalist();
   renderPeerList();
 
@@ -531,6 +537,49 @@ async function runBackupFlow() {
 }
 
 /* ===================== conversation list ===================== */
+function normalizeMetadataItem(item) {
+  const peer = normalizeKeepCase(item?.peer);
+  if (!peer) return null;
+  const lastMessageAt = Number(item?.lastMessageAt) || 0;
+  return {
+    peer,
+    lastMessageAt,
+    lastMessagePreview: String(item?.lastMessagePreview || "").trim(),
+    updatedAt: Number(item?.updatedAt) || 0,
+  };
+}
+
+function rememberPeerMetadata(item) {
+  const meta = normalizeMetadataItem(item);
+  if (!meta) return;
+  ensurePeerInDirectory(meta.peer);
+  peerMetadataByNorm.set(meta.peer, meta);
+}
+
+function truncatePreview(text, max = 56) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  if (value.length <= max) return value;
+  return value.slice(0, Math.max(0, max - 1)).trimEnd() + "...";
+}
+
+function getPeerRenderItems() {
+  return Array.from(peers)
+    .map((peer) => {
+      const p = normalizeKeepCase(peer);
+      const meta = peerMetadataByNorm.get(p) || null;
+      return {
+        peer: p,
+        lastMessageAt: Number(meta?.lastMessageAt) || 0,
+        lastMessagePreview: meta?.lastMessagePreview || "",
+      };
+    })
+    .filter((item) => item.peer)
+    .sort((a, b) => {
+      if (a.lastMessageAt !== b.lastMessageAt) return b.lastMessageAt - a.lastMessageAt;
+      return a.peer.localeCompare(b.peer);
+    });
+}
+
 function renderPeerList() {
   const listEl = $("peerList");
   const emptyEl = $("peerEmpty");
@@ -538,7 +587,7 @@ function renderPeerList() {
 
   listEl.innerHTML = "";
 
-  const list = Array.from(peers).sort((a, b) => a.localeCompare(b));
+  const list = getPeerRenderItems();
   if (list.length === 0) {
     emptyEl.style.display = "block";
     return;
@@ -546,7 +595,8 @@ function renderPeerList() {
 
   emptyEl.style.display = "none";
 
-  for (const p of list) {
+  for (const itemData of list) {
+    const p = itemData.peer;
     const item = document.createElement("button");
     item.type = "button";
     item.className = "peer-item" + (p === currentPeer ? " active" : "");
@@ -559,8 +609,19 @@ function renderPeerList() {
     name.className = "peer-name";
     name.textContent = p;
 
+    const copy = document.createElement("span");
+    copy.className = "peer-copy";
+    copy.appendChild(name);
+
+    if (itemData.lastMessagePreview) {
+      const preview = document.createElement("span");
+      preview.className = "peer-preview";
+      preview.textContent = truncatePreview(itemData.lastMessagePreview);
+      copy.appendChild(preview);
+    }
+
     item.appendChild(avatar);
-    item.appendChild(name);
+    item.appendChild(copy);
 
     item.addEventListener("click", async () => {
       $("to").value = p;
@@ -572,10 +633,22 @@ function renderPeerList() {
 }
 
 async function syncPeersFromVault() {
+  let usedMetadata = false;
+  try {
+    const metadata = await listConversationMetadata();
+    for (const item of metadata) rememberPeerMetadata(item);
+    usedMetadata = true;
+  } catch {}
+
   try {
     const fromVault = await listConversationPeers();
     for (const p of fromVault) ensurePeerInDirectory(p);
-  } catch {}
+  } catch {
+    if (!usedMetadata) {
+      // Keep sidebar usable even if legacy peer loading fails.
+    }
+  }
+
   renderPeerList();
 }
 
@@ -598,8 +671,7 @@ async function loadHistory(peer) {
     const recent = await fetchRecentMessages(peer, 50);
     const merged = await mergeRecentMessagesForDisplay(peer, recent);
     if (merged.length > 0) {
-      ensurePeerInDirectory(peer);
-      renderPeerList();
+      await syncPeersFromVault();
     }
     clearMessages();
     merged.forEach((m) => {
@@ -731,6 +803,7 @@ $("startBtn").onclick = async () => {
 
     peers.clear();
     peerByNorm.clear();
+    peerMetadataByNorm.clear();
     currentPeer = null;
     refreshPeerDatalist();
     renderPeerList();
@@ -924,7 +997,7 @@ $("sendBtn").onclick = async () => {
     $("msg").value = "";
     appendMsg("me", msg);
     ensurePeerInDirectory(to);
-    renderPeerList();
+    await syncPeersFromVault();
   } catch (e) {
     console.error("[Send error]", e);
     toast("Send failed: " + (e?.message || e), "error");
@@ -945,6 +1018,7 @@ window.onChatMessage = ({ from, text, isCurrentPeer }) => {
   // Learn peer name from incoming too (case preserved)
   ensurePeerInDirectory(from);
   renderPeerList();
+  syncPeersFromVault().catch(() => {});
 
   if (isCurrentPeer || from === currentPeer) {
     appendMsg("peer", text);

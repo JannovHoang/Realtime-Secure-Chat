@@ -3482,9 +3482,9 @@ Expected behavior after checkpoint 3:
 - recent merge can fill metadata for a peer if the merged message is newer
 - recent merge does not overwrite a newer preview with an older recovered message
 
-### Planned Checkpoints
+### Checkpoint 4: Sidebar Ordering + Preview UI
 
-#### Checkpoint 4: Sidebar Ordering + Preview UI
+Completed in `client/ui/app.js` and `client/ui/style.css`.
 
 Goal:
 
@@ -3492,6 +3492,31 @@ Goal:
 - sort by `lastMessageAt` descending
 - fallback alphabetical for peers without timestamp
 - show truncated preview under peer name
+
+Implementation notes:
+
+- `client/ui/app.js` imports `listConversationMetadata(...)` from `client/storage.js`
+- UI keeps an in-memory metadata map keyed by normalized peer
+- `syncPeersFromVault()` loads metadata from the vault and still falls back to the old peer index through `listConversationPeers()`
+- `renderPeerList()` now builds sidebar rows from metadata-aware render items
+- conversations with newer `lastMessageAt` appear first
+- peers without metadata still render, sorted alphabetically after timestamp comparison fallback
+- each row shows:
+  - avatar
+  - peer name
+  - latest message preview when available
+- preview is trimmed and truncated in the UI
+- after send, incoming message, and recent merge, the UI refreshes sidebar metadata from the vault
+
+Expected behavior after checkpoint 4:
+
+- Bob sends Alice a message, Bob appears in Alice's sidebar with that preview
+- Charlie sends Alice a newer message, Charlie moves above Bob
+- Alice sends Bob a newer message, Bob moves back to the top on Alice's sidebar
+- reload + Start keeps the ordering and preview because metadata is stored in the local vault
+- old peers without metadata are still visible
+
+### Planned Checkpoints
 
 #### Checkpoint 5: Backward Compatibility + Backfill
 
