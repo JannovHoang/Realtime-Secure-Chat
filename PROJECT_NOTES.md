@@ -3516,15 +3516,35 @@ Expected behavior after checkpoint 4:
 - reload + Start keeps the ordering and preview because metadata is stored in the local vault
 - old peers without metadata are still visible
 
-### Planned Checkpoints
+### Checkpoint 5: Backward Compatibility + Backfill
 
-#### Checkpoint 5: Backward Compatibility + Backfill
+Completed in `client/chat.js` and `client/ui/app.js`.
 
 Goal:
 
 - old peer index still renders
 - opening a legacy conversation can backfill metadata from its latest local message
 - no forced migration on Start
+
+Implementation notes:
+
+- `openConversation(peer)` now reads the local history and backfills metadata from the newest valid local message
+- backfill considers both directions in the local conversation:
+  - peer -> local user
+  - local user -> peer
+- backfill skips self conversations and invalid/empty messages
+- backfill uses the same "only if newer" rule as recent merge, so it should not roll preview/timestamp backward
+- Start still does not force a full metadata migration
+- `loadHistory(peer)` refreshes sidebar metadata after `openConversation(peer)` so legacy preview/order appears when the user opens that conversation
+
+Expected behavior after checkpoint 5:
+
+- a legacy peer without metadata still appears from the old peer index
+- clicking that peer opens local history
+- after opening it, sidebar gains preview and timestamp metadata if local history has a valid latest message
+- reload + Start keeps the backfilled preview because it is persisted in the vault metadata map
+
+### Planned Checkpoints
 
 #### Checkpoint 6: Docs + Final Regression
 

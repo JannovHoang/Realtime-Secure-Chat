@@ -741,6 +741,23 @@ function latestDisplayMessageForPeer(peer, messages) {
   return latest;
 }
 
+function latestDisplayMessageForConversation(peer, messages) {
+  const p = normalizeUsername(peer);
+  if (!p || !Array.isArray(messages)) return null;
+
+  let latest = null;
+  for (const msg of messages) {
+    if (!msg || typeof msg.text !== "string") continue;
+    if (msg.from !== p && msg.from !== myUser) continue;
+
+    const ts = messageTimestamp(msg.ts);
+    if (!latest || ts > latest.ts) {
+      latest = { text: msg.text, ts };
+    }
+  }
+  return latest;
+}
+
 async function updateConversationMetadataIfNewer(peer, text, ts) {
   const p = normalizeUsername(peer);
   const nextTs = messageTimestamp(ts);
@@ -748,6 +765,15 @@ async function updateConversationMetadataIfNewer(peer, text, ts) {
   const currentTs = Number(current?.lastMessageAt) || 0;
   if (currentTs && nextTs < currentTs) return current;
   return updateConversationMetadataFromMessage(p, text, nextTs);
+}
+
+async function backfillConversationMetadataFromHistory(peer, messages) {
+  const p = normalizeUsername(peer);
+  if (!p || p === myUser) return null;
+  const latest = latestDisplayMessageForConversation(p, messages);
+  if (!latest) return null;
+  await rememberConversationPeer(p);
+  return updateConversationMetadataIfNewer(p, latest.text, latest.ts);
 }
 
 async function handleForceLogout(payload) {
@@ -1149,7 +1175,9 @@ export async function openConversation(peer) {
   const history = (await loadRecord(key)) || "[]";
   try {
     const arr = JSON.parse(history);
-    return Array.isArray(arr) ? arr : [];
+    if (!Array.isArray(arr)) return [];
+    await backfillConversationMetadataFromHistory(p, arr);
+    return arr;
   } catch {
     return [];
   }

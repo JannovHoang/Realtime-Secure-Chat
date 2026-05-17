@@ -656,6 +656,7 @@ async function syncPeersFromVault() {
 async function loadHistory(peer) {
   clearMessages();
   const history = await openConversation(peer);
+  await syncPeersFromVault();
   history.forEach((m) => {
     appendMsg(m.from === peer ? "peer" : "me", m.text);
   });
