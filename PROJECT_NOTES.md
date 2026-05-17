@@ -3418,9 +3418,9 @@ Rule:
 
 - always make sure `npm start` reaches `Mongo connected` before testing Cloudflare Tunnel
 
-### Planned Checkpoints
+### Checkpoint 2: Realtime Metadata Updates
 
-#### Checkpoint 2: Realtime Metadata Updates
+Completed in `client/chat.js`.
 
 Goal:
 
@@ -3428,6 +3428,31 @@ Goal:
 - update metadata after inbound realtime message is decrypted and saved
 - keep self-peer guard
 - use message timestamp if valid, otherwise fallback to `Date.now()`
+
+Implementation notes:
+
+- imported `upsertConversationMetadata(...)` from `client/storage.js`
+- added helper `messageTimestamp(...)`
+- added helper `updateConversationMetadataFromMessage(...)`
+- outgoing messages update metadata only after local history is written
+- inbound messages update metadata only after decrypt succeeds and local history is written
+- preview is trimmed before saving
+- metadata is not created for the current user as a peer
+
+Expected behavior after checkpoint 2:
+
+- Alice sends Bob a realtime message
+- Alice's local metadata for Bob stores the latest timestamp and preview
+- Bob decrypts the message
+- Bob's local metadata for Alice stores the latest timestamp and preview
+- existing sidebar behavior remains unchanged until the later UI checkpoint
+
+Test result:
+
+- checkpoint 2 should be tested by sending messages both directions between two demo users
+- UI preview/order is not expected to change yet because checkpoint 4 will render metadata
+
+### Planned Checkpoints
 
 #### Checkpoint 3: Pending + Recent Metadata Updates
 
