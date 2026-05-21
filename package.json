@@ -4,7 +4,7 @@
   "private": true,
   "description": "Real-time Secure Chat (E2EE) using Project 1 Password Manager + Project 2 Double Ratchet, with WebSocket relay server and Vite UI.",
   "scripts": {
-    "start": "node server/server.js",
+    "start": "npm run build && node server/server.js",
     "dev": "vite --config vite.config.js",
     "build": "vite build --config vite.config.js",
     "preview": "vite preview --config vite.config.js"
@@ -12,6 +12,8 @@
   "dependencies": {
     "dotenv": "^17.4.1",
     "mongodb": "^6.21.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "ws": "^8.18.0"
   },
   "devDependencies": {

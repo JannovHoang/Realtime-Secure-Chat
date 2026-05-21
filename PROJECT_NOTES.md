@@ -3764,3 +3764,51 @@ Checkpoint result:
 - no runtime behavior changed yet
 - the legacy UI contract is now documented explicitly
 - later React checkpoints can be validated against this baseline instead of relying on memory
+
+### Checkpoint 2: React Shell And Entry Ownership Switch
+
+Completed in:
+
+- `client/ui/index.html`
+- `client/ui/main.jsx`
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `package.json`
+
+Goal:
+
+- move the browser UI entry from the vanilla script to a React root
+- ensure the old DOM-imperative UI is no longer mounted in parallel with React
+- keep this checkpoint intentionally narrow by not reconnecting chat/runtime logic yet
+
+Changes:
+
+- added `react` and `react-dom` to the project dependencies
+- `client/ui/index.html` now mounts a single `#root` container
+- the old `<script type="module" src="./app.js">` entry was removed from the active HTML path
+- added `client/ui/main.jsx` as the React entry point
+- added `client/ui/App.jsx` as the first React-rendered shell
+- kept the existing CSS file and extended it with a few migration-only shell styles
+- updated `npm start` to build the frontend before the backend boots
+- updated `server/server.js` to prefer serving `dist/` when a built frontend is available
+
+Important behavior change for this checkpoint:
+
+- this checkpoint intentionally pauses interactive chat behavior in the active UI
+- the app now renders a React shell with disabled controls and a migration notice
+- this is temporary and expected at this stage
+- runtime/chat parity will resume only after the bridge and UI wiring checkpoints are completed
+
+Important migration win from this checkpoint:
+
+- React now owns the active DOM tree
+- `client/ui/app.js` is preserved in the repository for reference, but it is no longer loaded by `index.html`
+- this removes the main risk of React and the old vanilla handlers co-owning the same DOM tree
+- backend-served UI and quick tunnel can now render the built React shell instead of trying to execute raw source JSX
+
+Checkpoint result:
+
+- the app should load through React instead of the vanilla entry
+- the screen should clearly show that this is the React shell checkpoint
+- buttons and inputs should be visibly disabled
+- interactive chat is intentionally unavailable until the next checkpoints reconnect the runtime

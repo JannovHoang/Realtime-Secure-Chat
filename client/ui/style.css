@@ -39,6 +39,20 @@ body {
   padding: 0 18px 24px;
 }
 
+.migration-banner {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(37, 99, 235, 0.1)),
+    #ffffff;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.06);
+}
+
 .topbar {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -152,6 +166,12 @@ button.secondary:hover {
   border-radius: 999px;
   background: #fff;
   user-select: none;
+}
+
+.migration-status {
+  color: #0f3aa9;
+  border-color: rgba(29, 78, 216, 0.18);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .content {
@@ -297,6 +317,33 @@ button.secondary:hover {
   background:
     radial-gradient(circle at 20% 0%, rgba(148, 163, 184, 0.18), transparent 50%),
     linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.migration-messages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.migration-card {
+  width: min(560px, 100%);
+  padding: 22px 24px;
+  border: 1px solid rgba(29, 78, 216, 0.14);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.migration-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.migration-card p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .msg {

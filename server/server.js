@@ -41,6 +41,9 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const PROJECT_ROOT = path.join(__dirname, "..");
 const CLIENT_DIR = path.join(PROJECT_ROOT, "client");
 const UI_DIR = path.join(__dirname, "..", "client", "ui");
+const DIST_DIR = path.join(PROJECT_ROOT, "dist");
+const ACTIVE_UI_DIR =
+  fs.existsSync(path.join(DIST_DIR, "index.html")) ? DIST_DIR : UI_DIR;
 const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || "").trim();
 
 // ===== Persisted keys file =====
@@ -295,8 +298,8 @@ function resolveStaticFilePath(pathname) {
   let safePath = pathname === "/" ? "/index.html" : pathname;
   if (safePath.endsWith("/")) safePath += "index.html";
 
-  const filePath = path.resolve(UI_DIR, `.${safePath}`);
-  return isPathInside(UI_DIR, filePath) ? filePath : null;
+  const filePath = path.resolve(ACTIVE_UI_DIR, `.${safePath}`);
+  return isPathInside(ACTIVE_UI_DIR, filePath) ? filePath : null;
 }
 
 function writeJson(res, statusCode, obj, extraHeaders = {}) {
@@ -798,7 +801,7 @@ const server = http.createServer((req, res) => {
         return res.end("Not found");
       }
 
-      const fallbackPath = path.join(UI_DIR, "index.html");
+      const fallbackPath = path.join(ACTIVE_UI_DIR, "index.html");
       return fs.readFile(fallbackPath, (fallbackErr, fallbackData) => {
         if (fallbackErr) {
           res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
