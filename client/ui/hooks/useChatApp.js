@@ -4,13 +4,19 @@ import {
   getChatRuntimeBridgeStatus,
   subscribeToChatRuntime,
 } from "../lib/chatRuntimeBridge.js";
-import { hasPersistedVault } from "../../storage.js";
+import {
+  hasPersistedVault,
+  listConversationMetadata,
+} from "../../storage.js";
 
 const initialState = {
   username: "",
   password: "",
   started: false,
   starting: false,
+  activePeer: "",
+  conversations: [],
+  conversationsLoaded: false,
   bridgeInstalled: false,
   bridgeListenerCount: 0,
   runtimeEventCount: 0,
@@ -29,6 +35,29 @@ function trimPreview(text, max = 72) {
   return value.slice(0, Math.max(0, max - 1)).trimEnd() + "...";
 }
 
+function normalizePeer(value) {
+  return String(value || "").trim();
+}
+
+function normalizeConversationItem(item) {
+  const peer = normalizePeer(item?.peer);
+  if (!peer) return null;
+  return {
+    peer,
+    lastMessageAt: Number(item?.lastMessageAt) || 0,
+    lastMessagePreview: trimPreview(item?.lastMessagePreview || "", 56),
+  };
+}
+
+function sortConversations(items) {
+  return [...items].sort((a, b) => {
+    if (a.lastMessageAt !== b.lastMessageAt) {
+      return b.lastMessageAt - a.lastMessageAt;
+    }
+    return a.peer.localeCompare(b.peer);
+  });
+}
+
 function runtimeSnapshotState() {
   const status = getChatRuntimeBridgeStatus();
   return {
@@ -44,6 +73,25 @@ function reducer(state, action) {
         ...state,
         [action.field]: action.value,
       };
+    case "set_conversations": {
+      const normalized = Array.isArray(action.items)
+        ? sortConversations(
+            action.items.map(normalizeConversationItem).filter(Boolean)
+          )
+        : [];
+      const hasActivePeer = normalized.some((item) => item.peer === state.activePeer);
+      return {
+        ...state,
+        conversations: normalized,
+        conversationsLoaded: true,
+        activePeer: hasActivePeer ? state.activePeer : normalized[0]?.peer || "",
+      };
+    }
+    case "set_active_peer":
+      return {
+        ...state,
+        activePeer: normalizePeer(action.peer),
+      };
     case "start_begin":
       return {
         ...state,
@@ -58,6 +106,7 @@ function reducer(state, action) {
         starting: false,
         disconnected: false,
         password: "",
+        conversationsLoaded: false,
         statusText: "Ready",
         statusTone: "success",
       };
@@ -77,6 +126,9 @@ function reducer(state, action) {
         starting: false,
         disconnected: false,
         password: "",
+        activePeer: "",
+        conversations: [],
+        conversationsLoaded: false,
         statusText: "Logged out",
         statusTone: "success",
       };
@@ -105,6 +157,9 @@ function reducer(state, action) {
           starting: false,
           disconnected: false,
           password: "",
+          activePeer: "",
+          conversations: [],
+          conversationsLoaded: false,
           runtimeEventCount: state.runtimeEventCount + 1,
           lastRuntimeEventType: eventType,
           lastForcedLogoutReason: String(payload?.reason || "logged_in_elsewhere"),
@@ -151,6 +206,28 @@ export function useChatApp() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!state.started) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const metadata = await listConversationMetadata();
+        if (cancelled) return;
+        dispatch({ type: "set_conversations", items: metadata });
+      } catch (err) {
+        console.warn("[ui] failed to load conversation metadata:", err);
+        if (cancelled) return;
+        dispatch({ type: "set_conversations", items: [] });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.started, state.runtimeEventCount]);
 
   async function handleStart() {
     const username = String(state.username || "").trim();
@@ -202,10 +279,15 @@ export function useChatApp() {
     dispatch({ type: "field_change", field, value });
   }
 
+  function selectPeer(peer) {
+    dispatch({ type: "set_active_peer", peer });
+  }
+
   return {
     state,
     actions: {
       setField,
+      selectPeer,
       handleStart,
       handleLogout,
     },

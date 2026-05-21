@@ -3917,3 +3917,52 @@ Checkpoint result:
 - React now owns the topbar auth/session controls
 - session lifecycle no longer depends on the old `client/ui/app.js`
 - full chat usability is still pending the sidebar/chat checkpoints
+
+### Checkpoint 5: React Conversation Sidebar
+
+Completed in:
+
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/App.jsx`
+
+Goal:
+
+- reconnect the local conversation sidebar through React
+- use vault metadata ordering/preview instead of the previous placeholder copy
+- keep actual history loading and message rendering for the next checkpoint
+
+Changes:
+
+- added reducer state for:
+  - `conversations`
+  - `conversationsLoaded`
+  - `activePeer`
+- added normalized conversation helpers inside the React hook
+- after a successful `Start`, React now loads `listConversationMetadata()` from the current vault
+- sidebar rows now render:
+  - avatar
+  - peer name
+  - preview text when available
+- conversations are sorted:
+  - newest `lastMessageAt` first
+  - alphabetical fallback for peers without timestamps
+- clicking a conversation now updates the active peer in React state
+
+Important limitation for this checkpoint:
+
+- selecting a peer does not yet load local history into the chat pane
+- realtime updates can trigger a sidebar metadata refresh through the runtime event counter, but the main conversation timeline is still not reconnected yet
+- peer typing/manual peer discovery input is still deferred
+
+Expected behavior after this checkpoint:
+
+- after `Start` on a browser/origin with an existing local vault, the sidebar should show local conversations if metadata exists
+- the first available conversation becomes the active highlighted peer by default
+- clicking a sidebar item changes the highlight and updates the read-only peer field
+- if the vault has no local conversation metadata yet, the sidebar shows an empty-state message instead of the old placeholder text
+
+Checkpoint result:
+
+- React now owns the conversation sidebar structure and metadata rendering
+- ordering + preview are back at the sidebar level for vaults that already contain local conversation metadata
+- full chat usability still waits for the next checkpoint that reconnects history loading and message sending

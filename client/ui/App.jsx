@@ -29,6 +29,7 @@ export default function App() {
   const startLabel = state.disconnected ? "Reconnect" : "Start";
   const startDisabled = state.starting || (state.started && !state.disconnected);
   const logoutDisabled = state.starting || !state.started;
+  const peerInputValue = state.activePeer || "";
 
   return (
     <div className="shell">
@@ -118,34 +119,79 @@ export default function App() {
           <div className="field">
             <label>Chat with</label>
             <input
-              placeholder="Conversation picker will be connected in a later checkpoint"
-              disabled
+              placeholder={
+                state.started
+                  ? "Chat pane wiring returns in the next checkpoint"
+                  : "Start a session to load local conversations"
+              }
+              value={peerInputValue}
+              readOnly
+              disabled={!state.started}
             />
           </div>
 
           <div className="peer-list">
             <div className="peer-list-head">Conversations</div>
-            <div className="peer-empty">
-              React now owns this layout. Sidebar data wiring is scheduled for the next
-              migration steps.
-            </div>
+            {state.started && state.conversations.length > 0 ? (
+              <div className="peer-items">
+                {state.conversations.map((item) => (
+                  <button
+                    key={item.peer}
+                    type="button"
+                    className={
+                      "peer-item" + (item.peer === state.activePeer ? " active" : "")
+                    }
+                    onClick={() => actions.selectPeer(item.peer)}
+                  >
+                    <span className="peer-avatar">
+                      {item.peer.slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="peer-copy">
+                      <span className="peer-name">{item.peer}</span>
+                      {item.lastMessagePreview ? (
+                        <span className="peer-preview">{item.lastMessagePreview}</span>
+                      ) : null}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="peer-empty">
+                {state.started
+                  ? "No local conversations were found in this vault yet."
+                  : "Start a local session to load conversations from the current vault."}
+              </div>
+            )}
           </div>
         </aside>
 
         <main className="chat">
           <div className="messages migration-messages">
             <div className="migration-card">
-              <div className="migration-card-title">Checkpoint 4 Auth Shell</div>
+              <div className="migration-card-title">Checkpoint 5 Sidebar</div>
               <p>
-                Start, logout, and manual reconnect now run through the React reducer and
-                runtime bridge instead of the old DOM-imperative entry.
+                React now renders the local conversation list from vault metadata after a
+                successful start.
               </p>
               <p>
-                Sidebar data, local history loading, send flow, backup, and restore are
-                still intentionally deferred to later checkpoints.
+                Selecting a peer only updates the active sidebar state at this checkpoint.
+                Local history loading, recent merge, and send flow remain deferred to the
+                next checkpoint.
               </p>
               <div className="runtime-event-card">
                 <div className="runtime-event-title">Latest runtime snapshot</div>
+                <div className="runtime-event-line">
+                  <span>Conversations loaded:</span>
+                  <strong>{state.conversationsLoaded ? "true" : "false"}</strong>
+                </div>
+                <div className="runtime-event-line">
+                  <span>Conversation count:</span>
+                  <strong>{state.conversations.length}</strong>
+                </div>
+                <div className="runtime-event-line">
+                  <span>Active peer:</span>
+                  <strong>{state.activePeer || "none"}</strong>
+                </div>
                 <div className="runtime-event-line">
                   <span>Started:</span>
                   <strong>{state.started ? "true" : "false"}</strong>
