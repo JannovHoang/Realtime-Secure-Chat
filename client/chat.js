@@ -312,6 +312,26 @@ function localHistoryDedupeKey(item) {
   return `local:${item?.from || ""}|${item?.ts || ""}|${item?.text || ""}`;
 }
 
+function localHistoryFallbackDedupeKey(item) {
+  return `local:${item?.from || ""}|${item?.ts || ""}|${item?.text || ""}`;
+}
+
+function localHistoryDedupeKeys(item) {
+  const keys = new Set();
+  const primary = localHistoryDedupeKey(item);
+  if (primary) keys.add(primary);
+  const fallback = localHistoryFallbackDedupeKey(item);
+  if (fallback) keys.add(fallback);
+  return Array.from(keys);
+}
+
+function hasLocalHistoryDuplicate(items, nextItem) {
+  const nextKeys = new Set(localHistoryDedupeKeys(nextItem));
+  return items.some((existing) =>
+    localHistoryDedupeKeys(existing).some((key) => nextKeys.has(key))
+  );
+}
+
 async function cloneMessengerForCatchUp() {
   if (!messenger || !caPubKey || !govPubKey) {
     throw new Error("Call initChat() first");
@@ -390,7 +410,10 @@ async function mergeDisplayMessagesIntoLocalHistory(peer, displayMessages) {
     arr = [];
   }
 
-  const seen = new Set(arr.map(localHistoryDedupeKey));
+  const seen = new Set();
+  for (const existing of arr) {
+    for (const key of localHistoryDedupeKeys(existing)) seen.add(key);
+  }
   for (const msg of displayMessages) {
     if (!msg || typeof msg.text !== "string" || !msg.from) continue;
     const next = {
@@ -401,9 +424,9 @@ async function mergeDisplayMessagesIntoLocalHistory(peer, displayMessages) {
     if (msg.serverId) next.serverId = msg.serverId;
     if (msg.source) next.source = msg.source;
 
-    const dedupeKey = localHistoryDedupeKey(next);
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
+    const dedupeKeys = localHistoryDedupeKeys(next);
+    if (dedupeKeys.some((key) => seen.has(key))) continue;
+    for (const key of dedupeKeys) seen.add(key);
     arr.push(next);
   }
 
@@ -807,7 +830,10 @@ async function processCipherPacket(from, header, ciphertextB64, ts) {
   }
 
   const messageTs = messageTimestamp(ts);
-  arr.push({ from, text: plaintext, ts: messageTs });
+  const nextItem = { from, text: plaintext, ts: messageTs };
+  if (!hasLocalHistoryDuplicate(arr, nextItem)) {
+    arr.push(nextItem);
+  }
   await storeRecord(key, JSON.stringify(arr));
   const discoveredPeer = await rememberConversationPeer(from);
   if (discoveredPeer) {
@@ -1206,7 +1232,10 @@ export async function sendMessage(peer, text) {
     arr = [];
   }
   const ts = Date.now();
-  arr.push({ from: myUser, text: msg, ts });
+  const nextItem = { from: myUser, text: msg, ts };
+  if (!hasLocalHistoryDuplicate(arr, nextItem)) {
+    arr.push(nextItem);
+  }
   await storeRecord(key, JSON.stringify(arr));
   await rememberConversationPeer(p);
   await updateConversationMetadataFromMessage(p, msg, ts);

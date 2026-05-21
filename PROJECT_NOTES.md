@@ -4018,3 +4018,110 @@ Checkpoint result:
 - React now owns the chat timeline rendering and composer behavior
 - local history, recent merge, and send flow are reconnected through the existing `client/chat.js` runtime
 - backup/restore/modal parity is still pending the next checkpoint
+
+### Checkpoint 7: React Modals, Restore, Backup, And Toasts
+
+Completed in:
+
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+
+Goal:
+
+- restore the identity-management flows that were still missing from the React UI
+- replace the old DOM-imperative modal handling with React-owned modal state
+- make it possible again to restore cloud-backed identities onto the current origin
+
+Changes:
+
+- added React modal flows for:
+  - Start guard
+  - Backup password entry
+  - Restore identity choice when multiple cloud backups exist
+- reconnected:
+  - `fetchCloudBackupIdentities(...)`
+  - `fetchCloudBackup(...)`
+  - `decryptIdentityPayload(...)`
+  - `importIdentityPayload(...)`
+  - `exportIdentityPayload(...)`
+  - `encryptIdentityPayload(...)`
+  - `saveCloudBackup(...)`
+- `Start` now uses a React start-guard modal instead of the temporary hard block when no local vault exists
+- `Continue` from the start guard re-enables the new-local-identity path on the current origin
+- `Restore from Cloud` is available again and supports explicit identity selection
+- `Backup to Cloud` is available again and verifies the local vault password before upload
+- added React toast notifications for key success/error/informational flows
+
+Important scope note:
+
+- this checkpoint restores the old behavior family without rewriting the underlying crypto/runtime logic
+- overwrite confirmation for restore still uses the same decision point as before, but the surrounding flow is now React-owned
+- the current implementation still depends on the existing runtime/storage exports rather than introducing a new state backend
+
+Expected behavior after this checkpoint:
+
+- on a fresh origin/browser:
+  - `Start` shows the React start-guard modal
+  - `Restore from Cloud` can restore a cloud-backed identity for an old user such as `AliceDemo`
+- after restore success:
+  - password is cleared
+  - status becomes `Restore ready`
+  - the user must enter the password again and press `Start`
+- when already started:
+  - `Backup to Cloud` opens a React password modal and can save the current identity backup
+
+Checkpoint result:
+
+- React now owns the modal/toast flows that were previously still missing
+- old cloud-backed users can be restored onto the current origin again
+- the next checkpoint can focus on cleanup/final parity instead of missing identity flows
+- during checkpoint 7 validation, local history dedupe in `client/chat.js` was tightened so the same offline message is not re-added when one path comes from pending flush and another path comes from recent-catch-up merge
+
+### Checkpoint 8: Demo Cleanup And UI Polish
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+
+Goal:
+
+- remove migration/debug diagnostics from the user-facing UI
+- make the React chat surface presentable for product demo use
+- keep all runtime/restore/chat behavior from the previous checkpoints intact
+
+Changes:
+
+- removed the sidebar runtime bridge diagnostic panel from the main render path
+- removed the large runtime snapshot diagnostic card below the message timeline
+- replaced checkpoint-specific empty-state copy with product-facing conversation guidance
+- refined the active conversation header with:
+  - cleaner spacing
+  - a friendlier status subtitle
+  - a compact readiness badge instead of debug text blocks
+- kept React-owned:
+  - Start / Logout / Reconnect
+  - Restore from Cloud
+  - Backup to Cloud
+  - conversation sidebar
+  - timeline/composer
+  - modals and toasts
+
+Expected behavior after this checkpoint:
+
+- the demo UI no longer shows:
+  - runtime bridge counters
+  - latest runtime snapshot values
+  - checkpoint-labeled helper cards
+- when a peer is selected:
+  - the header shows the peer name
+  - readiness appears as a small status badge
+- when no conversation is selected yet:
+  - the empty state reads like product guidance rather than migration/debug copy
+
+Checkpoint result:
+
+- the React UI is visually cleaner and more suitable for instructor demo use
+- debugging internals are no longer exposed in the main user-facing surface
+- runtime behavior from checkpoints 1-7 remains unchanged; this checkpoint is presentation cleanup only

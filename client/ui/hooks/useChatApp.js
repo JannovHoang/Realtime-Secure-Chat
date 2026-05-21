@@ -1,28 +1,42 @@
 import { useEffect, useReducer } from "react";
 import {
   destroyChat,
+  fetchCloudBackup,
+  fetchCloudBackupIdentities,
   fetchRecentMessages,
   initChat,
   isPeerReady,
   mergeRecentMessagesForDisplay,
   onPeerReady,
   openConversation,
+  saveCloudBackup,
   sendMessage,
 } from "../../chat.js";
+import {
+  initVault,
+  decryptIdentityPayload,
+  encryptIdentityPayload,
+  exportIdentityPayload,
+  hasPersistedVault,
+  importIdentityPayload,
+  listConversationMetadata,
+  loadIdentityMetadata,
+  verifyPersistedVaultPassword,
+} from "../../storage.js";
 import {
   getChatRuntimeBridgeStatus,
   subscribeToChatRuntime,
 } from "../lib/chatRuntimeBridge.js";
-import {
-  hasPersistedVault,
-  listConversationMetadata,
-} from "../../storage.js";
 
 const initialState = {
   username: "",
   password: "",
   started: false,
   starting: false,
+  restoring: false,
+  backingUp: false,
+  restoredThisSession: false,
+  continueWithoutRestoreFor: {},
   activePeer: "",
   conversations: [],
   conversationsLoaded: false,
@@ -42,6 +56,10 @@ const initialState = {
   disconnected: false,
   statusText: "React Shell Only",
   statusTone: "info",
+  modal: null,
+  backupPasswordInput: "",
+  pendingRestore: null,
+  toasts: [],
 };
 
 function trimPreview(text, max = 72) {
@@ -93,13 +111,46 @@ function runtimeSnapshotState() {
   };
 }
 
+function nextToastId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function formatIdentityShort(identityId) {
+  const normalized = String(identityId || "").trim();
+  if (!normalized) return "unknown";
+  return normalized.slice(0, 8);
+}
+
+function formatRestoreUpdatedAt(value) {
+  if (!value) return "unknown time";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "unknown time";
+  return dt.toLocaleString("vi-VN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function buildRestoreOverwriteMessage(username, localIdentityMeta, payload) {
+  const sameLocalIdentity =
+    localIdentityMeta?.identityId &&
+    localIdentityMeta.identityId === payload.identityId;
+  const targetIdentityShort = formatIdentityShort(payload.identityId);
+
+  if (!localIdentityMeta?.identityId || sameLocalIdentity) {
+    return `Restore will overwrite the current local identity for account ${username} in this browser. Continue?`;
+  }
+
+  return `This browser currently stores a different local identity for account ${username}. Restoring this backup will replace the current identity with identity ${targetIdentityShort}. Continue?`;
+}
+
 function reducer(state, action) {
   switch (action.type) {
     case "field_change":
-      return {
-        ...state,
-        [action.field]: action.value,
-      };
+      return { ...state, [action.field]: action.value };
     case "set_status":
       return {
         ...state,
@@ -107,15 +158,10 @@ function reducer(state, action) {
         statusTone: action.tone || state.statusTone,
       };
     case "message_draft":
-      return {
-        ...state,
-        messageDraft: action.value,
-      };
+      return { ...state, messageDraft: action.value };
     case "set_conversations": {
       const normalized = Array.isArray(action.items)
-        ? sortConversations(
-            action.items.map(normalizeConversationItem).filter(Boolean)
-          )
+        ? sortConversations(action.items.map(normalizeConversationItem).filter(Boolean))
         : [];
       const hasActivePeer = normalized.some((item) => item.peer === state.activePeer);
       return {
@@ -135,15 +181,9 @@ function reducer(state, action) {
         activePeerReady: isPeerReady(action.peer),
       };
     case "set_active_peer_ready":
-      return {
-        ...state,
-        activePeerReady: !!action.value,
-      };
+      return { ...state, activePeerReady: !!action.value };
     case "history_load_begin":
-      return {
-        ...state,
-        messageLoading: true,
-      };
+      return { ...state, messageLoading: true };
     case "history_load_success":
       return {
         ...state,
@@ -151,15 +191,9 @@ function reducer(state, action) {
         messages: Array.isArray(action.items) ? action.items : [],
       };
     case "history_load_failure":
-      return {
-        ...state,
-        messageLoading: false,
-      };
+      return { ...state, messageLoading: false };
     case "recent_begin":
-      return {
-        ...state,
-        recentLoading: true,
-      };
+      return { ...state, recentLoading: true };
     case "recent_success":
       return {
         ...state,
@@ -167,15 +201,9 @@ function reducer(state, action) {
         messages: Array.isArray(action.items) ? action.items : state.messages,
       };
     case "recent_failure":
-      return {
-        ...state,
-        recentLoading: false,
-      };
+      return { ...state, recentLoading: false };
     case "send_begin":
-      return {
-        ...state,
-        sending: true,
-      };
+      return { ...state, sending: true };
     case "send_success":
       return {
         ...state,
@@ -184,10 +212,7 @@ function reducer(state, action) {
         messages: Array.isArray(action.items) ? action.items : state.messages,
       };
     case "send_failure":
-      return {
-        ...state,
-        sending: false,
-      };
+      return { ...state, sending: false };
     case "start_begin":
       return {
         ...state,
@@ -243,6 +268,24 @@ function reducer(state, action) {
         statusText: "Logged out",
         statusTone: "success",
       };
+    case "restore_begin":
+      return {
+        ...state,
+        restoring: true,
+        statusText: "Restoring...",
+        statusTone: "info",
+      };
+    case "restore_end":
+      return { ...state, restoring: false };
+    case "backup_begin":
+      return {
+        ...state,
+        backingUp: true,
+        statusText: "Saving backup...",
+        statusTone: "info",
+      };
+    case "backup_end":
+      return { ...state, backingUp: false };
     case "bridge_status":
       return {
         ...state,
@@ -316,6 +359,40 @@ function reducer(state, action) {
         messages: isDuplicate ? state.messages : [...state.messages, item],
       };
     }
+    case "open_modal":
+      return { ...state, modal: action.modal };
+    case "close_modal":
+      return { ...state, modal: null, backupPasswordInput: "" };
+    case "set_backup_password_input":
+      return { ...state, backupPasswordInput: action.value };
+    case "set_pending_restore":
+      return { ...state, pendingRestore: action.value };
+    case "restore_success":
+      return {
+        ...state,
+        restoredThisSession: true,
+        password: "",
+        statusText: "Restore ready",
+        statusTone: "success",
+      };
+    case "allow_continue_without_restore":
+      return {
+        ...state,
+        continueWithoutRestoreFor: {
+          ...state.continueWithoutRestoreFor,
+          [action.username]: true,
+        },
+      };
+    case "toast_push":
+      return {
+        ...state,
+        toasts: [...state.toasts, action.toast],
+      };
+    case "toast_remove":
+      return {
+        ...state,
+        toasts: state.toasts.filter((item) => item.id !== action.id),
+      };
     default:
       return state;
   }
@@ -323,6 +400,17 @@ function reducer(state, action) {
 
 export function useChatApp() {
   const [state, dispatch] = useReducer(reducer, initialState);
+
+  function pushToast(text, tone = "info") {
+    const id = nextToastId();
+    dispatch({
+      type: "toast_push",
+      toast: { id, text: String(text || ""), tone },
+    });
+    window.setTimeout(() => {
+      dispatch({ type: "toast_remove", id });
+    }, 2400);
+  }
 
   useEffect(() => {
     dispatch({ type: "bridge_status", payload: runtimeSnapshotState() });
@@ -341,6 +429,12 @@ export function useChatApp() {
           },
         });
       }
+      if (
+        event.type === "chat_message" &&
+        normalizePeer(event.payload?.from) !== state.activePeer
+      ) {
+        pushToast(`New message from ${event.payload?.from || "peer"}`, "info");
+      }
       dispatch({ type: "runtime_event", payload: event });
       dispatch({ type: "bridge_status", payload: runtimeSnapshotState() });
     });
@@ -356,7 +450,6 @@ export function useChatApp() {
     if (!state.started) return;
 
     let cancelled = false;
-
     void (async () => {
       try {
         const metadata = await listConversationMetadata();
@@ -368,7 +461,6 @@ export function useChatApp() {
         dispatch({ type: "set_conversations", items: [] });
       }
     })();
-
     return () => {
       cancelled = true;
     };
@@ -397,7 +489,6 @@ export function useChatApp() {
     if (!state.started || !state.activePeer) return;
 
     let cancelled = false;
-
     void (async () => {
       dispatch({ type: "history_load_begin" });
       try {
@@ -429,15 +520,25 @@ export function useChatApp() {
         console.warn("[ui] recent history failed:", err);
         if (cancelled) return;
         dispatch({ type: "recent_failure" });
+        pushToast("Recent history unavailable. Local chat is still usable.", "info");
       }
     })();
-
     return () => {
       cancelled = true;
     };
   }, [state.started, state.activePeer]);
 
-  async function handleStart() {
+  async function inspectPersistedLocalIdentity(username, password) {
+    if (!(await hasPersistedVault(username))) return null;
+    try {
+      await initVault(password, username);
+      return await loadIdentityMetadata();
+    } catch {
+      return null;
+    }
+  }
+
+  async function performStart(options = {}) {
     const username = String(state.username || "").trim();
     const password = String(state.password || "");
 
@@ -450,36 +551,50 @@ export function useChatApp() {
     }
 
     const hasLocalVault = await hasPersistedVault(username);
-    if (!hasLocalVault) {
+    const shouldGuard =
+      !options.skipGuard &&
+      !hasLocalVault &&
+      !state.restoredThisSession &&
+      !state.continueWithoutRestoreFor[username];
+
+    if (shouldGuard) {
       dispatch({
-        type: "start_failure",
-        message: "Checkpoint 4 only supports existing local identities. Restore/new account flow returns later.",
+        type: "open_modal",
+        modal: { type: "start_guard", username },
       });
       return;
     }
 
     dispatch({ type: "start_begin" });
-
     try {
       await initChat(username, password);
       dispatch({ type: "start_success" });
+      pushToast("Ready.", "success");
     } catch (err) {
       dispatch({
         type: "start_failure",
         message: String(err?.message || err || "Start failed"),
       });
+      pushToast(String(err?.message || err || "Start failed"), "error");
     }
+  }
+
+  async function handleStart() {
+    await performStart();
   }
 
   async function handleLogout() {
     try {
       await destroyChat();
       dispatch({ type: "logout_success" });
+      pushToast("Logged out.", "success");
     } catch (err) {
       dispatch({
-        type: "start_failure",
+        type: "set_status",
         message: String(err?.message || err || "Logout failed"),
+        tone: "error",
       });
+      pushToast("Logout failed.", "error");
     }
   }
 
@@ -499,7 +614,6 @@ export function useChatApp() {
     if (!peer || !draft.trim()) return;
 
     dispatch({ type: "send_begin" });
-
     try {
       await sendMessage(peer, draft);
       const localHistory = await openConversation(peer);
@@ -516,18 +630,172 @@ export function useChatApp() {
         message: String(err?.message || err || "Send failed"),
         tone: "error",
       });
+      pushToast(String(err?.message || err || "Send failed"), "error");
+    }
+  }
+
+  function openBackupModal() {
+    if (!state.started || state.disconnected) return;
+    dispatch({ type: "set_backup_password_input", value: "" });
+    dispatch({ type: "open_modal", modal: { type: "backup_password" } });
+  }
+
+  async function confirmBackup() {
+    const username = String(state.username || "").trim();
+    const password = String(state.backupPasswordInput || "");
+    if (!username || !password) {
+      pushToast("Backup failed: password is required.", "error");
+      return;
+    }
+
+    dispatch({ type: "close_modal" });
+    dispatch({ type: "backup_begin" });
+    try {
+      const passwordOk = await verifyPersistedVaultPassword(username, password);
+      if (!passwordOk) throw new Error("Incorrect password");
+      const payload = await exportIdentityPayload(username);
+      const blob = await encryptIdentityPayload(payload, password);
+      await saveCloudBackup(blob);
+      dispatch({ type: "set_status", message: "Ready", tone: "success" });
+      pushToast("Cloud backup saved.", "success");
+    } catch (err) {
+      dispatch({ type: "set_status", message: "Backup failed", tone: "error" });
+      pushToast(
+        String(err?.message || "").toLowerCase().includes("incorrect password")
+          ? "Backup failed: incorrect password."
+          : "Backup failed.",
+        "error"
+      );
+    } finally {
+      dispatch({ type: "backup_end" });
+    }
+  }
+
+  async function handleRestoreRequest() {
+    const username = String(state.username || "").trim();
+    const password = String(state.password || "");
+    if (!username || !password) {
+      pushToast("Please enter username and password.", "error");
+      return;
+    }
+
+    dispatch({ type: "restore_begin" });
+    try {
+      const items = await fetchCloudBackupIdentities(username);
+      if (!Array.isArray(items) || items.length === 0) {
+        throw new Error("Restore unavailable");
+      }
+      if (items.length === 1) {
+        await completeRestore(items[0].identityId, username, password);
+        return;
+      }
+      dispatch({
+        type: "set_pending_restore",
+        value: { username, password, items },
+      });
+      dispatch({
+        type: "open_modal",
+        modal: { type: "restore_choice", items },
+      });
+    } catch (err) {
+      dispatch({ type: "set_status", message: "Restore failed", tone: "error" });
+      dispatch({ type: "restore_end" });
+      pushToast("Restore failed. Check your account/password or backup availability.", "error");
+    }
+  }
+
+  async function completeRestore(identityId, usernameArg = null, passwordArg = null) {
+    const username = String(usernameArg || state.username || "").trim();
+    const password = String(passwordArg || state.password || "");
+
+    try {
+      const blob = await fetchCloudBackup(username, identityId);
+      const payload = await decryptIdentityPayload(blob, password, username, identityId);
+      const hasLocalVault = await hasPersistedVault(username);
+      let localIdentityMeta = null;
+      if (hasLocalVault) {
+        localIdentityMeta = await inspectPersistedLocalIdentity(username, password);
+      }
+      if (hasLocalVault) {
+        const confirmMessage = buildRestoreOverwriteMessage(
+          username,
+          localIdentityMeta,
+          payload
+        );
+        const confirmed = window.confirm(confirmMessage);
+        if (!confirmed) {
+          dispatch({ type: "set_status", message: "Restore cancelled", tone: "info" });
+          dispatch({ type: "restore_end" });
+          dispatch({ type: "close_modal" });
+          dispatch({ type: "set_pending_restore", value: null });
+          return;
+        }
+      }
+
+      await importIdentityPayload(payload, username, identityId);
+      dispatch({ type: "restore_success" });
+      dispatch({ type: "restore_end" });
+      dispatch({ type: "close_modal" });
+      dispatch({ type: "set_pending_restore", value: null });
+      pushToast("Backup restored. Enter password and press Start.", "success");
+    } catch (err) {
+      dispatch({ type: "set_status", message: "Restore failed", tone: "error" });
+      dispatch({ type: "restore_end" });
+      dispatch({ type: "close_modal" });
+      dispatch({ type: "set_pending_restore", value: null });
+      pushToast("Restore failed. Check your account/password or backup availability.", "error");
+    }
+  }
+
+  async function confirmRestoreChoice(identityId) {
+    const pending = state.pendingRestore;
+    if (!pending?.username || !pending?.password) return;
+    await completeRestore(identityId, pending.username, pending.password);
+  }
+
+  function cancelRestoreChoice() {
+    dispatch({ type: "set_pending_restore", value: null });
+    dispatch({ type: "restore_end" });
+    dispatch({ type: "close_modal" });
+    dispatch({ type: "set_status", message: "Restore cancelled", tone: "info" });
+  }
+
+  function handleStartGuard(choice) {
+    const username = String(state.username || "").trim();
+    dispatch({ type: "close_modal" });
+    if (choice === "cancel") return;
+    if (choice === "restore") {
+      void handleRestoreRequest();
+      return;
+    }
+    if (choice === "continue") {
+      dispatch({ type: "allow_continue_without_restore", username });
+      void performStart({ skipGuard: true });
     }
   }
 
   return {
     state,
+    helpers: {
+      formatIdentityShort,
+      formatRestoreUpdatedAt,
+    },
     actions: {
       setField,
       setMessageDraft: (value) => dispatch({ type: "message_draft", value }),
+      setBackupPasswordInput: (value) =>
+        dispatch({ type: "set_backup_password_input", value }),
+      closeModal: () => dispatch({ type: "close_modal" }),
       selectPeer,
       handleStart,
       handleLogout,
       handleSend,
+      openBackupModal,
+      confirmBackup,
+      handleRestoreRequest,
+      confirmRestoreChoice,
+      cancelRestoreChoice,
+      handleStartGuard,
     },
   };
 }

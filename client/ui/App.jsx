@@ -27,28 +27,52 @@ function formatMessageClass(message, username) {
   return message.from === username ? "msg me" : "msg peer";
 }
 
+function ToastViewport({ toasts }) {
+  if (!Array.isArray(toasts) || toasts.length === 0) return null;
+  return (
+    <div className="toast-wrap">
+      {toasts.map((toast) => (
+        <div key={toast.id} className={`toast-card is-${toast.tone || "info"}`}>
+          {toast.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ModalFrame({ title, subtitle, children, actions }) {
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card" role="dialog" aria-modal="true">
+        <div className="modal-head">
+          <div className="modal-title">{title}</div>
+          {subtitle ? <div className="modal-sub">{subtitle}</div> : null}
+        </div>
+        {children}
+        <div className="modal-actions">{actions}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const { state, actions } = useChatApp();
+  const { state, actions, helpers } = useChatApp();
   const showPasswordField = !state.started || state.disconnected;
   const startLabel = state.disconnected ? "Reconnect" : "Start";
-  const startDisabled = state.starting || (state.started && !state.disconnected);
-  const logoutDisabled = state.starting || !state.started;
+  const busy = state.starting || state.restoring || state.backingUp || state.sending;
+  const startDisabled = busy || (state.started && !state.disconnected);
+  const logoutDisabled = busy || !state.started;
   const peerInputValue = state.activePeer || "";
   const sendDisabled =
     !state.started ||
     state.disconnected ||
     !state.activePeer ||
     !state.activePeerReady ||
-    state.sending ||
+    busy ||
     !String(state.messageDraft || "").trim();
 
   return (
     <div className="shell">
-      <div className="migration-banner" role="status" aria-live="polite">
-        React now owns the auth shell. Start, logout, and reconnect are back for
-        browsers that already have a local vault.
-      </div>
-
       <div className="topbar">
         <div className="brand">
           <div className="brand-title">Realtime Secure Messenger</div>
@@ -61,7 +85,7 @@ export default function App() {
             placeholder="Enter your username"
             value={state.username}
             onChange={(value) => actions.setField("username", value)}
-            disabled={state.starting}
+            disabled={busy}
           />
           {showPasswordField ? (
             <Field
@@ -70,7 +94,7 @@ export default function App() {
               type="password"
               value={state.password}
               onChange={(value) => actions.setField("password", value)}
-              disabled={state.starting}
+              disabled={busy}
             />
           ) : null}
           <button
@@ -83,10 +107,24 @@ export default function App() {
           >
             {startLabel}
           </button>
-          <button className="secondary" type="button" disabled>
+          <button
+            className="secondary"
+            type="button"
+            disabled={busy || state.started || !state.username || !state.password}
+            onClick={() => {
+              void actions.handleRestoreRequest();
+            }}
+          >
             Restore from Cloud
           </button>
-          <button className="secondary" type="button" disabled>
+          <button
+            className="secondary"
+            type="button"
+            disabled={busy || !state.started || state.disconnected}
+            onClick={() => {
+              actions.openBackupModal();
+            }}
+          >
             Backup to Cloud
           </button>
           <button
@@ -107,26 +145,6 @@ export default function App() {
 
       <div className="content">
         <aside className="sidebar">
-          <div className="bridge-panel">
-            <div className="bridge-panel-title">Runtime Bridge</div>
-            <div className="bridge-row">
-              <span>Installed</span>
-              <strong>{state.bridgeInstalled ? "Yes" : "No"}</strong>
-            </div>
-            <div className="bridge-row">
-              <span>Listeners</span>
-              <strong>{state.bridgeListenerCount}</strong>
-            </div>
-            <div className="bridge-row">
-              <span>Last event</span>
-              <strong>{state.lastRuntimeEventType || "none"}</strong>
-            </div>
-            <div className="bridge-row">
-              <span>Event count</span>
-              <strong>{state.runtimeEventCount}</strong>
-            </div>
-          </div>
-
           <div className="field">
             <label>Chat with</label>
             <input
@@ -181,11 +199,21 @@ export default function App() {
             {state.started && state.activePeer ? (
               <div className="chat-pane">
                 <div className="chat-pane-head">
-                  <div className="chat-pane-title">{state.activePeer}</div>
-                  <div className="chat-pane-sub">
-                    {state.activePeerReady
-                      ? "Peer certificate is ready"
-                      : "Waiting for peer certificate"}
+                  <div>
+                    <div className="chat-pane-title">{state.activePeer}</div>
+                    <div className="chat-pane-sub">
+                      {state.activePeerReady
+                        ? "Peer certificate is ready"
+                        : "Waiting for peer certificate"}
+                    </div>
+                  </div>
+                  <div
+                    className={
+                      "chat-pane-badge" +
+                      (state.activePeerReady ? " is-ready" : " is-waiting")
+                    }
+                  >
+                    {state.activePeerReady ? "Ready" : "Syncing"}
                   </div>
                 </div>
 
@@ -213,65 +241,22 @@ export default function App() {
               </div>
             ) : (
               <div className="migration-messages">
-                <div className="migration-card">
-                  <div className="migration-card-title">Checkpoint 6 Chat Pane</div>
+                <div className="migration-card chat-empty-card">
+                  <div className="migration-card-title">Secure conversations</div>
                   <p>
-                    React now owns local history loading, recent merge, and the send
-                    composer for the active conversation.
+                    {state.started
+                      ? "Choose a conversation from the sidebar to load local history and continue chatting."
+                      : "Restore an existing identity or start a secure session to load local conversations on this device."}
                   </p>
-                  <p>
-                    Start a local session and choose a conversation to render the timeline
-                    from the current vault.
-                  </p>
+                  {!state.started ? (
+                    <p>
+                      Use the top bar to restore a cloud backup or create a new local
+                      identity for this browser.
+                    </p>
+                  ) : null}
                 </div>
               </div>
             )}
-
-            <div className="migration-card migration-diagnostics">
-              <div className="runtime-event-card">
-                <div className="runtime-event-title">Latest runtime snapshot</div>
-                <div className="runtime-event-line">
-                  <span>Conversations loaded:</span>
-                  <strong>{state.conversationsLoaded ? "true" : "false"}</strong>
-                </div>
-                <div className="runtime-event-line">
-                  <span>Conversation count:</span>
-                  <strong>{state.conversations.length}</strong>
-                </div>
-                <div className="runtime-event-line">
-                  <span>Active peer:</span>
-                  <strong>{state.activePeer || "none"}</strong>
-                </div>
-                <div className="runtime-event-line">
-                  <span>Active peer ready:</span>
-                  <strong>{state.activePeerReady ? "true" : "false"}</strong>
-                </div>
-                <div className="runtime-event-line">
-                  <span>Started:</span>
-                  <strong>{state.started ? "true" : "false"}</strong>
-                </div>
-                <div className="runtime-event-line">
-                  <span>Disconnected flag:</span>
-                  <strong>{state.disconnected ? "true" : "false"}</strong>
-                </div>
-                <div className="runtime-event-line">
-                  <span>Last message from:</span>
-                  <strong>{state.lastMessageFrom || "none"}</strong>
-                </div>
-                <div className="runtime-event-line">
-                  <span>Last preview:</span>
-                  <strong>{state.lastMessagePreview || "none"}</strong>
-                </div>
-                <div className="runtime-event-line">
-                  <span>Last forced logout:</span>
-                  <strong>{state.lastForcedLogoutReason || "none"}</strong>
-                </div>
-                <div className="runtime-event-line">
-                  <span>Messages loaded:</span>
-                  <strong>{state.messages.length}</strong>
-                </div>
-              </div>
-            </div>
           </div>
 
           <div className="composer">
@@ -303,6 +288,96 @@ export default function App() {
           </div>
         </main>
       </div>
+      {state.modal?.type === "backup_password" ? (
+        <ModalFrame
+          title="Backup to Cloud"
+          subtitle="Enter your password to encrypt and save the cloud backup."
+          actions={
+            <>
+              <button className="secondary" type="button" onClick={actions.closeModal}>
+                Cancel
+              </button>
+              <button className="primary" type="button" onClick={() => void actions.confirmBackup()}>
+                Save Backup
+              </button>
+            </>
+          }
+        >
+          <label className="modal-field">
+            <span>Password</span>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              value={state.backupPasswordInput}
+              onChange={(e) => actions.setBackupPasswordInput(e.target.value)}
+            />
+          </label>
+        </ModalFrame>
+      ) : null}
+
+      {state.modal?.type === "start_guard" ? (
+        <ModalFrame
+          title="Start Confirmation"
+          subtitle="No local identity found for this account in this browser. Continue only for a new account, or restore a cloud backup first."
+          actions={
+            <>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleStartGuard("cancel")}
+              >
+                Cancel
+              </button>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleStartGuard("restore")}
+              >
+                Restore from Cloud
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => actions.handleStartGuard("continue")}
+              >
+                Continue
+              </button>
+            </>
+          }
+        />
+      ) : null}
+
+      {state.modal?.type === "restore_choice" ? (
+        <ModalFrame
+          title="Choose Backup Identity"
+          subtitle="This account has multiple cloud backups. Choose the identity you want to restore."
+          actions={
+            <button className="secondary" type="button" onClick={actions.cancelRestoreChoice}>
+              Cancel
+            </button>
+          }
+        >
+          <div className="restore-choice-list">
+            {state.modal.items.map((item) => (
+              <button
+                key={item.identityId}
+                type="button"
+                className="restore-choice-item"
+                onClick={() => void actions.confirmRestoreChoice(item.identityId)}
+              >
+                <span className="restore-choice-id">
+                  {helpers.formatIdentityShort(item.identityId)}
+                </span>
+                <span className="restore-choice-time">
+                  updated {helpers.formatRestoreUpdatedAt(item.updatedAt)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </ModalFrame>
+      ) : null}
+
+      <ToastViewport toasts={state.toasts} />
     </div>
   );
 }

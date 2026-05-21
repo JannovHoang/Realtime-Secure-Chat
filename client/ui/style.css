@@ -39,20 +39,6 @@ body {
   padding: 0 18px 24px;
 }
 
-.migration-banner {
-  margin-bottom: 14px;
-  padding: 12px 14px;
-  border: 1px solid rgba(14, 165, 233, 0.22);
-  border-radius: 16px;
-  background:
-    linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(37, 99, 235, 0.1)),
-    #ffffff;
-  color: #0f172a;
-  font-size: 13px;
-  font-weight: 600;
-  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.06);
-}
-
 .topbar {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -233,37 +219,6 @@ button.secondary:hover {
   gap: 10px;
 }
 
-.bridge-panel {
-  margin-bottom: 16px;
-  padding: 12px 12px 10px;
-  border: 1px solid rgba(29, 78, 216, 0.12);
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.9));
-}
-
-.bridge-panel-title {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-
-.bridge-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 5px 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.bridge-row strong {
-  color: var(--text);
-  font-size: 12px;
-}
-
 .peer-list-head {
   font-size: 11px;
   text-transform: uppercase;
@@ -375,11 +330,6 @@ button.secondary:hover {
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
 }
 
-.migration-diagnostics {
-  width: min(560px, 100%);
-  margin: 24px auto 0;
-}
-
 .migration-card-title {
   font-size: 18px;
   font-weight: 700;
@@ -392,50 +342,26 @@ button.secondary:hover {
   line-height: 1.55;
 }
 
-.runtime-event-card {
-  margin-top: 16px;
-  padding: 14px;
-  border: 1px solid rgba(96, 114, 138, 0.16);
-  border-radius: 16px;
-  background: rgba(248, 250, 252, 0.92);
-}
-
-.runtime-event-title {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-}
-
-.runtime-event-line {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  margin-top: 9px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.runtime-event-line strong {
-  color: var(--text);
-  text-align: right;
-}
-
 .chat-pane {
   width: min(720px, 100%);
   margin: 0 auto;
 }
 
 .chat-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 14px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid rgba(29, 78, 216, 0.14);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.78);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.9));
 }
 
 .chat-pane-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--text);
 }
@@ -446,9 +372,35 @@ button.secondary:hover {
   color: var(--muted);
 }
 
+.chat-pane-badge {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.chat-pane-badge.is-ready {
+  color: #166534;
+  background: rgba(220, 252, 231, 0.9);
+  border-color: rgba(34, 197, 94, 0.24);
+}
+
+.chat-pane-badge.is-waiting {
+  color: #92400e;
+  background: rgba(254, 243, 199, 0.88);
+  border-color: rgba(245, 158, 11, 0.24);
+}
+
 .chat-empty {
   width: fit-content;
   margin: 24px auto 0;
+}
+
+.chat-empty-card {
+  text-align: center;
 }
 
 .msg {
@@ -574,6 +526,20 @@ button.secondary:hover {
   color: var(--muted);
 }
 
+.modal-field input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  outline: none;
+  background: #fff;
+}
+
+.modal-field input:focus {
+  border-color: rgba(29, 78, 216, 0.5);
+  box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.12);
+}
+
 .password-inline {
   display: flex;
   gap: 10px;
@@ -634,6 +600,36 @@ button.secondary:hover {
 .restore-choice-time {
   font-size: 12px;
   color: var(--muted);
+}
+
+.toast-wrap {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 11000;
+}
+
+.toast-card {
+  max-width: 70vw;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.35;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+
+.toast-card.is-success {
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
+.toast-card.is-error {
+  border-color: rgba(239, 68, 68, 0.45);
 }
 
 @media (max-width: 1024px) {
