@@ -1,4 +1,5 @@
 import React from "react";
+import { useChatApp } from "./hooks/useChatApp.js";
 
 function DisabledField({ label, placeholder, type = "text" }) {
   return (
@@ -10,6 +11,8 @@ function DisabledField({ label, placeholder, type = "text" }) {
 }
 
 export default function App() {
+  const { state } = useChatApp();
+
   return (
     <div className="shell">
       <div className="migration-banner" role="status" aria-live="polite">
@@ -44,6 +47,26 @@ export default function App() {
 
       <div className="content">
         <aside className="sidebar">
+          <div className="bridge-panel">
+            <div className="bridge-panel-title">Runtime Bridge</div>
+            <div className="bridge-row">
+              <span>Installed</span>
+              <strong>{state.bridgeInstalled ? "Yes" : "No"}</strong>
+            </div>
+            <div className="bridge-row">
+              <span>Listeners</span>
+              <strong>{state.bridgeListenerCount}</strong>
+            </div>
+            <div className="bridge-row">
+              <span>Last event</span>
+              <strong>{state.lastRuntimeEventType || "none"}</strong>
+            </div>
+            <div className="bridge-row">
+              <span>Event count</span>
+              <strong>{state.runtimeEventCount}</strong>
+            </div>
+          </div>
+
           <div className="field">
             <label>Chat with</label>
             <input
@@ -64,16 +87,35 @@ export default function App() {
         <main className="chat">
           <div className="messages migration-messages">
             <div className="migration-card">
-              <div className="migration-card-title">Checkpoint 2</div>
+              <div className="migration-card-title">Checkpoint 3 Foundation</div>
               <p>
                 The old vanilla entry is no longer mounted. This screen is rendered by
-                React through Vite.
+                React, and runtime callbacks are now routed through a dedicated bridge.
               </p>
               <p>
-                Interactive chat flows are intentionally disabled at this checkpoint so
-                the migration can switch UI ownership safely before runtime logic is
-                reattached.
+                Interactive auth and chat flows are still intentionally paused at this
+                stage. The next checkpoints will reconnect them using the reducer-based
+                state model already mounted here.
               </p>
+              <div className="runtime-event-card">
+                <div className="runtime-event-title">Latest runtime snapshot</div>
+                <div className="runtime-event-line">
+                  <span>Disconnected flag:</span>
+                  <strong>{state.disconnected ? "true" : "false"}</strong>
+                </div>
+                <div className="runtime-event-line">
+                  <span>Last message from:</span>
+                  <strong>{state.lastMessageFrom || "none"}</strong>
+                </div>
+                <div className="runtime-event-line">
+                  <span>Last preview:</span>
+                  <strong>{state.lastMessagePreview || "none"}</strong>
+                </div>
+                <div className="runtime-event-line">
+                  <span>Last forced logout:</span>
+                  <strong>{state.lastForcedLogoutReason || "none"}</strong>
+                </div>
+              </div>
             </div>
           </div>
 

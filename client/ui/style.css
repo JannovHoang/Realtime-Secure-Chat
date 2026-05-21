@@ -223,6 +223,37 @@ button.secondary:hover {
   gap: 10px;
 }
 
+.bridge-panel {
+  margin-bottom: 16px;
+  padding: 12px 12px 10px;
+  border: 1px solid rgba(29, 78, 216, 0.12);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.9));
+}
+
+.bridge-panel-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.bridge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.bridge-row strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
 .peer-list-head {
   font-size: 11px;
   text-transform: uppercase;
@@ -344,6 +375,35 @@ button.secondary:hover {
   margin: 10px 0 0;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.runtime-event-card {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid rgba(96, 114, 138, 0.16);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.runtime-event-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.runtime-event-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 9px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.runtime-event-line strong {
+  color: var(--text);
+  text-align: right;
 }
 
 .msg {

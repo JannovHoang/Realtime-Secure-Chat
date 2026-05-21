@@ -3812,3 +3812,52 @@ Checkpoint result:
 - the screen should clearly show that this is the React shell checkpoint
 - buttons and inputs should be visibly disabled
 - interactive chat is intentionally unavailable until the next checkpoints reconnect the runtime
+
+### Checkpoint 3: Runtime Bridge And React State Foundation
+
+Completed in:
+
+- `client/ui/lib/chatRuntimeBridge.js`
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+
+Goal:
+
+- move runtime callback ownership out of the legacy UI file and into one React-side bridge
+- establish a reducer-driven React state model before reconnecting auth/chat flows
+- keep this checkpoint focused on architecture plumbing rather than restoring full interactivity
+
+Changes:
+
+- added `chatRuntimeBridge.js` as the single place that installs and removes:
+  - `window.onChatMessage`
+  - `window.onForcedLogout`
+  - `window.onChatDisconnected`
+- added `subscribeToChatRuntime(...)` so React can subscribe without assigning `window.*` handlers directly
+- added `useChatApp()` with a reducer-based state model for:
+  - bridge installation status
+  - runtime listener count
+  - latest runtime event type
+  - basic event snapshot fields for future UI wiring
+- updated the React shell to show bridge diagnostics instead of only static migration text
+
+Important rule locked by this checkpoint:
+
+- React components must not assign `window.onChatMessage` / `window.onForcedLogout` / `window.onChatDisconnected` directly
+- all runtime callback ownership now goes through the bridge layer
+- later checkpoints should extend reducer actions instead of scattering many unrelated `useState` fields across the tree
+
+Expected behavior after this checkpoint:
+
+- the app still renders the React shell, not the old vanilla UI
+- auth/chat controls remain intentionally disabled
+- the sidebar now shows runtime bridge diagnostics
+- the center card now shows reducer-backed runtime snapshot fields
+- refreshing the page should not create stacked callback handlers because the bridge installs/uninstalls through one subscription path
+
+Checkpoint result:
+
+- the React UI now has the correct ownership boundary for runtime events
+- the reducer foundation is ready for the next checkpoints to reconnect `Start`, `Logout`, sidebar, and chat pane behavior
+- interactive parity is still intentionally deferred to the next checkpoints
