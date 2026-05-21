@@ -3623,3 +3623,144 @@ Phase conclusion:
   - previews persist across reload on the same origin
 - next likely UI step is unread state or better visual design
 - next likely architecture step is account/auth or server-side encrypted inbox depending on product priority
+
+## Phase: React UI Migration
+
+### Goal
+
+Move the browser UI from vanilla DOM-imperative code to React while keeping the existing chat/runtime/storage architecture intact.
+
+Locked scope for this phase:
+
+- replace `client/ui/app.js` ownership with React progressively
+- keep `client/chat.js` as the chat/session/WebSocket/Double Ratchet runtime
+- keep `client/storage.js` as the vault/local metadata/backup payload runtime
+- do not change backend routes, WebSocket protocol, Mongo schema, or crypto flow unless a migration blocker is discovered
+
+Important migration rule:
+
+- React and the old vanilla UI must not co-own the same DOM tree
+- every major flow must have exactly one owner during migration
+- window runtime callbacks must eventually be owned by a single bridge layer, not by multiple components or mixed legacy handlers
+
+### Checkpoint 1: Legacy UI Inventory And Baseline
+
+Completed as a documentation checkpoint before changing the UI entry.
+
+Purpose:
+
+- freeze the current UI surface area before React work begins
+- identify the runtime contract that the React layer must preserve
+- create a regression baseline so later checkpoints can be tested for parity instead of guessed from memory
+
+Current vanilla UI files:
+
+- `client/ui/app.js`
+- `client/ui/index.html`
+- `client/ui/style.css`
+
+Current DOM ids used directly by `client/ui/app.js`:
+
+- `username`
+- `password`
+- `passwordField`
+- `startBtn`
+- `restoreBtn`
+- `backupBtn`
+- `logoutBtn`
+- `status`
+- `to`
+- `peerList`
+- `peerEmpty`
+- `messages`
+- `msg`
+- `sendBtn`
+- `backupModal`
+- `backupPassword`
+- `backupPasswordToggle`
+- `backupModalCancel`
+- `backupModalConfirm`
+- `startGuardModal`
+- `startGuardCancel`
+- `startGuardRestore`
+- `startGuardContinue`
+- `restoreChoiceModal`
+- `restoreIdentityList`
+- `restoreChoiceCancel`
+
+Current runtime API consumed by the vanilla UI from `client/chat.js`:
+
+- `initChat(...)`
+- `sendMessage(...)`
+- `openConversation(...)`
+- `fetchRecentMessages(...)`
+- `mergeRecentMessagesForDisplay(...)`
+- `destroyChat()`
+- `listConversationPeers()`
+- `isPeerReady(...)`
+- `onPeerReady(...)`
+- `saveCloudBackup(...)`
+- `fetchCloudBackup(...)`
+- `fetchCloudBackupIdentities(...)`
+
+Current runtime API consumed by the vanilla UI from `client/storage.js`:
+
+- `initVault(...)`
+- `hasPersistedVault(...)`
+- `exportIdentityPayload(...)`
+- `verifyPersistedVaultPassword(...)`
+- `encryptIdentityPayload(...)`
+- `decryptIdentityPayload(...)`
+- `importIdentityPayload(...)`
+- `loadIdentityMetadata()`
+- `listConversationMetadata()`
+
+Current window runtime callbacks between `client/chat.js` and the UI:
+
+- `window.onChatMessage`
+- `window.onForcedLogout`
+- `window.onChatDisconnected`
+
+Current callback direction:
+
+- `client/chat.js` emits those callbacks
+- `client/ui/app.js` assigns handlers for those callbacks
+
+Migration invariant introduced by this checkpoint:
+
+- later React checkpoints should move callback ownership behind one bridge layer
+- React components should not assign `window.onChatMessage` / `window.onForcedLogout` / `window.onChatDisconnected` directly in multiple places
+
+Baseline user-visible behavior that later checkpoints must preserve:
+
+- `Start` initializes or loads the local vault and opens the chat session
+- `Logout` saves state and clears the active UI session
+- disconnect changes the UI to `Disconnected`, shows password again, and requires manual reconnect
+- realtime send/receive continues to work
+- pending/offline flush continues to work after the user starts again
+- recent-message catch-up remains best-effort and must not block local history usage
+- sidebar conversation ordering + preview remains local-vault based
+- sending to a peer without a certificate still shows the existing readiness warning
+- backup to cloud still requires an active session and password verification
+- restore from cloud still requires explicit identity selection when multiple backup identities exist
+- restore success still clears the password field and does not auto-start the session
+
+Regression checklist introduced by this checkpoint:
+
+- local Start success with an existing vault
+- Start failure with an incorrect password for the existing local vault
+- manual reconnect after server disconnect
+- realtime send/receive both directions
+- pending/offline delivery after recipient comes back online
+- recent catch-up opens and merges without obvious duplicate messages
+- conversation ordering + preview persists after reload
+- backup success and backup wrong-password handling
+- restore single identity
+- restore multiple identities
+- restore cancel without overwriting local vault
+
+Checkpoint result:
+
+- no runtime behavior changed yet
+- the legacy UI contract is now documented explicitly
+- later React checkpoints can be validated against this baseline instead of relying on memory
