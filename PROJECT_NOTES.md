@@ -3966,3 +3966,55 @@ Checkpoint result:
 - React now owns the conversation sidebar structure and metadata rendering
 - ordering + preview are back at the sidebar level for vaults that already contain local conversation metadata
 - full chat usability still waits for the next checkpoint that reconnects history loading and message sending
+
+### Checkpoint 6: React Chat Pane And Send Flow
+
+Completed in:
+
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+
+Goal:
+
+- reconnect local history loading for the active conversation
+- reconnect recent-message catch-up merge into the React timeline
+- reconnect composer/send flow through the existing chat runtime
+
+Changes:
+
+- added reducer state for:
+  - `messages`
+  - `messageDraft`
+  - `messageLoading`
+  - `recentLoading`
+  - `sending`
+  - `activePeerReady`
+- after selecting an active peer, React now:
+  - loads local history through `openConversation(...)`
+  - fetches recent ciphertext history through `fetchRecentMessages(...)`
+  - merges displayable recent messages through `mergeRecentMessagesForDisplay(...)`
+- added `onPeerReady(...)` wiring so send availability follows the runtime cert-readiness state
+- added `handleSend()` that calls `sendMessage(...)` and then refreshes the active local conversation
+- incoming realtime messages for the currently open peer now append into the React message list through the bridge path
+
+Important limitation for this checkpoint:
+
+- backup/restore flows remain disabled
+- the Start flow still requires an existing local vault on the current origin because the restore/new-identity flows are still deferred
+- the current checkpoint assumes the runtime core continues to own encryption/decryption/history persistence; React only renders and orchestrates around those APIs
+
+Expected behavior after this checkpoint:
+
+- after `Start` on a browser/origin with an existing local vault and valid peers:
+  - selecting a sidebar conversation loads local history into the main pane
+  - recent catch-up runs after local history load
+  - the composer enables only when the selected peer certificate is ready
+  - sending a message refreshes the visible local conversation
+- if no active conversation is selected yet, the main pane shows the React checkpoint helper card instead of a blank area
+
+Checkpoint result:
+
+- React now owns the chat timeline rendering and composer behavior
+- local history, recent merge, and send flow are reconnected through the existing `client/chat.js` runtime
+- backup/restore/modal parity is still pending the next checkpoint

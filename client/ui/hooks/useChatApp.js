@@ -1,5 +1,14 @@
 import { useEffect, useReducer } from "react";
-import { destroyChat, initChat } from "../../chat.js";
+import {
+  destroyChat,
+  fetchRecentMessages,
+  initChat,
+  isPeerReady,
+  mergeRecentMessagesForDisplay,
+  onPeerReady,
+  openConversation,
+  sendMessage,
+} from "../../chat.js";
 import {
   getChatRuntimeBridgeStatus,
   subscribeToChatRuntime,
@@ -17,6 +26,12 @@ const initialState = {
   activePeer: "",
   conversations: [],
   conversationsLoaded: false,
+  messages: [],
+  messageDraft: "",
+  messageLoading: false,
+  recentLoading: false,
+  sending: false,
+  activePeerReady: false,
   bridgeInstalled: false,
   bridgeListenerCount: 0,
   runtimeEventCount: 0,
@@ -58,6 +73,18 @@ function sortConversations(items) {
   });
 }
 
+function normalizeMessageItem(item) {
+  if (!item || typeof item !== "object") return null;
+  const from = normalizePeer(item.from);
+  const text = String(item.text || "");
+  if (!from && !text) return null;
+  return {
+    from,
+    text,
+    ts: Number(item.ts) || 0,
+  };
+}
+
 function runtimeSnapshotState() {
   const status = getChatRuntimeBridgeStatus();
   return {
@@ -72,6 +99,17 @@ function reducer(state, action) {
       return {
         ...state,
         [action.field]: action.value,
+      };
+    case "set_status":
+      return {
+        ...state,
+        statusText: action.message || state.statusText,
+        statusTone: action.tone || state.statusTone,
+      };
+    case "message_draft":
+      return {
+        ...state,
+        messageDraft: action.value,
       };
     case "set_conversations": {
       const normalized = Array.isArray(action.items)
@@ -91,6 +129,64 @@ function reducer(state, action) {
       return {
         ...state,
         activePeer: normalizePeer(action.peer),
+        messages: [],
+        messageLoading: false,
+        recentLoading: false,
+        activePeerReady: isPeerReady(action.peer),
+      };
+    case "set_active_peer_ready":
+      return {
+        ...state,
+        activePeerReady: !!action.value,
+      };
+    case "history_load_begin":
+      return {
+        ...state,
+        messageLoading: true,
+      };
+    case "history_load_success":
+      return {
+        ...state,
+        messageLoading: false,
+        messages: Array.isArray(action.items) ? action.items : [],
+      };
+    case "history_load_failure":
+      return {
+        ...state,
+        messageLoading: false,
+      };
+    case "recent_begin":
+      return {
+        ...state,
+        recentLoading: true,
+      };
+    case "recent_success":
+      return {
+        ...state,
+        recentLoading: false,
+        messages: Array.isArray(action.items) ? action.items : state.messages,
+      };
+    case "recent_failure":
+      return {
+        ...state,
+        recentLoading: false,
+      };
+    case "send_begin":
+      return {
+        ...state,
+        sending: true,
+      };
+    case "send_success":
+      return {
+        ...state,
+        sending: false,
+        messageDraft: "",
+        messages: Array.isArray(action.items) ? action.items : state.messages,
+      };
+    case "send_failure":
+      return {
+        ...state,
+        sending: false,
       };
     case "start_begin":
       return {
@@ -107,6 +203,12 @@ function reducer(state, action) {
         disconnected: false,
         password: "",
         conversationsLoaded: false,
+        messages: [],
+        messageDraft: "",
+        messageLoading: false,
+        recentLoading: false,
+        sending: false,
+        activePeerReady: false,
         statusText: "Ready",
         statusTone: "success",
       };
@@ -116,6 +218,9 @@ function reducer(state, action) {
         started: false,
         starting: false,
         disconnected: false,
+        messageLoading: false,
+        recentLoading: false,
+        sending: false,
         statusText: action.message || "Start failed",
         statusTone: "error",
       };
@@ -129,6 +234,12 @@ function reducer(state, action) {
         activePeer: "",
         conversations: [],
         conversationsLoaded: false,
+        messages: [],
+        messageDraft: "",
+        messageLoading: false,
+        recentLoading: false,
+        sending: false,
+        activePeerReady: false,
         statusText: "Logged out",
         statusTone: "success",
       };
@@ -160,6 +271,12 @@ function reducer(state, action) {
           activePeer: "",
           conversations: [],
           conversationsLoaded: false,
+          messages: [],
+          messageDraft: "",
+          messageLoading: false,
+          recentLoading: false,
+          sending: false,
+          activePeerReady: false,
           runtimeEventCount: state.runtimeEventCount + 1,
           lastRuntimeEventType: eventType,
           lastForcedLogoutReason: String(payload?.reason || "logged_in_elsewhere"),
@@ -171,6 +288,7 @@ function reducer(state, action) {
         return {
           ...state,
           password: "",
+          sending: false,
           runtimeEventCount: state.runtimeEventCount + 1,
           lastRuntimeEventType: eventType,
           disconnected: state.started ? true : state.disconnected,
@@ -182,6 +300,20 @@ function reducer(state, action) {
         ...state,
         runtimeEventCount: state.runtimeEventCount + 1,
         lastRuntimeEventType: eventType || null,
+      };
+    }
+    case "append_incoming_message": {
+      const item = normalizeMessageItem(action.item);
+      if (!item) return state;
+      const isDuplicate = state.messages.some(
+        (msg) =>
+          msg.from === item.from &&
+          msg.text === item.text &&
+          Number(msg.ts || 0) === Number(item.ts || 0)
+      );
+      return {
+        ...state,
+        messages: isDuplicate ? state.messages : [...state.messages, item],
       };
     }
     default:
@@ -196,6 +328,19 @@ export function useChatApp() {
     dispatch({ type: "bridge_status", payload: runtimeSnapshotState() });
 
     const unsubscribe = subscribeToChatRuntime((event) => {
+      if (
+        event.type === "chat_message" &&
+        normalizePeer(event.payload?.from) === state.activePeer
+      ) {
+        dispatch({
+          type: "append_incoming_message",
+          item: {
+            from: event.payload?.from,
+            text: event.payload?.text,
+            ts: event.payload?.ts,
+          },
+        });
+      }
       dispatch({ type: "runtime_event", payload: event });
       dispatch({ type: "bridge_status", payload: runtimeSnapshotState() });
     });
@@ -205,7 +350,7 @@ export function useChatApp() {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [state.activePeer]);
 
   useEffect(() => {
     if (!state.started) return;
@@ -228,6 +373,69 @@ export function useChatApp() {
       cancelled = true;
     };
   }, [state.started, state.runtimeEventCount]);
+
+  useEffect(() => {
+    if (!state.started) return;
+
+    const unsubscribe = onPeerReady((peer) => {
+      if (normalizePeer(peer) === state.activePeer) {
+        dispatch({ type: "set_active_peer_ready", value: true });
+      }
+    });
+
+    dispatch({
+      type: "set_active_peer_ready",
+      value: state.activePeer ? isPeerReady(state.activePeer) : false,
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [state.started, state.activePeer]);
+
+  useEffect(() => {
+    if (!state.started || !state.activePeer) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      dispatch({ type: "history_load_begin" });
+      try {
+        const localHistory = await openConversation(state.activePeer);
+        const localItems = Array.isArray(localHistory)
+          ? localHistory.map(normalizeMessageItem).filter(Boolean)
+          : [];
+        if (cancelled) return;
+        dispatch({ type: "history_load_success", items: localItems });
+      } catch (err) {
+        console.warn("[ui] openConversation failed:", err);
+        if (cancelled) return;
+        dispatch({ type: "history_load_failure" });
+      }
+
+      dispatch({ type: "recent_begin" });
+      try {
+        const recent = await fetchRecentMessages(state.activePeer, 50);
+        const merged = await mergeRecentMessagesForDisplay(state.activePeer, recent);
+        const mergedItems = Array.isArray(merged)
+          ? merged.map(normalizeMessageItem).filter(Boolean)
+          : [];
+        if (cancelled) return;
+        dispatch({ type: "recent_success", items: mergedItems });
+        const metadata = await listConversationMetadata();
+        if (cancelled) return;
+        dispatch({ type: "set_conversations", items: metadata });
+      } catch (err) {
+        console.warn("[ui] recent history failed:", err);
+        if (cancelled) return;
+        dispatch({ type: "recent_failure" });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.started, state.activePeer]);
 
   async function handleStart() {
     const username = String(state.username || "").trim();
@@ -283,13 +491,43 @@ export function useChatApp() {
     dispatch({ type: "set_active_peer", peer });
   }
 
+  async function handleSend() {
+    const peer = normalizePeer(state.activePeer);
+    const draft = String(state.messageDraft || "");
+
+    if (!state.started || state.disconnected) return;
+    if (!peer || !draft.trim()) return;
+
+    dispatch({ type: "send_begin" });
+
+    try {
+      await sendMessage(peer, draft);
+      const localHistory = await openConversation(peer);
+      const items = Array.isArray(localHistory)
+        ? localHistory.map(normalizeMessageItem).filter(Boolean)
+        : [];
+      dispatch({ type: "send_success", items });
+      const metadata = await listConversationMetadata();
+      dispatch({ type: "set_conversations", items: metadata });
+    } catch (err) {
+      dispatch({ type: "send_failure" });
+      dispatch({
+        type: "set_status",
+        message: String(err?.message || err || "Send failed"),
+        tone: "error",
+      });
+    }
+  }
+
   return {
     state,
     actions: {
       setField,
+      setMessageDraft: (value) => dispatch({ type: "message_draft", value }),
       selectPeer,
       handleStart,
       handleLogout,
+      handleSend,
     },
   };
 }

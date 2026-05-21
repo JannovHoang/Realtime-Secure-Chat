@@ -23,6 +23,10 @@ function Field({
   );
 }
 
+function formatMessageClass(message, username) {
+  return message.from === username ? "msg me" : "msg peer";
+}
+
 export default function App() {
   const { state, actions } = useChatApp();
   const showPasswordField = !state.started || state.disconnected;
@@ -30,6 +34,13 @@ export default function App() {
   const startDisabled = state.starting || (state.started && !state.disconnected);
   const logoutDisabled = state.starting || !state.started;
   const peerInputValue = state.activePeer || "";
+  const sendDisabled =
+    !state.started ||
+    state.disconnected ||
+    !state.activePeer ||
+    !state.activePeerReady ||
+    state.sending ||
+    !String(state.messageDraft || "").trim();
 
   return (
     <div className="shell">
@@ -121,7 +132,7 @@ export default function App() {
             <input
               placeholder={
                 state.started
-                  ? "Chat pane wiring returns in the next checkpoint"
+                  ? "Choose a conversation from the local sidebar"
                   : "Start a session to load local conversations"
               }
               value={peerInputValue}
@@ -166,18 +177,57 @@ export default function App() {
         </aside>
 
         <main className="chat">
-          <div className="messages migration-messages">
-            <div className="migration-card">
-              <div className="migration-card-title">Checkpoint 5 Sidebar</div>
-              <p>
-                React now renders the local conversation list from vault metadata after a
-                successful start.
-              </p>
-              <p>
-                Selecting a peer only updates the active sidebar state at this checkpoint.
-                Local history loading, recent merge, and send flow remain deferred to the
-                next checkpoint.
-              </p>
+          <div className="messages">
+            {state.started && state.activePeer ? (
+              <div className="chat-pane">
+                <div className="chat-pane-head">
+                  <div className="chat-pane-title">{state.activePeer}</div>
+                  <div className="chat-pane-sub">
+                    {state.activePeerReady
+                      ? "Peer certificate is ready"
+                      : "Waiting for peer certificate"}
+                  </div>
+                </div>
+
+                {state.messageLoading ? (
+                  <div className="history-loading">Loading local history...</div>
+                ) : null}
+                {state.recentLoading ? (
+                  <div className="history-loading">Loading recent messages...</div>
+                ) : null}
+
+                {state.messages.length > 0 ? (
+                  state.messages.map((message, index) => (
+                    <div
+                      key={`${message.from}-${message.ts || 0}-${index}`}
+                      className={formatMessageClass(message, state.username)}
+                    >
+                      {message.text}
+                    </div>
+                  ))
+                ) : (
+                  <div className="peer-empty chat-empty">
+                    No local messages loaded for this conversation yet.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="migration-messages">
+                <div className="migration-card">
+                  <div className="migration-card-title">Checkpoint 6 Chat Pane</div>
+                  <p>
+                    React now owns local history loading, recent merge, and the send
+                    composer for the active conversation.
+                  </p>
+                  <p>
+                    Start a local session and choose a conversation to render the timeline
+                    from the current vault.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="migration-card migration-diagnostics">
               <div className="runtime-event-card">
                 <div className="runtime-event-title">Latest runtime snapshot</div>
                 <div className="runtime-event-line">
@@ -191,6 +241,10 @@ export default function App() {
                 <div className="runtime-event-line">
                   <span>Active peer:</span>
                   <strong>{state.activePeer || "none"}</strong>
+                </div>
+                <div className="runtime-event-line">
+                  <span>Active peer ready:</span>
+                  <strong>{state.activePeerReady ? "true" : "false"}</strong>
                 </div>
                 <div className="runtime-event-line">
                   <span>Started:</span>
@@ -212,16 +266,38 @@ export default function App() {
                   <span>Last forced logout:</span>
                   <strong>{state.lastForcedLogoutReason || "none"}</strong>
                 </div>
+                <div className="runtime-event-line">
+                  <span>Messages loaded:</span>
+                  <strong>{state.messages.length}</strong>
+                </div>
               </div>
             </div>
           </div>
 
           <div className="composer">
             <input
-              placeholder="Message composer returns after runtime bridge is added"
-              disabled
+              placeholder={
+                state.activePeerReady
+                  ? "Type a message..."
+                  : "Send is enabled after the peer certificate is ready"
+              }
+              value={state.messageDraft}
+              onChange={(e) => actions.setMessageDraft(e.target.value)}
+              disabled={!state.started || state.disconnected || !state.activePeer || state.sending}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void actions.handleSend();
+                }
+              }}
             />
-            <button type="button" disabled>
+            <button
+              type="button"
+              disabled={sendDisabled}
+              onClick={() => {
+                void actions.handleSend();
+              }}
+            >
               Send
             </button>
           </div>
