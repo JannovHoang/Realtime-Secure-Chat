@@ -3861,3 +3861,59 @@ Checkpoint result:
 - the React UI now has the correct ownership boundary for runtime events
 - the reducer foundation is ready for the next checkpoints to reconnect `Start`, `Logout`, sidebar, and chat pane behavior
 - interactive parity is still intentionally deferred to the next checkpoints
+
+### Checkpoint 4: React Topbar Auth Controls
+
+Completed in:
+
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+
+Goal:
+
+- restore `Start`, `Logout`, and manual reconnect through React
+- keep the ownership of session state inside the reducer/hook layer
+- avoid reconnecting restore/backup or conversation UI yet
+
+Changes:
+
+- added reducer state for:
+  - `username`
+  - `password`
+  - `started`
+  - `starting`
+  - status text and tone
+- added React actions for:
+  - field updates
+  - `handleStart()`
+  - `handleLogout()`
+- `handleStart()` now calls `initChat(...)` through the React hook
+- `handleLogout()` now calls `destroyChat()` through the React hook
+- disconnect and forced-logout bridge events now update topbar session state
+- the topbar now conditionally hides the password field after successful start and shows it again for reconnect
+
+Important temporary limitation for this checkpoint:
+
+- to avoid accidental identity creation while restore is still disconnected, `Start` currently works only when a persisted local vault already exists for that username in the current browser
+- if the browser has no local vault for that username yet, React shows a checkpoint-specific blocking message instead of recreating the old start-guard/restore flow early
+- `Restore from Cloud` and `Backup to Cloud` remain intentionally disabled until the later modal/flow checkpoint
+
+Expected behavior after this checkpoint:
+
+- existing demo accounts with a local vault can `Start`
+- after successful start:
+  - status becomes `Ready`
+  - password field disappears
+- `Logout` becomes available once the session is started
+- if the runtime emits disconnect:
+  - status becomes `Disconnected`
+  - password field comes back
+  - `Start` changes into reconnect behavior
+- the sidebar and chat pane are still placeholder UI at this checkpoint
+
+Checkpoint result:
+
+- React now owns the topbar auth/session controls
+- session lifecycle no longer depends on the old `client/ui/app.js`
+- full chat usability is still pending the sidebar/chat checkpoints

@@ -1,23 +1,40 @@
 import React from "react";
 import { useChatApp } from "./hooks/useChatApp.js";
 
-function DisabledField({ label, placeholder, type = "text" }) {
+function Field({
+  label,
+  placeholder,
+  type = "text",
+  value,
+  onChange,
+  disabled = false,
+}) {
   return (
     <label>
       <span>{label}</span>
-      <input type={type} placeholder={placeholder} disabled />
+      <input
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+      />
     </label>
   );
 }
 
 export default function App() {
-  const { state } = useChatApp();
+  const { state, actions } = useChatApp();
+  const showPasswordField = !state.started || state.disconnected;
+  const startLabel = state.disconnected ? "Reconnect" : "Start";
+  const startDisabled = state.starting || (state.started && !state.disconnected);
+  const logoutDisabled = state.starting || !state.started;
 
   return (
     <div className="shell">
       <div className="migration-banner" role="status" aria-live="polite">
-        React UI shell is now mounted. Chat/runtime wiring will be reconnected in the
-        next checkpoints.
+        React now owns the auth shell. Start, logout, and reconnect are back for
+        browsers that already have a local vault.
       </div>
 
       <div className="topbar">
@@ -27,10 +44,32 @@ export default function App() {
         </div>
 
         <div className="login">
-          <DisabledField label="Username" placeholder="React migration checkpoint" />
-          <DisabledField label="Password" placeholder="Interactive auth returns next" type="password" />
-          <button className="primary" type="button" disabled>
-            Start
+          <Field
+            label="Username"
+            placeholder="Enter your username"
+            value={state.username}
+            onChange={(value) => actions.setField("username", value)}
+            disabled={state.starting}
+          />
+          {showPasswordField ? (
+            <Field
+              label="Password"
+              placeholder="Enter your password"
+              type="password"
+              value={state.password}
+              onChange={(value) => actions.setField("password", value)}
+              disabled={state.starting}
+            />
+          ) : null}
+          <button
+            className="primary"
+            type="button"
+            disabled={startDisabled}
+            onClick={() => {
+              void actions.handleStart();
+            }}
+          >
+            {startLabel}
           </button>
           <button className="secondary" type="button" disabled>
             Restore from Cloud
@@ -38,10 +77,19 @@ export default function App() {
           <button className="secondary" type="button" disabled>
             Backup to Cloud
           </button>
-          <button className="secondary" type="button" disabled>
+          <button
+            className="secondary"
+            type="button"
+            disabled={logoutDisabled}
+            onClick={() => {
+              void actions.handleLogout();
+            }}
+          >
             Logout
           </button>
-          <div className="status migration-status">React Shell Only</div>
+          <div className={`status migration-status is-${state.statusTone}`}>
+            {state.statusText}
+          </div>
         </div>
       </div>
 
@@ -87,18 +135,21 @@ export default function App() {
         <main className="chat">
           <div className="messages migration-messages">
             <div className="migration-card">
-              <div className="migration-card-title">Checkpoint 3 Foundation</div>
+              <div className="migration-card-title">Checkpoint 4 Auth Shell</div>
               <p>
-                The old vanilla entry is no longer mounted. This screen is rendered by
-                React, and runtime callbacks are now routed through a dedicated bridge.
+                Start, logout, and manual reconnect now run through the React reducer and
+                runtime bridge instead of the old DOM-imperative entry.
               </p>
               <p>
-                Interactive auth and chat flows are still intentionally paused at this
-                stage. The next checkpoints will reconnect them using the reducer-based
-                state model already mounted here.
+                Sidebar data, local history loading, send flow, backup, and restore are
+                still intentionally deferred to later checkpoints.
               </p>
               <div className="runtime-event-card">
                 <div className="runtime-event-title">Latest runtime snapshot</div>
+                <div className="runtime-event-line">
+                  <span>Started:</span>
+                  <strong>{state.started ? "true" : "false"}</strong>
+                </div>
                 <div className="runtime-event-line">
                   <span>Disconnected flag:</span>
                   <strong>{state.disconnected ? "true" : "false"}</strong>
