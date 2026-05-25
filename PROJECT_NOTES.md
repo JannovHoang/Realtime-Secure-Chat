@@ -4125,3 +4125,180 @@ Checkpoint result:
 - the React UI is visually cleaner and more suitable for instructor demo use
 - debugging internals are no longer exposed in the main user-facing surface
 - runtime behavior from checkpoints 1-7 remains unchanged; this checkpoint is presentation cleanup only
+
+## Phase: React UI Polish / Responsive
+
+### Checkpoint 0: Branch And Baseline
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- start the post-migration polish phase from a clean branch boundary
+- lock the current React UI behavior before changing layout, spacing, and responsive rules
+- define the safety rails for the polish work so demo-ready visuals do not regress core chat flows
+
+Branch:
+
+- active branch for this phase: `feature/react-ui-polish`
+
+Scope rules for this phase:
+
+- polish UI only
+- preserve all existing behavior
+- do not change:
+  - chat protocol
+  - MongoDB schema
+  - crypto logic
+  - storage behavior
+  - cloud backup payload format
+- avoid deep edits in:
+  - `client/chat.js`
+  - `client/storage.js`
+- limit code changes mainly to:
+  - `client/ui/App.jsx`
+  - `client/ui/style.css`
+  - small className or structure updates only when needed for styling/responsive work
+
+Baseline UI state before polish:
+
+- React UI migration is complete
+- the current app already supports:
+  - `Start`
+  - `Logout`
+  - `Reconnect`
+  - `Restore from Cloud`
+  - `Backup to Cloud`
+  - sidebar conversations with ordering + preview
+  - realtime chat
+  - offline pending delivery
+  - recent-message catch-up merge
+- demo/debug-specific runtime panels have already been removed from the user-facing UI
+
+Baseline regression checklist for every polish checkpoint:
+
+- session flows:
+  - `Start`
+  - `Logout`
+  - `Reconnect`
+  - `Restore from Cloud`
+  - `Backup to Cloud`
+- conversation flows:
+  - sidebar still renders peers
+  - ordering + preview stay correct
+  - selecting a conversation still opens the correct peer
+- message flows:
+  - realtime send/receive still works
+  - offline pending still returns once
+  - recent catch-up does not duplicate messages
+- tunnel/demo flows:
+  - `npm start` still serves the built UI
+  - `cloudflared tunnel --url http://localhost:3000` still works
+  - the same quick-tunnel URL can still be used for restore/start/chat testing
+
+Responsive checks that must be done after each visual checkpoint:
+
+- desktop width
+- narrowed desktop window
+- quick visual smoke check on phone if available
+
+Quality checks that must be considered during polish:
+
+- disabled buttons remain readable
+- focus states remain visible
+- text contrast remains readable
+- modal actions stay obvious
+- message composer stays usable on narrow screens
+- no layout area should look like a debug surface
+
+Planned checkpoint order for this phase:
+
+- Checkpoint 1: Design Baseline And Visual System
+- Checkpoint 2: Topbar Polish
+- Checkpoint 3: Sidebar Polish
+- Checkpoint 4: Chat Pane + Composer Polish
+- Checkpoint 5: Modal And Toast Polish
+- Checkpoint 6: Responsive Final Pass
+- Checkpoint 7: Final Demo Cleanup + Docs
+
+Checkpoint result:
+
+- the UI polish phase now has a clean baseline and explicit regression checklist
+- the next checkpoint can focus on the visual system without ambiguity about scope
+
+### Checkpoint 1: Design Baseline And Visual System
+
+Completed in:
+
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- establish a cleaner visual system before polishing individual UI areas
+- reduce the "small app floating in a large monitor" effect seen in the baseline screenshots
+- unify spacing, panel depth, text hierarchy, and color usage without changing behavior
+- apply a first responsive cleanup pass so phone layouts are not left in the exact baseline state while later checkpoints are still pending
+
+Changes:
+
+- expanded the shared design tokens in `:root` to include:
+  - base background colors
+  - panel and muted panel colors
+  - stronger text and muted text tokens
+  - success / warning / danger colors
+  - radius scale
+  - shadow scale
+  - spacing scale
+- widened the main shell so the app uses large desktop space more effectively
+- refined the page background gradients so the canvas feels softer and less empty
+- upgraded panel presentation for:
+  - topbar
+  - sidebar
+  - chat surface
+  using stronger hierarchy, larger radius, and consistent blur/shadow treatment
+- standardized core control sizing:
+  - buttons
+  - topbar inputs
+  - sidebar field
+  - composer input
+- tightened text hierarchy for:
+  - muted helper text
+  - section labels
+  - empty states
+- slightly improved chat bubble spacing and message area breathing room without changing message logic
+- added baseline responsive adjustments for:
+  - large desktop width usage
+  - tablet spacing
+  - phone panel padding
+  - sticky composer treatment on narrow screens
+  - smaller mobile topbar / message header sizing
+  - bounded chat-panel height so the message area scrolls inside the panel instead of relying on the browser page scroll
+  - bounded peer-list height so long conversation lists can scroll inside the sidebar area
+  - desktop viewport locking so the browser page scrollbar is not the primary scroll surface for long chat histories
+
+Important scope note:
+
+- this checkpoint does not change:
+  - layout ownership
+  - auth flow
+  - conversation behavior
+  - runtime behavior
+- the work is still intentionally visual-system first, but it now also includes a light responsive pass because the baseline phone screenshots showed avoidable spacing issues
+
+Expected behavior after this checkpoint:
+
+- on large desktop screens, the app should feel less narrow and less lost in empty space
+- panels should look more coherent with each other
+- inputs and buttons should feel more consistent in size
+- on phones, spacing should feel tighter and the composer should feel more anchored
+- on desktop and phone, longer conversations should scroll inside the message area rather than stretching the entire page
+- peer lists should also be able to scroll independently when many conversations are present
+- the app should still behave exactly like the previous checkpoint
+
+Checkpoint result:
+
+- the React UI now has a more consistent visual foundation for the remaining polish work
+- the next checkpoints can focus on specific regions instead of re-deciding global colors, spacing, and depth
