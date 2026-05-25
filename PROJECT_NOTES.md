@@ -4278,6 +4278,7 @@ Changes:
   - bounded chat-panel height so the message area scrolls inside the panel instead of relying on the browser page scroll
   - bounded peer-list height so long conversation lists can scroll inside the sidebar area
   - desktop viewport locking so the browser page scrollbar is not the primary scroll surface for long chat histories
+  - explicit grid-row and panel-height constraints so desktop chat/sidebar panes keep their own scroll behavior
 
 Important scope note:
 
@@ -4302,3 +4303,102 @@ Checkpoint result:
 
 - the React UI now has a more consistent visual foundation for the remaining polish work
 - the next checkpoints can focus on specific regions instead of re-deciding global colors, spacing, and depth
+
+### Checkpoint 2: Topbar Polish
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make the topbar feel like a clearer control surface instead of one long mixed row
+- improve the visual hierarchy of brand, auth inputs, actions, and session status
+- keep the existing `Start / Restore / Backup / Logout` behavior unchanged
+
+Changes:
+
+- reorganized the topbar into clearer regions:
+  - brand block
+  - auth input block
+  - action button block
+  - session status block
+- added a compact brand mark so the app header has a stronger visual anchor
+- introduced a `Session status` label above the status pill for clearer state reading
+- improved desktop layout so action controls no longer feel loosely scattered across one line
+- improved mobile layout so topbar controls wrap in a more intentional grid instead of collapsing awkwardly
+- corrected a mobile regression where the topbar content could split into an unusable side-column layout on narrow phones
+- simplified the narrow-phone topbar further into a strict single-column flow after overflow was observed in real-device testing
+- preserved all button handlers, disabled rules, and auth flow logic
+
+Important scope note:
+
+- this checkpoint does not change:
+  - auth semantics
+  - reconnect logic
+  - restore flow behavior
+  - backup flow behavior
+- the work is purely structural and visual for the topbar area
+
+Expected behavior after this checkpoint:
+
+- on desktop:
+  - the app title area should feel more distinct
+  - auth inputs and action buttons should read as separate groups
+  - session status should be easier to locate quickly
+- on mobile:
+  - the topbar should stack more cleanly
+  - buttons should wrap more predictably
+  - status should remain readable without looking detached
+  - inputs and buttons should keep usable width instead of collapsing into a narrow right-side column
+- all existing topbar flows should still behave exactly as before
+
+Checkpoint result:
+
+- the topbar now has clearer grouping and stronger hierarchy on both desktop and mobile
+- the next checkpoint can focus on the sidebar without carrying forward a cluttered header layout
+
+### Checkpoint 2A: Peer Input Behavior Fix
+
+Completed in:
+
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/App.jsx`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- restore the ability to start or open a conversation by typing a peer name directly
+- fix the regression where the `Chat with` field had become a read-only mirror of the active sidebar peer
+
+Changes:
+
+- introduced a separate `peerDraft` state in the React hook
+- kept `activePeer` as the committed peer currently opened in the chat pane
+- changed the `Chat with` field back into a live input
+- pressing `Enter` in the field now commits the typed peer and opens/begins that conversation flow
+- selecting a sidebar item still syncs both:
+  - `activePeer`
+  - `peerDraft`
+- preserved manually committed peers even when the current sidebar metadata does not yet contain that peer, so the UI does not jump back to the first known conversation
+
+Important scope note:
+
+- this fix restores expected chat UX behavior
+- it does not add a new protocol or backend feature
+- it only separates:
+  - the draft peer name being typed
+  - the peer currently committed in the active conversation
+
+Expected behavior after this checkpoint:
+
+- users can type a peer name that is not already visible in the sidebar
+- pressing `Enter` should switch the conversation target to that peer
+- sidebar selection should still work as before
+
+Checkpoint result:
+
+- the `Chat with` field is no longer a dead display-only field
+- the React UI again supports starting a conversation with a peer that has not been previously opened in the local sidebar

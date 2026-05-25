@@ -62,7 +62,7 @@ export default function App() {
   const busy = state.starting || state.restoring || state.backingUp || state.sending;
   const startDisabled = busy || (state.started && !state.disconnected);
   const logoutDisabled = busy || !state.started;
-  const peerInputValue = state.activePeer || "";
+  const peerInputValue = state.peerDraft || "";
   const sendDisabled =
     !state.started ||
     state.disconnected ||
@@ -75,70 +75,82 @@ export default function App() {
     <div className="shell">
       <div className="topbar">
         <div className="brand">
+          <div className="brand-mark" aria-hidden="true">
+            RS
+          </div>
           <div className="brand-title">Realtime Secure Messenger</div>
           <div className="brand-sub">E2EE - Double Ratchet - Real-time DM</div>
         </div>
 
         <div className="login">
-          <Field
-            label="Username"
-            placeholder="Enter your username"
-            value={state.username}
-            onChange={(value) => actions.setField("username", value)}
-            disabled={busy}
-          />
-          {showPasswordField ? (
+          <div className="auth-fields">
             <Field
-              label="Password"
-              placeholder="Enter your password"
-              type="password"
-              value={state.password}
-              onChange={(value) => actions.setField("password", value)}
+              label="Username"
+              placeholder="Enter your username"
+              value={state.username}
+              onChange={(value) => actions.setField("username", value)}
               disabled={busy}
             />
-          ) : null}
-          <button
-            className="primary"
-            type="button"
-            disabled={startDisabled}
-            onClick={() => {
-              void actions.handleStart();
-            }}
-          >
-            {startLabel}
-          </button>
-          <button
-            className="secondary"
-            type="button"
-            disabled={busy || state.started || !state.username || !state.password}
-            onClick={() => {
-              void actions.handleRestoreRequest();
-            }}
-          >
-            Restore from Cloud
-          </button>
-          <button
-            className="secondary"
-            type="button"
-            disabled={busy || !state.started || state.disconnected}
-            onClick={() => {
-              actions.openBackupModal();
-            }}
-          >
-            Backup to Cloud
-          </button>
-          <button
-            className="secondary"
-            type="button"
-            disabled={logoutDisabled}
-            onClick={() => {
-              void actions.handleLogout();
-            }}
-          >
-            Logout
-          </button>
-          <div className={`status migration-status is-${state.statusTone}`}>
-            {state.statusText}
+            {showPasswordField ? (
+              <Field
+                label="Password"
+                placeholder="Enter your password"
+                type="password"
+                value={state.password}
+                onChange={(value) => actions.setField("password", value)}
+                disabled={busy}
+              />
+            ) : null}
+          </div>
+
+          <div className="topbar-actions">
+            <button
+              className="primary"
+              type="button"
+              disabled={startDisabled}
+              onClick={() => {
+                void actions.handleStart();
+              }}
+            >
+              {startLabel}
+            </button>
+            <button
+              className="secondary"
+              type="button"
+              disabled={busy || state.started || !state.username || !state.password}
+              onClick={() => {
+                void actions.handleRestoreRequest();
+              }}
+            >
+              Restore from Cloud
+            </button>
+            <button
+              className="secondary"
+              type="button"
+              disabled={busy || !state.started || state.disconnected}
+              onClick={() => {
+                actions.openBackupModal();
+              }}
+            >
+              Backup to Cloud
+            </button>
+            <button
+              className="secondary"
+              type="button"
+              disabled={logoutDisabled}
+              onClick={() => {
+                void actions.handleLogout();
+              }}
+            >
+              Logout
+            </button>
+          </div>
+
+          <div className="topbar-status">
+            <div className="status-label">Session status</div>
+            <div className={`status migration-status is-${state.statusTone}`}>
+              {state.statusText}
+            </div>
           </div>
         </div>
       </div>
@@ -150,12 +162,18 @@ export default function App() {
             <input
               placeholder={
                 state.started
-                  ? "Choose a conversation from the local sidebar"
+                  ? "Type a username and press Enter"
                   : "Start a session to load local conversations"
               }
               value={peerInputValue}
-              readOnly
+              onChange={(e) => actions.setPeerDraft(e.target.value)}
               disabled={!state.started}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  actions.commitPeerDraft();
+                }
+              }}
             />
           </div>
 

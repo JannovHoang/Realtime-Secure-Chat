@@ -38,6 +38,7 @@ const initialState = {
   restoredThisSession: false,
   continueWithoutRestoreFor: {},
   activePeer: "",
+  peerDraft: "",
   conversations: [],
   conversationsLoaded: false,
   messages: [],
@@ -163,18 +164,22 @@ function reducer(state, action) {
       const normalized = Array.isArray(action.items)
         ? sortConversations(action.items.map(normalizeConversationItem).filter(Boolean))
         : [];
-      const hasActivePeer = normalized.some((item) => item.peer === state.activePeer);
+      const nextActivePeer = state.activePeer || normalized[0]?.peer || "";
       return {
         ...state,
         conversations: normalized,
         conversationsLoaded: true,
-        activePeer: hasActivePeer ? state.activePeer : normalized[0]?.peer || "",
+        activePeer: nextActivePeer,
+        peerDraft: nextActivePeer || state.peerDraft,
       };
     }
+    case "set_peer_draft":
+      return { ...state, peerDraft: action.value };
     case "set_active_peer":
       return {
         ...state,
         activePeer: normalizePeer(action.peer),
+        peerDraft: normalizePeer(action.peer),
         messages: [],
         messageLoading: false,
         recentLoading: false,
@@ -227,6 +232,7 @@ function reducer(state, action) {
         starting: false,
         disconnected: false,
         password: "",
+        peerDraft: "",
         conversationsLoaded: false,
         messages: [],
         messageDraft: "",
@@ -257,6 +263,7 @@ function reducer(state, action) {
         disconnected: false,
         password: "",
         activePeer: "",
+        peerDraft: "",
         conversations: [],
         conversationsLoaded: false,
         messages: [],
@@ -312,6 +319,7 @@ function reducer(state, action) {
           disconnected: false,
           password: "",
           activePeer: "",
+          peerDraft: "",
           conversations: [],
           conversationsLoaded: false,
           messages: [],
@@ -606,6 +614,16 @@ export function useChatApp() {
     dispatch({ type: "set_active_peer", peer });
   }
 
+  function setPeerDraft(value) {
+    dispatch({ type: "set_peer_draft", value });
+  }
+
+  function commitPeerDraft() {
+    const peer = normalizePeer(state.peerDraft);
+    if (!state.started || state.disconnected || !peer) return;
+    dispatch({ type: "set_active_peer", peer });
+  }
+
   async function handleSend() {
     const peer = normalizePeer(state.activePeer);
     const draft = String(state.messageDraft || "");
@@ -785,8 +803,10 @@ export function useChatApp() {
       setMessageDraft: (value) => dispatch({ type: "message_draft", value }),
       setBackupPasswordInput: (value) =>
         dispatch({ type: "set_backup_password_input", value }),
+      setPeerDraft,
       closeModal: () => dispatch({ type: "close_modal" }),
       selectPeer,
+      commitPeerDraft,
       handleStart,
       handleLogout,
       handleSend,
