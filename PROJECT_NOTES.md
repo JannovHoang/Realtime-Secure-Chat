@@ -4569,3 +4569,50 @@ Expected behavior after this fix:
 - typing a few lines should grow the composer without showing a scrollbar
 - typing many lines should show a cleaner internal scrollbar instead of the browser's bulky native control
 - sending multiline messages should still work exactly as in Checkpoint 4
+
+### Checkpoint 6: Responsive Final Pass
+
+Completed in:
+
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- review and stabilize the polished React UI across desktop, laptop, tablet, and mobile sizes
+- reduce layout overflow risk before demo
+- preserve all chat, storage, backup, restore, and runtime behavior
+
+Changes:
+
+- added global horizontal overflow protection so accidental wide children do not create sideways page scroll
+- made the app shell width more predictable by using a viewport-aware width instead of mixing max-width with side padding
+- changed the desktop content grid to use a responsive sidebar width with `clamp(...)`
+- added a laptop-specific breakpoint for 1025px-1280px to reduce topbar and grid pressure
+- kept desktop chat/sidebar inside the app viewport while preserving internal scroll areas
+- improved tablet/mobile shell sizing so cards stay inside the viewport with consistent side gutters
+- adjusted mobile chat panel height with a bounded `min(...)` value instead of a fixed viewport-only height
+- added scroll containment to:
+  - message history
+  - peer list
+  - modal content
+
+Important scope note:
+
+- this checkpoint only changes CSS layout/responsive behavior
+- it does not change React state, chat runtime, crypto, storage, server, or MongoDB
+- it does not add mobile drawer/tab navigation
+- it does not change message ordering, recent catch-up, pending delivery, or backup/restore logic
+
+Expected behavior after this checkpoint:
+
+- on desktop, the browser page should not be the main chat scroller
+- on laptop widths, topbar and content should stay balanced without squeezing the chat pane too much
+- on tablet/mobile, topbar, chat pane, composer, and sidebar should not create horizontal overflow
+- message history, peer list, and modal bodies should scroll inside their own regions where applicable
+- existing realtime and offline chat behavior should remain unchanged
+
+Checkpoint result:
+
+- the UI has a safer responsive foundation for demo across desktop and mobile
+- remaining work can focus on final cleanup/docs rather than broad layout restructuring
