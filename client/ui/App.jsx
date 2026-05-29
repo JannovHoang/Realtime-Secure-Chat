@@ -27,6 +27,15 @@ function formatMessageClass(message, username) {
   return message.from === username ? "msg me" : "msg peer";
 }
 
+function shouldSendMessageFromKeyDown(event) {
+  if (event.key !== "Enter" || event.shiftKey) return false;
+  const isCoarsePointer =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  return !isCoarsePointer;
+}
+
 function ToastViewport({ toasts }) {
   if (!Array.isArray(toasts) || toasts.length === 0) return null;
   return (
@@ -57,6 +66,7 @@ function ModalFrame({ title, subtitle, children, actions }) {
 
 export default function App() {
   const { state, actions, helpers } = useChatApp();
+  const composerInputRef = React.useRef(null);
   const showPasswordField = !state.started || state.disconnected;
   const startLabel = state.disconnected ? "Reconnect" : "Start";
   const busy = state.starting || state.restoring || state.backingUp || state.sending;
@@ -70,6 +80,13 @@ export default function App() {
     !state.activePeerReady ||
     busy ||
     !String(state.messageDraft || "").trim();
+
+  React.useEffect(() => {
+    const textarea = composerInputRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 132)}px`;
+  }, [state.messageDraft]);
 
   return (
     <div className="shell">
@@ -297,7 +314,10 @@ export default function App() {
           </div>
 
           <div className="composer">
-            <input
+            <textarea
+              ref={composerInputRef}
+              rows={1}
+              aria-label="Message"
               placeholder={
                 state.activePeerReady
                   ? "Type a message..."
@@ -307,7 +327,7 @@ export default function App() {
               onChange={(e) => actions.setMessageDraft(e.target.value)}
               disabled={!state.started || state.disconnected || !state.activePeer || state.sending}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
+                if (shouldSendMessageFromKeyDown(e)) {
                   e.preventDefault();
                   void actions.handleSend();
                 }

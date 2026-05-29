@@ -4447,3 +4447,49 @@ Checkpoint result:
 
 - sidebar presentation is now more product-like and ready for the next polish pass
 - existing chat behavior remains owned by the previous React migration/runtime bridge work
+
+### Checkpoint 4: Chat Pane + Composer Polish
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- improve the central chat pane and message composer without changing chat runtime behavior
+- support multi-line messages in the composer, especially on mobile keyboards
+- keep existing send/receive, recent catch-up, pending/offline, and local history behavior unchanged
+
+Changes:
+
+- changed the message composer from a single-line `input` to a controlled `textarea`
+- added auto-height behavior for the composer up to a safe maximum height
+- preserved desktop fast-send behavior:
+  - `Enter` sends
+  - `Shift + Enter` inserts a new line
+- changed mobile behavior so the keyboard Enter/newline key inserts a new line instead of sending immediately
+- kept the `Send` button as the reliable send action on mobile
+- adjusted composer styling for multi-line text, focus state, placeholder, and mobile spacing
+- slightly refined chat pane/message spacing while preserving the existing message rendering logic
+
+Important scope note:
+
+- this checkpoint does not change encryption, protocol, storage, backend, WebSocket, or message merge logic
+- this checkpoint does not change how messages are saved or decrypted
+- this checkpoint only changes the React composer element and supporting UI styles
+
+Expected behavior after this checkpoint:
+
+- users can type multi-line messages
+- sent multi-line messages should display with line breaks because message bubbles already use `white-space: pre-wrap`
+- on desktop, pressing `Enter` sends and `Shift + Enter` creates a new line
+- on mobile, pressing the keyboard newline key creates a new line, and users send with the `Send` button
+- the composer should grow a little for multi-line text but not cover the whole chat pane
+- existing realtime and offline chat flows should continue working
+
+Checkpoint result:
+
+- the chat composer is closer to normal chat-app behavior
+- mobile message composition is safer because newline no longer accidentally sends the message
