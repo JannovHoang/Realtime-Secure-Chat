@@ -1,6 +1,8 @@
 import React from "react";
 import { useChatApp } from "./hooks/useChatApp.js";
 
+const COMPOSER_MAX_HEIGHT = 132;
+
 function Field({
   label,
   placeholder,
@@ -42,20 +44,27 @@ function ToastViewport({ toasts }) {
     <div className="toast-wrap">
       {toasts.map((toast) => (
         <div key={toast.id} className={`toast-card is-${toast.tone || "info"}`}>
-          {toast.text}
+          <span className="toast-dot" aria-hidden="true" />
+          <span>{toast.text}</span>
         </div>
       ))}
     </div>
   );
 }
 
-function ModalFrame({ title, subtitle, children, actions }) {
+function ModalFrame({ title, subtitle, children, actions, eyebrow = "Secure action" }) {
   return (
     <div className="modal-backdrop">
       <div className="modal-card" role="dialog" aria-modal="true">
         <div className="modal-head">
-          <div className="modal-title">{title}</div>
-          {subtitle ? <div className="modal-sub">{subtitle}</div> : null}
+          <div className="modal-mark" aria-hidden="true">
+            RS
+          </div>
+          <div className="modal-head-copy">
+            <div className="modal-eyebrow">{eyebrow}</div>
+            <div className="modal-title">{title}</div>
+            {subtitle ? <div className="modal-sub">{subtitle}</div> : null}
+          </div>
         </div>
         {children}
         <div className="modal-actions">{actions}</div>
@@ -85,7 +94,10 @@ export default function App() {
     const textarea = composerInputRef.current;
     if (!textarea) return;
     textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 132)}px`;
+    const nextHeight = Math.min(textarea.scrollHeight, COMPOSER_MAX_HEIGHT);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY =
+      textarea.scrollHeight > COMPOSER_MAX_HEIGHT ? "auto" : "hidden";
   }, [state.messageDraft]);
 
   return (
@@ -349,6 +361,7 @@ export default function App() {
         <ModalFrame
           title="Backup to Cloud"
           subtitle="Enter your password to encrypt and save the cloud backup."
+          eyebrow="Encrypted backup"
           actions={
             <>
               <button className="secondary" type="button" onClick={actions.closeModal}>
@@ -376,6 +389,7 @@ export default function App() {
         <ModalFrame
           title="Start Confirmation"
           subtitle="No local identity found for this account in this browser. Continue only for a new account, or restore a cloud backup first."
+          eyebrow="Identity guard"
           actions={
             <>
               <button
@@ -408,6 +422,7 @@ export default function App() {
         <ModalFrame
           title="Choose Backup Identity"
           subtitle="This account has multiple cloud backups. Choose the identity you want to restore."
+          eyebrow="Cloud restore"
           actions={
             <button className="secondary" type="button" onClick={actions.cancelRestoreChoice}>
               Cancel
@@ -422,6 +437,7 @@ export default function App() {
                 className="restore-choice-item"
                 onClick={() => void actions.confirmRestoreChoice(item.identityId)}
               >
+                <span className="restore-choice-label">Identity</span>
                 <span className="restore-choice-id">
                   {helpers.formatIdentityShort(item.identityId)}
                 </span>

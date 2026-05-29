@@ -4493,3 +4493,79 @@ Checkpoint result:
 
 - the chat composer is closer to normal chat-app behavior
 - mobile message composition is safer because newline no longer accidentally sends the message
+
+### Checkpoint 5: Modal And Toast Polish
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- improve modal and toast presentation for demo readiness
+- keep backup, restore, start guard, and identity-choice flows unchanged
+- make dialogs easier to read on desktop and mobile
+
+Changes:
+
+- improved the shared modal frame with a clearer header layout, context eyebrow, and compact app mark
+- added modal context labels for:
+  - encrypted backup
+  - identity guard
+  - cloud restore
+- improved modal card sizing, backdrop blur, spacing, and scroll handling for smaller screens
+- improved modal action area separation so primary and secondary actions are easier to distinguish
+- improved backup password input styling without changing password behavior
+- improved restore identity choice rows with a clearer label, stronger identity text, hover, and focus states
+- improved toast layout with a tone dot, stronger card styling, and better mobile width/positioning
+
+Important scope note:
+
+- this checkpoint does not change any backup or restore API call
+- this checkpoint does not change password validation or vault behavior
+- this checkpoint does not change start guard decision logic
+- this checkpoint does not change identity selection behavior
+
+Expected behavior after this checkpoint:
+
+- `Backup to Cloud` should open a cleaner password modal
+- `Start Confirmation` should remain the same flow but look clearer
+- multi-identity restore should still allow choosing exactly one identity
+- toast messages should be easier to notice without covering too much of the app
+- on mobile, modal buttons should remain large enough to tap and should not overflow horizontally
+
+Checkpoint result:
+
+- modal and toast UI now look more consistent with the polished React interface
+- all sensitive flows remain controlled by the existing runtime and hook actions
+
+### Checkpoint 5A: Composer Multiline Scrollbar Fix
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- fix the rough native textarea scrollbar that appears when users type many lines
+- keep multiline message behavior from Checkpoint 4
+- avoid changing send/receive logic
+
+Changes:
+
+- moved the composer maximum height into a named constant in the React component
+- the textarea now hides vertical overflow while the content still fits
+- the textarea only enables vertical scrolling after it reaches the maximum composer height
+- styled the textarea scrollbar to be thinner and less visually disruptive
+- removed visible native scrollbar buttons in WebKit/Blink browsers where supported
+- adjusted textarea padding and border radius so multiline text fits better
+
+Expected behavior after this fix:
+
+- typing a few lines should grow the composer without showing a scrollbar
+- typing many lines should show a cleaner internal scrollbar instead of the browser's bulky native control
+- sending multiline messages should still work exactly as in Checkpoint 4
