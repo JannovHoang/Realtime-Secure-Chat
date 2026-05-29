@@ -10,17 +10,21 @@ function Field({
   value,
   onChange,
   disabled = false,
+  trailing,
 }) {
   return (
     <label>
       <span>{label}</span>
-      <input
-        type={type}
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-      />
+      <span className={trailing ? "input-wrap has-trailing" : "input-wrap"}>
+        <input
+          type={type}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+        />
+        {trailing}
+      </span>
     </label>
   );
 }
@@ -36,6 +40,43 @@ function shouldSendMessageFromKeyDown(event) {
     typeof window.matchMedia === "function" &&
     window.matchMedia("(pointer: coarse)").matches;
   return !isCoarsePointer;
+}
+
+function PasswordVisibilityIcon({ visible }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="password-toggle-icon"
+      viewBox="0 0 24 24"
+      focusable="false"
+    >
+      <path
+        d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      {visible ? (
+        <path
+          d="M4 20 20 4"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeWidth="2"
+        />
+      ) : null}
+    </svg>
+  );
 }
 
 function ToastViewport({ toasts }) {
@@ -76,6 +117,12 @@ function ModalFrame({ title, subtitle, children, actions, eyebrow = "Secure acti
 export default function App() {
   const { state, actions, helpers } = useChatApp();
   const composerInputRef = React.useRef(null);
+  const messagesViewportRef = React.useRef(null);
+  const messagesEndRef = React.useRef(null);
+  const shouldStickToBottomRef = React.useRef(true);
+  const lastActivePeerRef = React.useRef("");
+  const [showTopbarPassword, setShowTopbarPassword] = React.useState(false);
+  const [showBackupPassword, setShowBackupPassword] = React.useState(false);
   const showPasswordField = !state.started || state.disconnected;
   const startLabel = state.disconnected ? "Reconnect" : "Start";
   const busy = state.starting || state.restoring || state.backingUp || state.sending;
@@ -99,6 +146,44 @@ export default function App() {
     textarea.style.overflowY =
       textarea.scrollHeight > COMPOSER_MAX_HEIGHT ? "auto" : "hidden";
   }, [state.messageDraft]);
+
+  React.useEffect(() => {
+    if (!showPasswordField) {
+      setShowTopbarPassword(false);
+    }
+  }, [showPasswordField]);
+
+  React.useEffect(() => {
+    if (state.modal?.type !== "backup_password") {
+      setShowBackupPassword(false);
+    }
+  }, [state.modal?.type]);
+
+  React.useEffect(() => {
+    const activePeerChanged = lastActivePeerRef.current !== state.activePeer;
+    if (activePeerChanged) {
+      lastActivePeerRef.current = state.activePeer;
+      shouldStickToBottomRef.current = true;
+    }
+
+    if (!state.activePeer) return;
+    if (!activePeerChanged && !shouldStickToBottomRef.current) return;
+
+    window.requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        block: "end",
+        behavior: activePeerChanged ? "auto" : "smooth",
+      });
+    });
+  }, [state.activePeer, state.messages.length, state.messageLoading, state.recentLoading]);
+
+  const handleMessagesScroll = React.useCallback(() => {
+    const viewport = messagesViewportRef.current;
+    if (!viewport) return;
+    const distanceFromBottom =
+      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    shouldStickToBottomRef.current = distanceFromBottom < 96;
+  }, []);
 
   return (
     <div className="shell">
@@ -124,10 +209,22 @@ export default function App() {
               <Field
                 label="Password"
                 placeholder="Enter your password"
-                type="password"
+                type={showTopbarPassword ? "text" : "password"}
                 value={state.password}
                 onChange={(value) => actions.setField("password", value)}
                 disabled={busy}
+                trailing={
+                  <button
+                    className="password-toggle"
+                    type="button"
+                    aria-label={showTopbarPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showTopbarPassword}
+                    disabled={busy}
+                    onClick={() => setShowTopbarPassword((value) => !value)}
+                  >
+                    <PasswordVisibilityIcon visible={showTopbarPassword} />
+                  </button>
+                }
               />
             ) : null}
           </div>
@@ -261,7 +358,11 @@ export default function App() {
         </aside>
 
         <main className="chat">
-          <div className="messages">
+          <div
+            className="messages"
+            ref={messagesViewportRef}
+            onScroll={handleMessagesScroll}
+          >
             {state.started && state.activePeer ? (
               <div className="chat-pane">
                 <div className="chat-pane-head">
@@ -304,6 +405,7 @@ export default function App() {
                     No local messages loaded for this conversation yet.
                   </div>
                 )}
+                <div className="message-scroll-anchor" ref={messagesEndRef} />
               </div>
             ) : (
               <div className="migration-messages">
@@ -376,11 +478,20 @@ export default function App() {
           <label className="modal-field">
             <span>Password</span>
             <input
-              type="password"
+              type={showBackupPassword ? "text" : "password"}
               placeholder="Enter your password"
               value={state.backupPasswordInput}
               onChange={(e) => actions.setBackupPasswordInput(e.target.value)}
             />
+            <button
+              className="password-toggle modal-password-toggle"
+              type="button"
+              aria-label={showBackupPassword ? "Hide backup password" : "Show backup password"}
+              aria-pressed={showBackupPassword}
+              onClick={() => setShowBackupPassword((value) => !value)}
+            >
+              <PasswordVisibilityIcon visible={showBackupPassword} />
+            </button>
           </label>
         </ModalFrame>
       ) : null}

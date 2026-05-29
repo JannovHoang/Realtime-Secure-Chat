@@ -162,6 +162,11 @@ body {
   font-weight: 600;
 }
 
+.input-wrap {
+  display: block;
+  position: relative;
+}
+
 .status-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -183,6 +188,48 @@ body {
   outline: none;
   background: #fff;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-wrap.has-trailing input {
+  padding-right: 68px;
+}
+
+.password-toggle {
+  width: 32px;
+  min-width: 32px;
+  min-height: 30px;
+  padding: 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(43, 89, 217, 0.16);
+  background: rgba(248, 251, 255, 0.96);
+  color: var(--primary-2);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.password-toggle-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 0 auto;
+}
+
+.input-wrap .password-toggle {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover {
+  background: rgba(219, 234, 254, 0.9);
+  box-shadow: none;
+  transform: none;
+}
+
+.input-wrap .password-toggle:hover {
+  transform: translateY(-50%);
 }
 
 .ghost {
@@ -531,6 +578,11 @@ button.secondary:hover {
   scroll-behavior: smooth;
 }
 
+.message-scroll-anchor {
+  width: 100%;
+  height: 1px;
+}
+
 .migration-messages {
   display: flex;
   align-items: center;
@@ -824,17 +876,24 @@ button.secondary:hover {
   gap: 8px;
   font-size: 12px;
   color: var(--text-muted);
+  position: relative;
 }
 
 .modal-field input {
   width: 100%;
   min-height: 48px;
-  padding: 12px 14px;
+  padding: 12px 76px 12px 14px;
   border: 1px solid var(--border);
   border-radius: 14px;
   outline: none;
   background: #fff;
   font: inherit;
+}
+
+.modal-password-toggle {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
 }
 
 .modal-field input:focus {

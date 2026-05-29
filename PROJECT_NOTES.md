@@ -4687,3 +4687,42 @@ Checkpoint result:
 
 - React UI Polish / Responsive is complete from an implementation and documentation standpoint
 - the branch is ready for final user regression testing, commit, and push
+
+### Checkpoint 8: UX Micro Fixes
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- improve two small but important chat UX details after the main polish phase
+- keep all runtime, encryption, storage, and backend behavior unchanged
+
+Changes:
+
+- added a password visibility toggle to the topbar password field
+- added a password visibility toggle to the `Backup to Cloud` password modal
+- implemented the toggle with an inline eye-style SVG icon and accessible labels
+- reset password visibility when the topbar password field is hidden or when the backup modal closes
+- added automatic scroll-to-latest behavior for the message list
+- opening a conversation now scrolls to the latest loaded message
+- new messages scroll down automatically when the user is already near the bottom
+- if the user has scrolled upward to read old messages, incoming messages should not forcibly pull the view down
+
+Important scope note:
+
+- this checkpoint does not change password validation
+- this checkpoint does not store password visibility state anywhere persistent
+- this checkpoint does not change send/receive behavior
+- this checkpoint does not change recent catch-up, pending delivery, or local history storage
+
+Expected behavior after this checkpoint:
+
+- users can briefly reveal and hide password text while typing
+- backup password entry has the same reveal/hide affordance
+- selecting a conversation should land at the newest message instead of the oldest visible part of history
+- sending or receiving messages while already near the bottom should keep the latest message visible
+- reading older messages should not be interrupted by forced auto-scroll unless the user returns near the bottom
