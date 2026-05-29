@@ -1,5 +1,6 @@
 import React from "react";
 import { useChatApp } from "./hooks/useChatApp.js";
+import brandLogo from "./assets/realtime-secure-chat-logo.png";
 
 const COMPOSER_MAX_HEIGHT = 132;
 
@@ -189,11 +190,11 @@ export default function App() {
     <div className="shell">
       <div className="topbar">
         <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            RS
-          </div>
-          <div className="brand-title">Realtime Secure Messenger</div>
-          <div className="brand-sub">E2EE - Double Ratchet - Real-time DM</div>
+          <img
+            className="brand-logo"
+            src={brandLogo}
+            alt="Realtime Secure Chat"
+          />
         </div>
 
         <div className="login">

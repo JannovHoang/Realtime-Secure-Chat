@@ -4726,3 +4726,40 @@ Expected behavior after this checkpoint:
 - selecting a conversation should land at the newest message instead of the oldest visible part of history
 - sending or receiving messages while already near the bottom should keep the latest message visible
 - reading older messages should not be interrupted by forced auto-scroll unless the user returns near the bottom
+
+### Checkpoint 9: Branding Logo Update
+
+Completed in:
+
+- `client/ui/assets/realtime-secure-chat-logo.png`
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `client/ui/index.html`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- replace the previous text brand block with the new Realtime Secure Chat logo
+- keep the topbar layout usable on desktop and mobile
+- avoid changing chat/runtime behavior
+
+Changes:
+
+- added a cropped project-local PNG asset for the new logo
+- replaced the old `RS` mark, title, and subtitle with a single responsive logo image
+- updated the browser document title from `Realtime Secure Messenger` to `Realtime Secure Chat`
+- adjusted brand CSS so the logo scales inside the topbar instead of forcing layout overflow
+- kept the auth controls, session status, sidebar, chat pane, composer, and modal behavior unchanged
+
+Important scope note:
+
+- this checkpoint is branding-only
+- no protocol, crypto, storage, backend, or chat runtime behavior was changed
+- the source logo file stays outside the app; the app uses the copied/cropped asset under `client/ui/assets`
+
+Expected behavior after this checkpoint:
+
+- the topbar should show only the logo on the left, not the old `RS + title + subtitle` block
+- the logo should remain readable on desktop
+- the logo should shrink safely on mobile without pushing auth controls off-screen
+- the browser tab title should read `Realtime Secure Chat`
