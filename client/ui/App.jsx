@@ -157,28 +157,42 @@ export default function App() {
 
       <div className="content">
         <aside className="sidebar">
-          <div className="field">
-            <label>Chat with</label>
-            <input
-              placeholder={
-                state.started
-                  ? "Type a username and press Enter"
-                  : "Start a session to load local conversations"
-              }
-              value={peerInputValue}
-              onChange={(e) => actions.setPeerDraft(e.target.value)}
-              disabled={!state.started}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  actions.commitPeerDraft();
+          <div className="peer-target-card">
+            <div className="field">
+              <label>Chat with</label>
+              <input
+                placeholder={
+                  state.started
+                    ? "Type a username and press Enter"
+                    : "Start a session to load local conversations"
                 }
-              }}
-            />
+                value={peerInputValue}
+                onChange={(e) => actions.setPeerDraft(e.target.value)}
+                disabled={!state.started}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    actions.commitPeerDraft();
+                  }
+                }}
+              />
+            </div>
+            <div className="peer-target-hint">
+              {state.started
+                ? "Open an existing chat or type a peer name to start one."
+                : "Start or restore a session before choosing a peer."}
+            </div>
           </div>
 
           <div className="peer-list">
-            <div className="peer-list-head">Conversations</div>
+            <div className="peer-list-title-row">
+              <div className="peer-list-head">Conversations</div>
+              {state.started ? (
+                <div className="peer-count">
+                  {state.conversations.length}
+                </div>
+              ) : null}
+            </div>
             {state.started && state.conversations.length > 0 ? (
               <div className="peer-items">
                 {state.conversations.map((item) => (
@@ -188,6 +202,7 @@ export default function App() {
                     className={
                       "peer-item" + (item.peer === state.activePeer ? " active" : "")
                     }
+                    aria-current={item.peer === state.activePeer ? "true" : undefined}
                     onClick={() => actions.selectPeer(item.peer)}
                   >
                     <span className="peer-avatar">
@@ -196,8 +211,12 @@ export default function App() {
                     <span className="peer-copy">
                       <span className="peer-name">{item.peer}</span>
                       {item.lastMessagePreview ? (
-                        <span className="peer-preview">{item.lastMessagePreview}</span>
-                      ) : null}
+                        <span className="peer-preview" title={item.lastMessagePreview}>
+                          {item.lastMessagePreview}
+                        </span>
+                      ) : (
+                        <span className="peer-preview is-empty">No messages yet</span>
+                      )}
                     </span>
                   </button>
                 ))}

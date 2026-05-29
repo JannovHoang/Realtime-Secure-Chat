@@ -4402,3 +4402,48 @@ Checkpoint result:
 
 - the `Chat with` field is no longer a dead display-only field
 - the React UI again supports starting a conversation with a peer that has not been previously opened in the local sidebar
+
+### Checkpoint 3: Sidebar Polish
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make the conversation sidebar feel closer to a real chat conversation list
+- improve readability, active state, empty state, scrolling, and mobile tap targets
+- preserve existing chat/session/storage behavior
+
+Changes:
+
+- grouped the `Chat with` input into a clearer peer target card
+- added helper text so users understand that typing a peer name and pressing `Enter` opens or starts that chat
+- added a conversation count badge beside the `Conversations` heading
+- improved conversation row structure with stronger avatar, peer name, preview, hover, active, and keyboard focus states
+- added a preview fallback for conversations that do not yet have a local message preview
+- improved preview truncation so long last-message text stays inside the sidebar row
+- made the peer list remain the scrollable sidebar area when many conversations exist
+- tuned mobile spacing and tap target sizes for the sidebar without changing the mobile layout model
+
+Important scope note:
+
+- this checkpoint does not add user search, account discovery, or autocomplete
+- this checkpoint does not change conversation ordering logic
+- this checkpoint does not change message loading, sending, recent catch-up, storage, crypto, or backend behavior
+
+Expected behavior after this checkpoint:
+
+- before Start, the sidebar should show a clean empty state and disabled peer input
+- after Start, local conversations should render as compact chat rows
+- selecting a conversation should update the active row clearly
+- typing a peer name and pressing `Enter` should still open/start that peer instead of jumping to the first sidebar item
+- long previews should truncate cleanly on desktop and mobile
+- when there are many conversations, the peer list should scroll inside the sidebar area
+
+Checkpoint result:
+
+- sidebar presentation is now more product-like and ready for the next polish pass
+- existing chat behavior remains owned by the previous React migration/runtime bridge work
