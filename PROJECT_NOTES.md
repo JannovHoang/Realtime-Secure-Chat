@@ -4763,3 +4763,75 @@ Expected behavior after this checkpoint:
 - the logo should remain readable on desktop
 - the logo should shrink safely on mobile without pushing auth controls off-screen
 - the browser tab title should read `Realtime Secure Chat`
+
+### Domain + Named Cloudflare Tunnel Setup
+
+Completed setup:
+
+- added `securechat.id.vn` to Cloudflare
+- changed registrar nameservers to Cloudflare nameservers
+- Cloudflare Universal SSL is active for `securechat.id.vn` and `*.securechat.id.vn`
+- created a named Cloudflare Tunnel for the local app
+- routed `chat.securechat.id.vn` to the named tunnel
+- verified the fixed public URL can be used instead of a changing quick tunnel URL
+
+Public demo URL:
+
+- `https://chat.securechat.id.vn`
+
+Normal demo startup:
+
+1. Start the app server:
+
+   ```powershell
+   cd G:\proj3\realtime-secure-chat
+   npm start
+   ```
+
+2. Start the named tunnel:
+
+   ```powershell
+   cloudflared tunnel run realtime-secure-chat
+   ```
+
+3. Open:
+
+   ```text
+   https://chat.securechat.id.vn
+   ```
+
+Fallback demo startup:
+
+- if the named domain or tunnel has an issue close to demo time, keep using quick tunnel:
+
+  ```powershell
+  cloudflared tunnel --url http://localhost:3000
+  ```
+
+Important scope note:
+
+- no crypto behavior was changed
+- no backend API behavior was changed
+- no MongoDB schema was changed
+- no chat protocol was changed
+- no account/auth model was changed
+- Cloudflare Tunnel only exposes the app while the local server and tunnel process are running
+- tunnel credentials and local Cloudflare config files must not be committed
+
+Operational notes:
+
+- use `https://chat.securechat.id.vn` consistently for demo and normal testing
+- browser local vaults are scoped by domain, so identities stored under old quick tunnel URLs are separate from identities stored under the fixed domain
+- if a browser/device does not already have the expected local identity, use `Restore from Cloud`
+- before ending an important demo/chat session, use `Backup to Cloud` so the identity can be restored on a new browser or device
+- stop a demo by pressing `Ctrl + C` in both the app server terminal and the tunnel terminal
+
+Regression checklist:
+
+- fixed domain opens over HTTPS without SSL warnings
+- Alice/Bob realtime messaging works through the fixed domain
+- one-side-offline pending delivery works through the fixed domain
+- restore from cloud works on a new browser/device when needed
+- backup to cloud still works
+- mobile browser can open and use the fixed domain
+- quick tunnel fallback still works if needed
