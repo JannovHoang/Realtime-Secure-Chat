@@ -4835,3 +4835,261 @@ Regression checklist:
 - backup to cloud still works
 - mobile browser can open and use the fixed domain
 - quick tunnel fallback still works if needed
+
+## Phase: Account ID Foundation
+
+Goal:
+
+- reduce the remaining ambiguity caused by using `username` as both an account identifier and a display label
+- introduce a safer path toward `accountId`, while keeping the current demo behavior stable
+- keep `identityId` as the cryptographic identity identifier derived from the long-term public key
+- prepare the codebase for future Firebase/Google Auth without adding real external auth in this phase
+
+Important scope boundary:
+
+- this phase does not add Firebase Auth
+- this phase does not add Google login
+- this phase does not add a global user directory or autocomplete
+- this phase does not change the Double Ratchet protocol
+- this phase does not change the encryption format unless explicitly needed for compatibility metadata
+- this phase must preserve legacy username fallback while the account model is transitional
+
+Target terminology:
+
+- `accountId`: stable technical account identifier used by routing/storage policy
+- `displayName`: human-readable label shown in the UI
+- `identityId`: cryptographic identity identifier derived from the long-term public key
+
+Transitional rule:
+
+- local `accountId` is not real authentication
+- a transitional local account id only makes the current username-based model less ambiguous
+- it must not be described as proof of user identity
+- real authentication is a later phase
+
+### Account ID Foundation - Checkpoint 0: Username Usage Inventory
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- inventory where `username` is currently used
+- classify each area before changing runtime behavior
+- document the migration direction for Checkpoint 1 through Checkpoint 4
+
+Current username usage inventory:
+
+1. React UI input and display
+
+   Files:
+
+   - `client/ui/App.jsx`
+   - `client/ui/hooks/useChatApp.js`
+
+   Current behavior:
+
+   - `state.username` is entered by the user in the topbar
+   - the same value is used for Start, Restore from Cloud, Backup to Cloud, and message bubble ownership
+   - peer selection still uses typed peer names and conversation peer labels
+
+   Classification:
+
+   - partly display label
+   - partly temporary account identifier
+
+   Migration direction:
+
+   - keep the visible input label simple for now
+   - internally introduce `displayName` and `accountId`
+   - UI should continue showing a human-readable name, but runtime policy should move toward `accountId`
+
+2. React app state and actions
+
+   File:
+
+   - `client/ui/hooks/useChatApp.js`
+
+   Current behavior:
+
+   - `username` is used by `performStart`
+   - `username` is used by backup and restore flows
+   - `username` is used to inspect persisted local identity
+   - `continueWithoutRestoreFor` is keyed by username
+
+   Classification:
+
+   - temporary account/session key
+   - restore target label
+   - UI display value
+
+   Migration direction:
+
+   - add a derived transitional `accountId`
+   - keep `username` available as `displayName`
+   - guard/restore state should eventually key by account identity rather than display text alone
+
+3. Chat runtime session
+
+   File:
+
+   - `client/chat.js`
+
+   Current behavior:
+
+   - `myUser` is the normalized username for the active session
+   - WebSocket register sends `{ type: "register", user: myUser }`
+   - local Double Ratchet state is keyed with `dr:state:${username}`
+   - conversation thread labels use username pairs
+   - certificate generation still uses username
+   - cloud backup save still sends `username`
+
+   Classification:
+
+   - runtime account label
+   - legacy routing key
+   - local storage namespace
+   - display name for peer/cert compatibility
+
+   Migration direction:
+
+   - introduce account metadata without breaking the existing `user` field
+   - send both legacy `user` and new transitional `accountId` once Checkpoint 1/2 begins
+   - keep username fallback until all server and storage reads understand accountId
+
+4. Local vault and browser storage
+
+   File:
+
+   - `client/storage.js`
+
+   Current behavior:
+
+   - local vault storage key is derived from `userId`
+   - backup payload version 2 contains `username` and `identityId`
+   - identity metadata contains `username` and `identityId`
+   - import/export validates backup username and identityId
+   - conversation metadata is still peer-name based
+
+   Classification:
+
+   - local vault namespace
+   - backup ownership metadata
+   - restore validation field
+
+   Migration direction:
+
+   - add `accountId` to identity metadata and backup payload in a backward-compatible way
+   - keep validating legacy `username` while new backups include accountId
+   - avoid changing vault storage keys until migration behavior is explicit and tested
+
+5. Server WebSocket routing
+
+   File:
+
+   - `server/server.js`
+
+   Current behavior:
+
+   - active sessions are kept in `accountSessions` keyed by username
+   - `wsToSession` stores `{ user, identityId }`
+   - register uses `data.user`
+   - identity binding activates one active identity per username
+   - send routing looks up the active account session by username
+   - force logout semantics are still `1 active session / username`
+
+   Classification:
+
+   - online routing key
+   - active device policy key
+   - legacy account label
+
+   Migration direction:
+
+   - Checkpoint 2 should introduce accountId-aware active session maps
+   - keep username fallback so old clients and old records still work
+   - preserve the current one-active-session policy until a later multi-device phase
+
+6. MongoDB persistence
+
+   File:
+
+   - `server/mongo.js`
+
+   Current behavior:
+
+   - `certs` uses `{ username, identityId }`
+   - `identity_backups` uses `{ username, identityId }`
+   - `account_active_devices` uses unique `{ username }`
+   - `pending_messages` uses `to`, `senderIdentityId`, `recipientIdentityId`
+   - `messages` uses `conversationId`, currently derived from username pair
+
+   Classification:
+
+   - persistence ownership key
+   - routing and lookup key
+   - legacy compatibility key
+
+   Migration direction:
+
+   - add accountId fields additively where needed
+   - do not drop username fields yet
+   - do not remove existing indexes until accountId indexes and fallback behavior are tested
+
+7. Legacy vanilla UI
+
+   File:
+
+   - `client/ui/app.js`
+
+   Current behavior:
+
+   - still contains the old username-based UI flow
+   - no longer the React entry point
+
+   Classification:
+
+   - legacy reference only
+
+   Migration direction:
+
+   - avoid using this file as an implementation source for new accountId behavior
+   - do not delete it in this phase unless a separate cleanup checkpoint is approved
+
+Checkpoint 0 conclusions:
+
+- `username` is still overloaded across UI display, session identity, storage namespace, backup ownership, cert ownership, and server routing
+- `identityId` already solves the cryptographic identity side, but does not solve account identity or display-name ambiguity by itself
+- the safest next step is to introduce a local transitional account model without external authentication
+- future checkpoints should add fields and fallbacks before changing enforcement behavior
+
+Checkpoint 1 target:
+
+- add a small account identity helper/model
+- derive a local transitional `accountId` from the normalized username
+- keep `displayName` equal to the entered username for now
+- thread account metadata through React state and client runtime without changing server policy yet
+
+Checkpoint 2 target:
+
+- make server active-session and routing logic understand `accountId`
+- keep username fallback
+- preserve current one-active-session behavior
+
+Checkpoint 3 target:
+
+- add `accountId` to backup/restore metadata in a backward-compatible way
+- keep legacy backup payloads restorable
+- avoid overwriting or restoring the wrong identity when display names overlap
+
+Checkpoint 4 target:
+
+- clean UI wording so `displayName` is shown to users while `accountId` is treated as internal
+- keep Chat with behavior unchanged until a future user-directory/auth phase
+
+Checkpoint 0 test expectation:
+
+- no runtime behavior should change
+- app should still build and run exactly as before
+- documentation should clearly describe the accountId foundation scope and non-goals
