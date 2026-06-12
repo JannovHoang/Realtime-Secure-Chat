@@ -5353,3 +5353,109 @@ Checkpoint 4 test expectation:
 - Backup to Cloud still works
 - multiple-backup restore selector remains usable
 - realtime and offline chat behavior remains unchanged
+
+## Account ID Hardening / Auth Readiness
+
+This phase follows the completed Account ID Foundation work.
+
+Goal:
+
+- harden backup/restore and device-switching safety before adding real Firebase/Google authentication
+- keep the current React UI, chat runtime, crypto protocol, and MongoDB schema stable
+- make account/display/identity state easier to explain and safer to demo
+
+Non-goals:
+
+- no Firebase/Google login in this phase
+- no external authentication provider
+- no user directory or autocomplete
+- no multi-device Double Ratchet state synchronization
+- no protocol rewrite
+- no storage rewrite to IndexedDB
+
+Recommended checkpoint order:
+
+1. Final Regression Baseline
+2. Backup Metadata Foundation
+3. Backup Freshness Warning
+4. Account/Identity Info Panel
+5. Backup/Restore UX Safety
+6. Documentation + Demo Script
+7. Stable Tag / Release Candidate
+
+### Account ID Hardening - Checkpoint 0: Final Regression Baseline
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- capture the expected stable behavior before further hardening work
+- document the manual regression checklist for the current demo-ready branch
+- explicitly record current limitations so later checkpoints do not overclaim what they solve
+
+Baseline expectations:
+
+- `npm start` builds the React UI and starts the Node backend on port `3000`
+- named Cloudflare Tunnel can expose the app at `https://chat.securechat.id.vn`
+- quick tunnel remains available as fallback with `cloudflared tunnel --url http://localhost:3000`
+- WebSocket URLs must be same-origin/public-safe and use `wss://` when loaded through HTTPS
+- existing local identities such as Alice/Giang should still Start from their current browser vaults
+- realtime one-to-one chat should work for online users
+- pending/offline delivery should still deliver messages when the recipient starts again
+- Backup to Cloud should save an encrypted identity backup
+- Restore from Cloud should restore a selected identity and still require pressing `Start` afterward
+- multiple backup identities under one display name should still require explicit identity selection
+- legacy username/display-name fallback should remain usable
+
+Known limitations:
+
+- this is still not real Google/Firebase authentication
+- `displayName` is still a user-entered label and can be duplicated in principle
+- `accountId` is still transitional and derived locally from the display name
+- the project still works best with one active device/browser per account label at a time
+- switching devices without backing up/restoring the latest vault can desynchronize Double Ratchet state
+- freshness warnings planned in later checkpoints can reduce this risk but will not implement full multi-device sync
+- server does not read plaintext messages; it stores and relays ciphertext plus routing metadata
+
+Manual regression checklist:
+
+1. Local production server:
+   - run `npm start`
+   - open `http://localhost:3000`
+   - confirm the React UI loads
+2. Named domain:
+   - run `cloudflared tunnel run realtime-secure-chat`
+   - open `https://chat.securechat.id.vn`
+   - confirm the UI loads and WebSocket connects
+3. Quick tunnel fallback:
+   - run `cloudflared tunnel --url http://localhost:3000`
+   - open the generated `trycloudflare.com` URL
+   - confirm the UI does not blank-screen
+4. Realtime chat:
+   - Start Alice in one browser
+   - Start Giang in another browser
+   - send messages both directions
+   - confirm sidebar preview and ordering still update
+5. Offline pending:
+   - log out or close Giang
+   - send a message from Alice to Giang
+   - Start Giang again
+   - confirm the message arrives once
+6. Backup and restore:
+   - Start a user
+   - save Backup to Cloud with the correct password
+   - restore in another browser/profile
+   - press Start after restore
+   - confirm chat can continue
+7. Active session replacement:
+   - Start the same display name in another browser/device
+   - confirm the older active session is replaced as expected
+   - avoid continuing chat from stale local vaults without a fresh restore
+
+Checkpoint 0 test expectation:
+
+- app builds successfully
+- no application behavior changes
+- documentation clearly defines what the hardening phase will and will not solve
