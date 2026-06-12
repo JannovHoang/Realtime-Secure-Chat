@@ -155,6 +155,7 @@ async function getRecentMessagesForConversation(conversationId, limit = 50) {
 async function saveIdentityBackup(username, backupDoc) {
   const currentDb = getDb();
   const now = new Date();
+  const serverSavedAt = now.toISOString();
   await currentDb.collection("identity_backups").updateOne(
     { username, identityId: backupDoc.identityId },
     {
@@ -165,6 +166,8 @@ async function saveIdentityBackup(username, backupDoc) {
         accountIdScheme: backupDoc.accountIdScheme || null,
         identityId: backupDoc.identityId,
         version: backupDoc.version,
+        clientSavedAt: backupDoc.clientSavedAt || null,
+        serverSavedAt,
         ciphertextB64: backupDoc.ciphertextB64,
         ivB64: backupDoc.ivB64,
         saltB64: backupDoc.saltB64,
@@ -177,6 +180,17 @@ async function saveIdentityBackup(username, backupDoc) {
     },
     { upsert: true }
   );
+
+  return {
+    username,
+    accountId: backupDoc.accountId || null,
+    displayName: backupDoc.displayName || username,
+    accountIdScheme: backupDoc.accountIdScheme || null,
+    identityId: backupDoc.identityId,
+    backupVersion: backupDoc.version,
+    clientSavedAt: backupDoc.clientSavedAt || null,
+    serverSavedAt,
+  };
 }
 
 async function getIdentityBackup(username, identityId = null) {
@@ -205,6 +219,9 @@ async function listIdentityBackups(username) {
       displayName: 1,
       accountIdScheme: 1,
       identityId: 1,
+      version: 1,
+      clientSavedAt: 1,
+      serverSavedAt: 1,
       createdAt: 1,
       updatedAt: 1,
     })

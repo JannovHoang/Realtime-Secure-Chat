@@ -20,6 +20,7 @@ const INDEX_KEY = "__securechat_index_v1__";
 const CONV_INDEX_KEY = "__securechat_conversations_v1__";
 const CONV_META_KEY = "__securechat_conversation_meta_v1__";
 const IDENTITY_META_KEY = "__securechat_identity_meta_v2__";
+const BACKUP_META_KEY = "__securechat_backup_meta_v1__";
 
 // Chunking scheme
 const CHUNK_META_SUFFIX = "::chunks_meta"; // JSON { n, encoding, totalBytes }
@@ -199,6 +200,13 @@ function validateImportedPayload(
   if (expectedAccount && payloadAccountId && payloadAccountId !== expectedAccount) {
     throw new Error("Backup account mismatch");
   }
+}
+
+function normalizeIsoTimestamp(value) {
+  if (!value) return null;
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt.toISOString();
 }
 
 function readPersisted() {
@@ -554,6 +562,78 @@ export async function loadIdentityMetadata() {
   };
 }
 
+export async function saveBackupMetadata(meta = {}) {
+  if (!keychain) throw new Error("Vault not initialized");
+  const username = normalizeKeyName(meta.username);
+  const identityId = normalizeKeyName(meta.identityId);
+  if (!username || !identityId) {
+    throw new Error("Invalid backup metadata");
+  }
+
+  const accountId = normalizeAccountId(meta.accountId);
+  const displayName = normalizeDisplayName(meta.displayName || username);
+  const serverSavedAt = normalizeIsoTimestamp(meta.serverSavedAt);
+  const clientSavedAt = normalizeIsoTimestamp(meta.clientSavedAt);
+
+  await storeRecord(
+    BACKUP_META_KEY,
+    JSON.stringify({
+      version: 1,
+      username,
+      accountId: accountId || null,
+      displayName: displayName || username,
+      accountIdScheme:
+        typeof meta.accountIdScheme === "string" && meta.accountIdScheme.trim()
+          ? meta.accountIdScheme.trim()
+          : null,
+      identityId,
+      identityShortId: identityId.slice(0, 8),
+      backupVersion: Number(meta.backupVersion || meta.version || 2),
+      clientSavedAt,
+      serverSavedAt,
+      localLastBackupServerSavedAt: serverSavedAt,
+      savedAt: Date.now(),
+    })
+  );
+}
+
+export async function loadBackupMetadata() {
+  if (!keychain) throw new Error("Vault not initialized");
+  const raw = await loadRecord(BACKUP_META_KEY);
+  if (!raw) return null;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  const username = normalizeKeyName(parsed?.username);
+  const identityId = normalizeKeyName(parsed?.identityId);
+  if (!username || !identityId) return null;
+
+  return {
+    version: Number(parsed?.version || 1),
+    username,
+    accountId: normalizeAccountId(parsed?.accountId) || null,
+    displayName: normalizeDisplayName(parsed?.displayName || username) || username,
+    accountIdScheme:
+      typeof parsed?.accountIdScheme === "string" && parsed.accountIdScheme.trim()
+        ? parsed.accountIdScheme.trim()
+        : null,
+    identityId,
+    identityShortId: String(parsed?.identityShortId || identityId.slice(0, 8)),
+    backupVersion: Number(parsed?.backupVersion || 2),
+    clientSavedAt: normalizeIsoTimestamp(parsed?.clientSavedAt),
+    serverSavedAt: normalizeIsoTimestamp(parsed?.serverSavedAt),
+    localLastBackupServerSavedAt: normalizeIsoTimestamp(
+      parsed?.localLastBackupServerSavedAt
+    ),
+    savedAt: Number(parsed?.savedAt || 0),
+  };
+}
+
 export async function exportIdentityPayload(userId = "default") {
   const persisted = await readPersistedForUser(userId);
   if (!persisted?.repr || !persisted?.digest) {
@@ -594,11 +674,17 @@ export async function verifyPersistedVaultPassword(userId, password) {
 
 export async function encryptIdentityPayload(payload, password) {
   validateImportedPayload(payload);
+  const clientSavedAt =
+    normalizeIsoTimestamp(payload.clientSavedAt) || new Date().toISOString();
+  const payloadForEncryption = {
+    ...payload,
+    clientSavedAt,
+  };
 
   const saltAb = randomBytes(16);
   const ivAb = randomBytes(12);
   const key = await deriveBackupKey(password, saltAb, ["encrypt"]);
-  const plaintextAb = strToAb(JSON.stringify(payload));
+  const plaintextAb = strToAb(JSON.stringify(payloadForEncryption));
   const ciphertextAb = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: ivAb },
     key,
@@ -617,6 +703,7 @@ export async function encryptIdentityPayload(payload, password) {
         ? payload.accountIdScheme.trim()
         : null,
     identityId: normalizeKeyName(payload.identityId),
+    clientSavedAt,
     ciphertextB64: abToB64(ciphertextAb),
     ivB64: abToB64(ivAb),
     saltB64: abToB64(saltAb),

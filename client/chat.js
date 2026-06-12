@@ -229,14 +229,19 @@ function buildApiUrl(pathname) {
   return new URL(pathname, `${getServerHttpBase()}/`);
 }
 
-function settleBackupSaveRequest(requestId, ok, error = "Backup save failed") {
+function settleBackupSaveRequest(
+  requestId,
+  ok,
+  error = "Backup save failed",
+  payload = null
+) {
   if (!requestId) return false;
   const pendingReq = backupSaveRequests.get(requestId);
   if (!pendingReq) return false;
 
   backupSaveRequests.delete(requestId);
   clearTimeout(pendingReq.timer);
-  if (ok) pendingReq.resolve();
+  if (ok) pendingReq.resolve(payload);
   else pendingReq.reject(new Error(error));
   return true;
 }
@@ -1093,7 +1098,7 @@ export async function initChat(username, password, accountProfile = null) {
     }
 
     if (data.type === "backup_saved") {
-      settleBackupSaveRequest(data.requestId, data.ok === true, data.error);
+      settleBackupSaveRequest(data.requestId, data.ok === true, data.error, data.backup || null);
       return;
     }
 

@@ -21,6 +21,7 @@ import {
   hasPersistedVault,
   importIdentityPayload,
   listConversationMetadata,
+  saveBackupMetadata,
   loadIdentityMetadata,
   verifyPersistedVaultPassword,
 } from "../../storage.js";
@@ -690,6 +691,7 @@ export function useChatApp() {
       const account = await buildLocalAccountProfile(username);
       const passwordOk = await verifyPersistedVaultPassword(username, password);
       if (!passwordOk) throw new Error("Incorrect password");
+      const clientSavedAt = new Date().toISOString();
       const payload = await exportIdentityPayload(username);
       const blob = await encryptIdentityPayload(
         {
@@ -697,10 +699,25 @@ export function useChatApp() {
           accountId: account.accountId,
           displayName: account.displayName,
           accountIdScheme: account.accountIdScheme,
+          clientSavedAt,
         },
         password
       );
-      await saveCloudBackup(blob);
+      const backupReceipt = await saveCloudBackup(blob);
+      try {
+        await saveBackupMetadata({
+          username,
+          accountId: account.accountId,
+          displayName: account.displayName,
+          accountIdScheme: account.accountIdScheme,
+          identityId: payload.identityId,
+          backupVersion: blob.version,
+          clientSavedAt,
+          serverSavedAt: backupReceipt?.serverSavedAt || blob.serverSavedAt || null,
+        });
+      } catch (metadataErr) {
+        console.warn("[backup] failed to save local metadata:", metadataErr);
+      }
       dispatch({ type: "set_status", message: "Ready", tone: "success" });
       pushToast("Cloud backup saved.", "success");
     } catch (err) {

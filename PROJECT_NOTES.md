@@ -5459,3 +5459,75 @@ Checkpoint 0 test expectation:
 - app builds successfully
 - no application behavior changes
 - documentation clearly defines what the hardening phase will and will not solve
+
+### Account ID Hardening - Checkpoint 1: Backup Metadata Foundation
+
+Completed in:
+
+- `client/storage.js`
+- `client/chat.js`
+- `client/ui/hooks/useChatApp.js`
+- `server/server.js`
+- `server/mongo.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- add stable backup metadata needed for later freshness warnings
+- prefer server-recorded save time over client clock for cloud freshness comparison
+- keep encrypted backup and restore behavior backward-compatible
+
+Changes:
+
+- encrypted backup payloads now include `clientSavedAt`
+- backup blob metadata sent to the server now includes `clientSavedAt`
+- Mongo `identity_backups` now stores:
+  - `clientSavedAt`
+  - `serverSavedAt`
+- backup list responses now include:
+  - `backupVersion`
+  - `clientSavedAt`
+  - `serverSavedAt`
+- backup fetch responses now include:
+  - `clientSavedAt`
+  - `serverSavedAt`
+- WebSocket `backup_saved` success responses now include a small `backup` receipt object
+- client backup flow stores a local vault receipt in `__securechat_backup_meta_v1__`
+- local backup receipt includes:
+  - `username`
+  - `accountId`
+  - `displayName`
+  - `accountIdScheme`
+  - `identityId`
+  - `identityShortId`
+  - `backupVersion`
+  - `clientSavedAt`
+  - `serverSavedAt`
+  - `localLastBackupServerSavedAt`
+- added `saveBackupMetadata(...)` and `loadBackupMetadata(...)` helpers in `client/storage.js`
+
+Important scope note:
+
+- this checkpoint does not show a freshness warning yet
+- this checkpoint does not block Start
+- this checkpoint does not auto-restore cloud backup
+- this checkpoint does not change Double Ratchet state handling
+- this checkpoint does not implement multi-device sync
+- this checkpoint does not change the backup encryption password flow
+
+Expected behavior:
+
+- Backup to Cloud should still succeed for active identities
+- Restore from Cloud should still restore old and new backups
+- legacy backups without `clientSavedAt` or `serverSavedAt` should still restore
+- new backup records should have server-side `serverSavedAt`
+- after successful backup, the local vault should have backup receipt metadata for later comparison
+
+Checkpoint 1 test expectation:
+
+- app builds successfully
+- server syntax check passes
+- Alice/Giang realtime chat still works
+- Backup to Cloud creates or updates `identity_backups` with `clientSavedAt` and `serverSavedAt`
+- Restore from Cloud still works after a new backup
+- offline pending behavior remains unchanged

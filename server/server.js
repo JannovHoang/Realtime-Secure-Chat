@@ -769,6 +769,9 @@ const server = http.createServer((req, res) => {
               typeof doc.accountIdScheme === "string" && doc.accountIdScheme.trim()
                 ? doc.accountIdScheme.trim()
                 : null,
+            backupVersion: Number(doc.version || 2),
+            clientSavedAt: doc.clientSavedAt || null,
+            serverSavedAt: doc.serverSavedAt || doc.updatedAt || null,
             createdAt: doc.createdAt || null,
             updatedAt: doc.updatedAt || null,
           }));
@@ -837,6 +840,8 @@ const server = http.createServer((req, res) => {
               : null,
           identityId: doc.identityId || null,
           version: doc.version,
+          clientSavedAt: doc.clientSavedAt || null,
+          serverSavedAt: doc.serverSavedAt || doc.updatedAt || null,
           ciphertextB64: doc.ciphertextB64,
           ivB64: doc.ivB64,
           saltB64: doc.saltB64,
@@ -1250,7 +1255,7 @@ wss.on("connection", (ws) => {
       }
 
       try {
-        await saveIdentityBackup(username, {
+        const savedBackup = await saveIdentityBackup(username, {
           accountId: registeredAccountId || backupAccountId || null,
           displayName:
             normalizeDisplayName(data.displayName || registeredDisplayName) ||
@@ -1261,6 +1266,10 @@ wss.on("connection", (ws) => {
               : null,
           identityId,
           version: Number(data.version || 2),
+          clientSavedAt:
+            typeof data.clientSavedAt === "string" && data.clientSavedAt.trim()
+              ? data.clientSavedAt.trim()
+              : null,
           ciphertextB64: data.ciphertextB64,
           ivB64: data.ivB64,
           saltB64: data.saltB64,
@@ -1270,6 +1279,7 @@ wss.on("connection", (ws) => {
           type: "backup_saved",
           ok: true,
           requestId,
+          backup: savedBackup,
         });
       } catch (err) {
         console.warn("[backup_save] failed:", err);
