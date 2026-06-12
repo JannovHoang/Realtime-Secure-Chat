@@ -21,6 +21,11 @@ import {
   deriveIdentityIdFromPublicJwk,
   saveIdentityMetadata,
 } from "./storage.js";
+import {
+  buildLocalAccountProfile,
+  normalizeAccountId,
+  normalizeDisplayName,
+} from "./account.js";
 import { MessengerClient } from "../crypto/dr/messenger.browser.js";
 
 const LOCAL_DEV_UI_PORT = "5173";
@@ -37,6 +42,8 @@ let pending = [];
 let messenger = null;
 
 let myUser = null;
+let myAccountId = null;
+let myDisplayName = null;
 let currentPeer = null;
 
 let caPubKey = null;
@@ -75,6 +82,24 @@ function normalizeUsername(u) {
 
 function normalizeIdentityId(v) {
   return String(v || "").trim();
+}
+
+async function normalizeAccountProfile(username, accountProfile = null) {
+  const displayName = normalizeDisplayName(
+    accountProfile?.displayName || username
+  );
+  const accountId = normalizeAccountId(accountProfile?.accountId);
+
+  if (accountId && displayName) {
+    return {
+      accountId,
+      displayName,
+      accountIdScheme:
+        String(accountProfile?.accountIdScheme || "").trim() || "provided",
+    };
+  }
+
+  return await buildLocalAccountProfile(displayName || username);
 }
 
 function wsSend(obj) {
@@ -611,7 +636,12 @@ async function ensureMessengerIdentityId() {
   const pubJwk = await crypto.subtle.exportKey("jwk", messenger.EGKeyPair.pub);
   const identityId = await deriveIdentityIdFromPublicJwk(pubJwk);
   messenger.identityId = identityId;
-  await saveIdentityMetadata({ username: myUser, identityId });
+  await saveIdentityMetadata({
+    username: myUser,
+    accountId: myAccountId,
+    displayName: myDisplayName || myUser,
+    identityId,
+  });
   return identityId;
 }
 
@@ -995,11 +1025,14 @@ function notifyDisconnected() {
 }
 
 /* ===================== init ===================== */
-export async function initChat(username, password) {
+export async function initChat(username, password, accountProfile = null) {
   await destroyChat();
 
   myUser = normalizeUsername(username);
   if (!myUser) throw new Error("Username is required");
+  const normalizedAccount = await normalizeAccountProfile(myUser, accountProfile);
+  myAccountId = normalizedAccount.accountId;
+  myDisplayName = normalizedAccount.displayName;
 
   readyPeers.clear();
   messenger = null;
@@ -1021,7 +1054,13 @@ export async function initChat(username, password) {
   });
 
   socket.onopen = () => {
-    wsSend({ type: "register", user: myUser });
+    wsSend({
+      type: "register",
+      user: myUser,
+      accountId: myAccountId,
+      displayName: myDisplayName,
+      accountIdScheme: normalizedAccount.accountIdScheme,
+    });
     flushPending();
   };
 
@@ -1123,7 +1162,12 @@ export async function initChat(username, password) {
   if (!messenger.EGKeyPair?.pub || !messenger.EGKeyPair?.sec) {
     const cert = await messenger.generateCertificate(myUser);
     const identityId = await ensureMessengerIdentityId();
-    wsSend({ type: "identity_bind", identityId });
+    wsSend({
+      type: "identity_bind",
+      identityId,
+      accountId: myAccountId,
+      displayName: myDisplayName,
+    });
     cert.identityId = identityId;
     wsSend({ type: "cert_submit", certificate: cert });
 
@@ -1131,7 +1175,12 @@ export async function initChat(username, password) {
     await saveStateNow();
   } else {
     const identityId = await ensureMessengerIdentityId();
-    wsSend({ type: "identity_bind", identityId });
+    wsSend({
+      type: "identity_bind",
+      identityId,
+      accountId: myAccountId,
+      displayName: myDisplayName,
+    });
     const cert = {
       username: myUser,
       identityId,
@@ -1165,6 +1214,14 @@ export async function initChat(username, password) {
 /* ===================== status API for UI ===================== */
 export function getUsername() {
   return myUser;
+}
+
+export function getAccountId() {
+  return myAccountId;
+}
+
+export function getDisplayName() {
+  return myDisplayName || myUser;
 }
 
 export function getCurrentIdentityId() {
@@ -1406,4 +1463,6 @@ export async function destroyChat() {
   historyFetchRequests.clear();
 
   myUser = null;
+  myAccountId = null;
+  myDisplayName = null;
 }

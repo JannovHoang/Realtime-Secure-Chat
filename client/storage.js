@@ -8,6 +8,7 @@
 // =======================================
 
 import * as pmModule from "../crypto/pm/password-manager.browser.js";
+import { normalizeAccountId, normalizeDisplayName } from "./account.js";
 const { Keychain } = pmModule;
 
 // -------------------- State --------------------
@@ -499,6 +500,8 @@ export async function saveIdentityMetadata(meta) {
   if (!keychain) throw new Error("Vault not initialized");
   const username = normalizeKeyName(meta?.username);
   const identityId = normalizeKeyName(meta?.identityId);
+  const accountId = normalizeAccountId(meta?.accountId);
+  const displayName = normalizeDisplayName(meta?.displayName || username);
   if (!username || !identityId) {
     throw new Error("Invalid identity metadata");
   }
@@ -506,8 +509,10 @@ export async function saveIdentityMetadata(meta) {
   await storeRecord(
     IDENTITY_META_KEY,
     JSON.stringify({
-      version: 1,
+      version: 2,
       username,
+      accountId: accountId || null,
+      displayName: displayName || username,
       identityId,
       savedAt: Date.now(),
     })
@@ -527,12 +532,16 @@ export async function loadIdentityMetadata() {
   }
 
   const username = normalizeKeyName(parsed?.username);
+  const accountId = normalizeAccountId(parsed?.accountId);
+  const displayName = normalizeDisplayName(parsed?.displayName || username);
   const identityId = normalizeKeyName(parsed?.identityId);
   if (!username || !identityId) return null;
 
   return {
     version: Number(parsed?.version || 1),
     username,
+    accountId: accountId || null,
+    displayName: displayName || username,
     identityId,
     savedAt: Number(parsed?.savedAt || 0),
   };

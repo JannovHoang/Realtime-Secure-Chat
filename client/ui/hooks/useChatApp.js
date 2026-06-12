@@ -1,4 +1,5 @@
 import { useEffect, useReducer } from "react";
+import { buildLocalAccountProfile } from "../../account.js";
 import {
   destroyChat,
   fetchCloudBackup,
@@ -30,6 +31,8 @@ import {
 
 const initialState = {
   username: "",
+  accountId: "",
+  displayName: "",
   password: "",
   started: false,
   starting: false,
@@ -151,6 +154,14 @@ function buildRestoreOverwriteMessage(username, localIdentityMeta, payload) {
 function reducer(state, action) {
   switch (action.type) {
     case "field_change":
+      if (action.field === "username") {
+        return {
+          ...state,
+          username: action.value,
+          accountId: "",
+          displayName: "",
+        };
+      }
       return { ...state, [action.field]: action.value };
     case "set_status":
       return {
@@ -230,6 +241,8 @@ function reducer(state, action) {
         ...state,
         started: true,
         starting: false,
+        accountId: action.account?.accountId || state.accountId,
+        displayName: action.account?.displayName || state.displayName,
         disconnected: false,
         password: "",
         peerDraft: "",
@@ -261,6 +274,8 @@ function reducer(state, action) {
         started: false,
         starting: false,
         disconnected: false,
+        accountId: "",
+        displayName: "",
         password: "",
         activePeer: "",
         peerDraft: "",
@@ -379,6 +394,8 @@ function reducer(state, action) {
       return {
         ...state,
         restoredThisSession: true,
+        accountId: action.account?.accountId || state.accountId,
+        displayName: action.account?.displayName || state.displayName,
         password: "",
         statusText: "Restore ready",
         statusTone: "success",
@@ -558,6 +575,7 @@ export function useChatApp() {
       return;
     }
 
+    const account = await buildLocalAccountProfile(username);
     const hasLocalVault = await hasPersistedVault(username);
     const shouldGuard =
       !options.skipGuard &&
@@ -575,8 +593,8 @@ export function useChatApp() {
 
     dispatch({ type: "start_begin" });
     try {
-      await initChat(username, password);
-      dispatch({ type: "start_success" });
+      await initChat(username, password, account);
+      dispatch({ type: "start_success", account });
       pushToast("Ready.", "success");
     } catch (err) {
       dispatch({
@@ -669,10 +687,19 @@ export function useChatApp() {
     dispatch({ type: "close_modal" });
     dispatch({ type: "backup_begin" });
     try {
+      const account = await buildLocalAccountProfile(username);
       const passwordOk = await verifyPersistedVaultPassword(username, password);
       if (!passwordOk) throw new Error("Incorrect password");
       const payload = await exportIdentityPayload(username);
-      const blob = await encryptIdentityPayload(payload, password);
+      const blob = await encryptIdentityPayload(
+        {
+          ...payload,
+          accountId: account.accountId,
+          displayName: account.displayName,
+          accountIdScheme: account.accountIdScheme,
+        },
+        password
+      );
       await saveCloudBackup(blob);
       dispatch({ type: "set_status", message: "Ready", tone: "success" });
       pushToast("Cloud backup saved.", "success");
@@ -727,6 +754,7 @@ export function useChatApp() {
     const password = String(passwordArg || state.password || "");
 
     try {
+      const account = await buildLocalAccountProfile(username);
       const blob = await fetchCloudBackup(username, identityId);
       const payload = await decryptIdentityPayload(blob, password, username, identityId);
       const hasLocalVault = await hasPersistedVault(username);
@@ -751,7 +779,7 @@ export function useChatApp() {
       }
 
       await importIdentityPayload(payload, username, identityId);
-      dispatch({ type: "restore_success" });
+      dispatch({ type: "restore_success", account });
       dispatch({ type: "restore_end" });
       dispatch({ type: "close_modal" });
       dispatch({ type: "set_pending_restore", value: null });

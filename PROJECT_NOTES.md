@@ -5093,3 +5093,79 @@ Checkpoint 0 test expectation:
 - no runtime behavior should change
 - app should still build and run exactly as before
 - documentation should clearly describe the accountId foundation scope and non-goals
+
+### Account ID Foundation - Checkpoint 1: Local Transitional AccountId
+
+Completed in:
+
+- `client/account.js`
+- `client/chat.js`
+- `client/storage.js`
+- `client/ui/hooks/useChatApp.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- introduce a local transitional account profile without changing server routing policy
+- keep the existing username UI and legacy username fallback working
+- start separating internal account identity from human-readable display text
+
+Changes:
+
+- added `client/account.js`
+  - `normalizeDisplayName(value)`
+  - `normalizeAccountId(value)`
+  - `deriveLocalAccountId(displayName)`
+  - `buildLocalAccountProfile(displayName)`
+- the transitional account id is deterministic and local:
+  - scheme: `local-username-v1`
+  - id format: `local:<sha256-derived-base64url>`
+  - input: normalized display name
+- React app state now tracks:
+  - `accountId`
+  - `displayName`
+- Start now derives a local account profile before calling the chat runtime
+- `initChat(username, password, accountProfile)` now accepts optional account metadata
+- `chat.js` stores runtime account metadata as:
+  - `myAccountId`
+  - `myDisplayName`
+- WebSocket `register` and `identity_bind` now include additive account metadata fields:
+  - `accountId`
+  - `displayName`
+  - `accountIdScheme`
+- the current server ignores these new fields for routing in this checkpoint
+- local identity metadata in the vault is now saved as version 2 with:
+  - `username`
+  - `accountId`
+  - `displayName`
+  - `identityId`
+- old identity metadata without account fields still loads correctly
+- backup plaintext payload now includes account metadata before encryption
+- encrypted backup server metadata remains legacy-compatible for this checkpoint
+
+Important scope note:
+
+- this checkpoint does not implement real authentication
+- this checkpoint does not prove that a user owns an account
+- this checkpoint does not add Firebase/Google login
+- this checkpoint does not change active-session routing on the server
+- this checkpoint does not change MongoDB indexes
+- this checkpoint does not change the visible username input behavior
+- this checkpoint does not add user search/autocomplete
+
+Expected behavior:
+
+- existing local identities should still Start with the same username/password
+- new local identities should get account metadata saved in the vault
+- Backup to Cloud should still save encrypted backup blobs
+- Restore from Cloud should still restore old and new backups
+- Alice/Bob realtime chat should behave the same as before
+- offline pending delivery should behave the same as before
+- same username casing behavior remains unchanged
+
+Checkpoint 1 test expectation:
+
+- app builds successfully
+- no visible UI flow is intentionally changed
+- runtime should remain compatible with the current server because new account fields are additive
+- `PROJECT_NOTES.md` must clearly state that local accountId is transitional and not real authentication
