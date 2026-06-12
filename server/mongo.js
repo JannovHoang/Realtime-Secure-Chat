@@ -43,6 +43,10 @@ async function enqueuePendingMessage(to, msgObj, maxPerUser = 500) {
   await pending.insertOne({
     to,
     from: msgObj.from,
+    senderAccountId: msgObj.senderAccountId || null,
+    senderDisplayName: msgObj.senderDisplayName || null,
+    recipientAccountId: msgObj.recipientAccountId || null,
+    recipientDisplayName: msgObj.recipientDisplayName || null,
     senderIdentityId: msgObj.senderIdentityId || null,
     recipientIdentityId: msgObj.recipientIdentityId || null,
     header: msgObj.header,
@@ -156,6 +160,7 @@ async function saveIdentityBackup(username, backupDoc) {
     {
       $set: {
         username,
+        accountId: backupDoc.accountId || null,
         identityId: backupDoc.identityId,
         version: backupDoc.version,
         ciphertextB64: backupDoc.ciphertextB64,
@@ -196,14 +201,24 @@ async function listIdentityBackups(username) {
     .toArray();
 }
 
-async function saveAccountActiveDevice(username, activeIdentityId) {
+async function saveAccountActiveDevice(username, activeIdentityId, accountMeta = {}) {
   const currentDb = getDb();
   const now = new Date();
+  const accountId =
+    typeof accountMeta.accountId === "string" && accountMeta.accountId.trim()
+      ? accountMeta.accountId.trim()
+      : null;
+  const displayName =
+    typeof accountMeta.displayName === "string" && accountMeta.displayName.trim()
+      ? accountMeta.displayName.trim()
+      : username;
   await currentDb.collection("account_active_devices").updateOne(
     { username },
     {
       $set: {
         username,
+        accountId,
+        displayName,
         activeIdentityId,
         updatedAt: now,
       },
@@ -256,6 +271,10 @@ async function ensureIndexes() {
   await backups.createIndex({ username: 1, identityId: 1 }, { unique: true });
 
   await activeDevices.createIndex({ username: 1 }, { unique: true });
+  await activeDevices.createIndex(
+    { accountId: 1 },
+    { sparse: true }
+  );
 }
 
 module.exports = {

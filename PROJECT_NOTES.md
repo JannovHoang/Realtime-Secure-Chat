@@ -5169,3 +5169,74 @@ Checkpoint 1 test expectation:
 - no visible UI flow is intentionally changed
 - runtime should remain compatible with the current server because new account fields are additive
 - `PROJECT_NOTES.md` must clearly state that local accountId is transitional and not real authentication
+
+### Account ID Foundation - Checkpoint 2: Server AccountId-Aware Routing
+
+Completed in:
+
+- `server/server.js`
+- `server/mongo.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make the server understand accountId metadata during active-session routing
+- keep username fallback so existing demo users and legacy records continue to work
+- preserve the current one-active-session behavior
+
+Changes:
+
+- WebSocket sessions now track additive account metadata:
+  - `user`
+  - `accountId`
+  - `displayName`
+  - `identityId`
+- server active sessions are now tracked by an internal account session key
+- username fallback is kept through a username-to-account-session map
+- `register` accepts additive account metadata from the client
+- `identity_bind` preserves and updates account metadata
+- `registered` and `identity_bound` responses echo account metadata when present
+- active-session replacement logs now include accountId when present
+- `isActiveAccountSocket` checks the active account session using accountId first, then username fallback
+- realtime send routing still accepts typed username recipients, but the active target session can now carry account metadata
+- message envelopes saved/forwarded by the server now carry additive account metadata when available:
+  - `senderAccountId`
+  - `senderDisplayName`
+  - `recipientAccountId`
+  - `recipientDisplayName`
+- recent history responses can include the same account metadata fields
+- `account_active_devices` now persists:
+  - `username`
+  - `accountId`
+  - `displayName`
+  - `activeIdentityId`
+- `pending_messages` and `messages` can now store account metadata fields additively
+- `identity_backups` can store `accountId` additively from the active session
+- a sparse index on `account_active_devices.accountId` was added while keeping the existing unique username index
+
+Important scope note:
+
+- this checkpoint does not add real authentication
+- this checkpoint does not remove username fallback
+- this checkpoint does not change the user-facing Chat with behavior
+- this checkpoint does not add server-side user search
+- this checkpoint does not allow multiple active devices per account
+- this checkpoint does not require migrating old MongoDB documents
+
+Expected behavior:
+
+- Alice/Bob/Charlie should still Start with existing usernames
+- realtime routing should behave the same as before for typed peer names
+- one active session per current username/account label should still be enforced
+- offline pending delivery should still work
+- recent catch-up should still work
+- old records without accountId fields should still be usable
+- new active-device documents should include account metadata when clients provide it
+
+Checkpoint 2 test expectation:
+
+- app builds successfully
+- server starts successfully
+- Mongo indexes are created without dropping existing username fallback behavior
+- existing browser-local identities still work
+- domain/named tunnel demo flow remains unchanged

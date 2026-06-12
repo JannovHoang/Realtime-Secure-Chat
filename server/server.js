@@ -131,8 +131,9 @@ async function importECDHPrivateKeyFromJwk(jwk) {
 }
 
 // ===== In-memory state =====
-const wsToSession = new Map(); // ws -> { user, identityId }
-const accountSessions = new Map(); // username -> { activeIdentityId, ws }
+const wsToSession = new Map(); // ws -> { user, accountId, displayName, identityId }
+const accountSessions = new Map(); // accountKey -> { username, accountId, displayName, activeIdentityId, ws }
+const usernameSessions = new Map(); // username -> accountKey
 const signedCerts = new Map(); // username:identityId -> { certificate, signatureB64, identityId }
 
 // ===== PATCH: pending offline messages (ciphertext only) =====
@@ -154,6 +155,22 @@ function normalizeIdentityId(v) {
   return String(v || "").trim();
 }
 
+function normalizeAccountId(v) {
+  return String(v || "").trim();
+}
+
+function normalizeDisplayName(v) {
+  return String(v || "").trim();
+}
+
+function makeLegacyAccountKey(username) {
+  return `username:${normalizeUsername(username)}`;
+}
+
+function makeAccountSessionKey(username, accountId = null) {
+  return normalizeAccountId(accountId) || makeLegacyAccountKey(username);
+}
+
 function getSession(ws) {
   return wsToSession.get(ws) || null;
 }
@@ -166,10 +183,25 @@ function getSessionIdentityId(ws) {
   return getSession(ws)?.identityId || null;
 }
 
-function getActiveAccountSession(username) {
+function getSessionAccountId(ws) {
+  return getSession(ws)?.accountId || null;
+}
+
+function getSessionDisplayName(ws) {
+  return getSession(ws)?.displayName || getSessionUser(ws) || null;
+}
+
+function getActiveAccountSession(username, accountId = null) {
   const user = normalizeUsername(username);
   if (!user) return null;
-  const session = accountSessions.get(user);
+  const directKey = normalizeAccountId(accountId);
+  if (directKey) {
+    const direct = accountSessions.get(directKey);
+    if (direct?.ws && direct.ws.readyState === WebSocket.OPEN) return direct;
+  }
+
+  const accountKey = usernameSessions.get(user) || makeLegacyAccountKey(user);
+  const session = accountSessions.get(accountKey);
   if (!session?.ws || session.ws.readyState !== WebSocket.OPEN) return null;
   return session;
 }
@@ -177,7 +209,7 @@ function getActiveAccountSession(username) {
 function isActiveAccountSocket(ws) {
   const session = getSession(ws);
   if (!session?.user || !session.identityId) return false;
-  const active = getActiveAccountSession(session.user);
+  const active = getActiveAccountSession(session.user, session.accountId);
   return active?.ws === ws && active.activeIdentityId === session.identityId;
 }
 
@@ -189,13 +221,23 @@ async function sendCertCacheAndPending(user, ws, identityId = null) {
   sendJson(ws, { type: "pending_flushed", count: flushed });
 }
 
-async function activateAccountSession(ws, user, identityId) {
-  const active = getActiveAccountSession(user);
+async function activateAccountSession(
+  ws,
+  user,
+  identityId,
+  accountId = null,
+  displayName = null
+) {
+  const normalizedAccountId = normalizeAccountId(accountId);
+  const normalizedDisplayName = normalizeDisplayName(displayName) || user;
+  const accountKey = makeAccountSessionKey(user, normalizedAccountId);
+  const active = getActiveAccountSession(user, normalizedAccountId);
   if (active?.ws && active.ws !== ws) {
     console.log(
       "[session] replacing active account device",
       JSON.stringify({
         username: user,
+        accountId: normalizedAccountId || null,
         previousIdentityId: active.activeIdentityId || null,
         nextIdentityId: identityId || null,
       })
@@ -211,13 +253,24 @@ async function activateAccountSession(ws, user, identityId) {
     } catch {}
   }
 
-  accountSessions.set(user, {
+  if (active?.username) {
+    usernameSessions.delete(active.username);
+  }
+
+  accountSessions.set(accountKey, {
+    username: user,
+    accountId: normalizedAccountId || null,
+    displayName: normalizedDisplayName,
     activeIdentityId: identityId,
     ws,
   });
+  usernameSessions.set(user, accountKey);
 
   try {
-    await saveAccountActiveDevice(user, identityId);
+    await saveAccountActiveDevice(user, identityId, {
+      accountId: normalizedAccountId || null,
+      displayName: normalizedDisplayName,
+    });
   } catch (e) {
     console.warn("[account_active_devices] mongo save failed:", e);
   }
@@ -358,6 +411,10 @@ function toHistoryRecentItem(doc) {
     _id: String(doc._id),
     from: doc.from,
     to: doc.to,
+    senderAccountId: doc.senderAccountId || null,
+    senderDisplayName: doc.senderDisplayName || null,
+    recipientAccountId: doc.recipientAccountId || null,
+    recipientDisplayName: doc.recipientDisplayName || null,
     senderIdentityId: doc.senderIdentityId || null,
     recipientIdentityId: doc.recipientIdentityId || null,
     envelope: {
@@ -520,7 +577,9 @@ async function getCertCacheWithFallback() {
     signedCerts.clear();
     const activeByUser = new Map();
 
-    for (const [username, session] of accountSessions.entries()) {
+    for (const session of accountSessions.values()) {
+      const username = session?.username;
+      if (!username) continue;
       if (session?.activeIdentityId) {
         activeByUser.set(username, session.activeIdentityId);
       }
@@ -572,7 +631,8 @@ async function getCertCacheWithFallback() {
   const all = [];
   for (const { certificate, signatureB64 } of signedCerts.values()) {
     const identityId = certificate?.identityId || null;
-    const activeIdentityId = accountSessions.get(certificate?.username)?.activeIdentityId || null;
+    const activeSession = getActiveAccountSession(certificate?.username);
+    const activeIdentityId = activeSession?.activeIdentityId || null;
     all.push({
       certificate,
       signatureB64,
@@ -590,6 +650,10 @@ async function saveCiphertextHistoryWithFallback(msgObj) {
       conversationId: makeConversationId(msgObj.from, msgObj.to),
       from: msgObj.from,
       to: msgObj.to,
+      senderAccountId: msgObj.senderAccountId || null,
+      senderDisplayName: msgObj.senderDisplayName || null,
+      recipientAccountId: msgObj.recipientAccountId || null,
+      recipientDisplayName: msgObj.recipientDisplayName || null,
       senderIdentityId: msgObj.senderIdentityId || null,
       recipientIdentityId: msgObj.recipientIdentityId || null,
       header: msgObj.header,
@@ -847,16 +911,29 @@ wss.on("connection", (ws) => {
     if (data.type === "register" && typeof data.user === "string") {
       const user = normalizeUsername(data.user);
       const identityId = normalizeIdentityId(data.identityId);
+      const accountId = normalizeAccountId(data.accountId);
+      const displayName = normalizeDisplayName(data.displayName) || user;
       if (!user) {
         return sendJson(ws, { type: "error", error: "Empty username" });
       }
 
-      wsToSession.set(ws, { user, identityId: identityId || null });
+      wsToSession.set(ws, {
+        user,
+        accountId: accountId || null,
+        displayName,
+        identityId: identityId || null,
+      });
 
-      sendJson(ws, { type: "registered", user, identityId: identityId || null });
+      sendJson(ws, {
+        type: "registered",
+        user,
+        accountId: accountId || null,
+        displayName,
+        identityId: identityId || null,
+      });
 
       if (identityId) {
-        await activateAccountSession(ws, user, identityId);
+        await activateAccountSession(ws, user, identityId, accountId, displayName);
       }
       return;
     }
@@ -864,6 +941,10 @@ wss.on("connection", (ws) => {
     if (data.type === "identity_bind") {
       const session = getSession(ws);
       const identityId = normalizeIdentityId(data.identityId);
+      const accountId = normalizeAccountId(data.accountId || session?.accountId);
+      const displayName =
+        normalizeDisplayName(data.displayName || session?.displayName) ||
+        session?.user;
       if (!session?.user || !identityId) {
         return sendJson(ws, { type: "error", error: "Invalid identity binding" });
       }
@@ -873,6 +954,7 @@ wss.on("connection", (ws) => {
           "[session] identity rebind",
           JSON.stringify({
             username: session.user,
+            accountId: accountId || null,
             previousIdentityId: session.identityId,
             nextIdentityId: identityId,
           })
@@ -881,12 +963,22 @@ wss.on("connection", (ws) => {
 
       wsToSession.set(ws, {
         user: session.user,
+        accountId: accountId || null,
+        displayName,
         identityId,
       });
-      await activateAccountSession(ws, session.user, identityId);
+      await activateAccountSession(
+        ws,
+        session.user,
+        identityId,
+        accountId,
+        displayName
+      );
       return sendJson(ws, {
         type: "identity_bound",
         user: session.user,
+        accountId: accountId || null,
+        displayName,
         identityId,
       });
     }
@@ -942,7 +1034,8 @@ wss.on("connection", (ws) => {
       }
 
       // Broadcast signed cert
-      const activeIdentityId = accountSessions.get(certUser)?.activeIdentityId || null;
+      const activeSession = getActiveAccountSession(certUser);
+      const activeIdentityId = activeSession?.activeIdentityId || null;
       const msg = {
         type: "cert_signed",
         certificate: cert,
@@ -972,6 +1065,8 @@ wss.on("connection", (ws) => {
         return sendJson(ws, { type: "error", error: "Identity not bound" });
       }
       const senderIdentityId = getSessionIdentityId(ws);
+      const senderAccountId = getSessionAccountId(ws);
+      const senderDisplayName = getSessionDisplayName(ws);
       const to = normalizeUsername(data.to);
       if (!to) {
         return sendJson(ws, { type: "error", error: "Empty recipient" });
@@ -987,6 +1082,10 @@ wss.on("connection", (ws) => {
         type: "message",
         from,
         to,
+        senderAccountId: senderAccountId || null,
+        senderDisplayName: senderDisplayName || from,
+        recipientAccountId: activeTargetSession?.accountId || null,
+        recipientDisplayName: activeTargetSession?.displayName || to,
         senderIdentityId: senderIdentityId || null,
         recipientIdentityId: recipientIdentityId || null,
         header: data.header,
@@ -1026,6 +1125,7 @@ wss.on("connection", (ws) => {
     if (data.type === "history_fetch_recent") {
       const requestId = typeof data.requestId === "string" ? data.requestId : null;
       const user = getSessionUser(ws);
+      const accountId = getSessionAccountId(ws);
       const identityId = getSessionIdentityId(ws);
       const peer = normalizeUsername(data.peer);
       const limit = normalizeRecentLimit(data.limit);
@@ -1068,6 +1168,7 @@ wss.on("connection", (ws) => {
     if (data.type === "backup_save") {
       const requestId = typeof data.requestId === "string" ? data.requestId : null;
       const registeredUser = getSessionUser(ws);
+      const registeredAccountId = getSessionAccountId(ws);
       const registeredIdentityId = getSessionIdentityId(ws);
       const username = normalizeUsername(data.username);
       const identityId = normalizeIdentityId(data.identityId);
@@ -1122,6 +1223,7 @@ wss.on("connection", (ws) => {
 
       try {
         await saveIdentityBackup(username, {
+          accountId: registeredAccountId || null,
           identityId,
           version: Number(data.version || 2),
           ciphertextB64: data.ciphertextB64,
@@ -1154,11 +1256,18 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    const user = getSessionUser(ws);
+    const session = getSession(ws);
+    const user = session?.user || null;
+    const accountKey = user
+      ? makeAccountSessionKey(user, session?.accountId || null)
+      : null;
     wsToSession.delete(ws);
-    const active = user ? accountSessions.get(user) : null;
+    const active = accountKey ? accountSessions.get(accountKey) : null;
     if (user && active?.ws === ws) {
-      accountSessions.delete(user);
+      accountSessions.delete(accountKey);
+      if (usernameSessions.get(user) === accountKey) {
+        usernameSessions.delete(user);
+      }
     }
   });
 });
