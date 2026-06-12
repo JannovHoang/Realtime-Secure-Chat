@@ -145,10 +145,10 @@ function buildRestoreOverwriteMessage(username, localIdentityMeta, payload) {
   const targetIdentityShort = formatIdentityShort(payload.identityId);
 
   if (!localIdentityMeta?.identityId || sameLocalIdentity) {
-    return `Restore will overwrite the current local identity for account ${username} in this browser. Continue?`;
+    return `Restore will overwrite the current local identity for display name ${username} in this browser. Continue?`;
   }
 
-  return `This browser currently stores a different local identity for account ${username}. Restoring this backup will replace the current identity with identity ${targetIdentityShort}. Continue?`;
+  return `This browser currently stores a different local identity for display name ${username}. Restoring this backup will replace the current identity with identity ${targetIdentityShort}. Continue?`;
 }
 
 function reducer(state, action) {
@@ -570,7 +570,7 @@ export function useChatApp() {
     if (!username || !password) {
       dispatch({
         type: "start_failure",
-        message: "Username and password are required",
+        message: "Display name and password are required",
       });
       return;
     }
@@ -720,7 +720,7 @@ export function useChatApp() {
     const username = String(state.username || "").trim();
     const password = String(state.password || "");
     if (!username || !password) {
-      pushToast("Please enter username and password.", "error");
+      pushToast("Please enter display name and password.", "error");
       return;
     }
 
@@ -745,7 +745,7 @@ export function useChatApp() {
     } catch (err) {
       dispatch({ type: "set_status", message: "Restore failed", tone: "error" });
       dispatch({ type: "restore_end" });
-      pushToast("Restore failed. Check your account/password or backup availability.", "error");
+      pushToast("Restore failed. Check your display name, password, or backup availability.", "error");
     }
   }
 
@@ -801,7 +801,7 @@ export function useChatApp() {
       dispatch({ type: "restore_end" });
       dispatch({ type: "close_modal" });
       dispatch({ type: "set_pending_restore", value: null });
-      pushToast("Restore failed. Check your account/password or backup availability.", "error");
+      pushToast("Restore failed. Check your display name, password, or backup availability.", "error");
     }
   }
 

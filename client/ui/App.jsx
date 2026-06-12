@@ -200,8 +200,8 @@ export default function App() {
         <div className="login">
           <div className="auth-fields">
             <Field
-              label="Username"
-              placeholder="Enter your username"
+              label="Display name"
+              placeholder="Enter your display name"
               value={state.username}
               onChange={(value) => actions.setField("username", value)}
               disabled={busy}
@@ -290,7 +290,7 @@ export default function App() {
               <input
                 placeholder={
                   state.started
-                    ? "Type a username and press Enter"
+                    ? "Type a peer display name and press Enter"
                     : "Start a session to load local conversations"
                 }
                 value={peerInputValue}
@@ -306,7 +306,7 @@ export default function App() {
             </div>
             <div className="peer-target-hint">
               {state.started
-                ? "Open an existing chat or type a peer name to start one."
+                ? "Open an existing chat or type a peer display name to start one."
                 : "Start or restore a session before choosing a peer."}
             </div>
           </div>
@@ -463,7 +463,7 @@ export default function App() {
       {state.modal?.type === "backup_password" ? (
         <ModalFrame
           title="Backup to Cloud"
-          subtitle="Enter your password to encrypt and save the cloud backup."
+          subtitle="Enter your password to encrypt and save this account label's current local identity."
           eyebrow="Encrypted backup"
           actions={
             <>
@@ -500,7 +500,7 @@ export default function App() {
       {state.modal?.type === "start_guard" ? (
         <ModalFrame
           title="Start Confirmation"
-          subtitle="No local identity found for this account in this browser. Continue only for a new account, or restore a cloud backup first."
+          subtitle="No local identity was found for this display name in this browser. Continue only for a new local identity, or restore a cloud backup first."
           eyebrow="Identity guard"
           actions={
             <>
@@ -533,7 +533,7 @@ export default function App() {
       {state.modal?.type === "restore_choice" ? (
         <ModalFrame
           title="Choose Backup Identity"
-          subtitle="This account has multiple cloud backups. Choose the identity you want to restore."
+          subtitle="This display name has multiple cloud backups. Choose the device identity you want to restore."
           eyebrow="Cloud restore"
           actions={
             <button className="secondary" type="button" onClick={actions.cancelRestoreChoice}>
@@ -553,6 +553,11 @@ export default function App() {
                 <span className="restore-choice-id">
                   {helpers.formatIdentityShort(item.identityId)}
                 </span>
+                {item.displayName ? (
+                  <span className="restore-choice-time">
+                    display name {item.displayName}
+                  </span>
+                ) : null}
                 <span className="restore-choice-time">
                   updated {helpers.formatRestoreUpdatedAt(item.updatedAt)}
                 </span>

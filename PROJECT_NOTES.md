@@ -5303,3 +5303,53 @@ Checkpoint 3 test expectation:
 - multiple backup identities under one display name still require explicit identity selection
 - legacy backup documents without accountId fields remain usable
 - MongoDB documents created after this checkpoint include account metadata where available
+
+### Account ID Foundation - Checkpoint 4: UI Wording Cleanup
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/hooks/useChatApp.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make the UI describe the user-entered name as a display name/account label
+- keep `accountId` internal and out of normal user-facing input
+- avoid implying that the current display-name field is real authentication
+
+Changes:
+
+- topbar label changed from `Username` to `Display name`
+- peer entry wording now says `peer display name`
+- backup modal wording now says the backup belongs to the current account label's local identity
+- start guard wording now says no local identity was found for this display name in this browser
+- restore selector wording now says the display name has multiple cloud backups and asks the user to choose a device identity
+- restore selector can show backup display-name metadata when available
+- restore error wording now tells the user to check display name, password, or backup availability
+
+Important scope note:
+
+- this checkpoint does not rename internal `username` variables
+- this checkpoint does not change server routing
+- this checkpoint does not change storage keys or MongoDB schema
+- this checkpoint does not add Firebase/Google login
+- this checkpoint does not add user search/autocomplete
+- this checkpoint does not change `Chat with` behavior beyond wording
+
+Expected behavior:
+
+- UI should be clearer that the typed name is a display label for the current transitional account model
+- existing Alice/Bob/Giang test users should still work
+- Start/Restore/Backup/Logout behavior should not change
+- Chat with still accepts typed peer display names exactly as before
+
+Checkpoint 4 test expectation:
+
+- app builds successfully
+- the topbar displays `Display name`
+- Start still works with existing local identities
+- Restore from Cloud still works
+- Backup to Cloud still works
+- multiple-backup restore selector remains usable
+- realtime and offline chat behavior remains unchanged
