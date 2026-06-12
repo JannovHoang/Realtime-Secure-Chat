@@ -291,6 +291,12 @@ button.secondary:hover {
   border-color: rgba(239, 68, 68, 0.24);
 }
 
+.migration-status.is-warning {
+  color: var(--warning);
+  border-color: rgba(245, 158, 11, 0.32);
+  background: rgba(255, 251, 235, 0.96);
+}
+
 .content {
   margin-top: var(--space-5);
   display: grid;
@@ -1010,6 +1016,14 @@ button.secondary:hover {
 
 .toast-card.is-error .toast-dot {
   background: var(--danger);
+}
+
+.toast-card.is-warning {
+  border-color: rgba(245, 158, 11, 0.48);
+}
+
+.toast-card.is-warning .toast-dot {
+  background: var(--warning);
 }
 
 @media (max-width: 1024px) {

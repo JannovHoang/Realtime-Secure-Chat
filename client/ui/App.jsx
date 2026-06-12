@@ -530,6 +530,42 @@ export default function App() {
         />
       ) : null}
 
+      {state.modal?.type === "backup_freshness_warning" ? (
+        <ModalFrame
+          title={state.modal.modalTitle || "Cloud Backup Available"}
+          subtitle={
+            state.modal.modalSubtitle ||
+            "Restore first if this account was used on another device."
+          }
+          eyebrow="Backup safety"
+          actions={
+            <>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleBackupFreshnessWarning("cancel")}
+              >
+                Cancel
+              </button>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleBackupFreshnessWarning("continue")}
+              >
+                Start anyway
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => actions.handleBackupFreshnessWarning("restore")}
+              >
+                Restore from Cloud
+              </button>
+            </>
+          }
+        />
+      ) : null}
+
       {state.modal?.type === "restore_choice" ? (
         <ModalFrame
           title="Choose Backup Identity"

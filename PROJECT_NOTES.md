@@ -5531,3 +5531,111 @@ Checkpoint 1 test expectation:
 - Backup to Cloud creates or updates `identity_backups` with `clientSavedAt` and `serverSavedAt`
 - Restore from Cloud still works after a new backup
 - offline pending behavior remains unchanged
+
+### Account ID Hardening - Checkpoint 2: Backup Freshness Warning
+
+Completed in:
+
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- warn the user when the cloud backup metadata suggests a newer backup may exist for the current local identity
+- reduce the chance of continuing from a stale local vault after switching devices
+- keep Start usable and non-blocking
+
+Changes:
+
+- after a successful `Start`, the React hook now checks backup freshness in the background
+- the check compares the matching cloud backup `serverSavedAt` with the local vault receipt `localLastBackupServerSavedAt`
+- matching is scoped to the current local `identityId` and compatible `accountId` when available
+- if the cloud timestamp is newer, the UI shows:
+  - status: `Cloud backup may be newer`
+  - warning toast explaining that the browser may be using an older local state
+- if the freshness API/check fails, Start still succeeds and the warning check is skipped
+- warning styling was added for status pills and toast cards
+
+Important scope note:
+
+- this checkpoint does not prove that the cloud backup definitely has newer Double Ratchet state
+- this checkpoint does not auto-restore
+- this checkpoint does not block Start
+- this checkpoint does not solve multi-device state synchronization
+- this checkpoint only uses metadata as a safety signal
+- users still need to backup before leaving a device and restore before continuing on another device
+
+Expected behavior:
+
+- normal Start should still work as before
+- if local backup receipt is current, no warning should appear
+- if cloud `serverSavedAt` is newer than the local receipt, the warning should appear after Start
+- if backup metadata is unavailable or legacy, Start should remain usable
+- realtime/offline chat behavior should remain unchanged
+
+Checkpoint 2 test expectation:
+
+- app builds successfully
+- Alice/Giang realtime chat still works
+- Backup to Cloud still succeeds
+- Restore from Cloud still succeeds
+- normal Start should not be blocked by backup metadata checks
+- warning appears only as non-blocking guidance when metadata indicates a newer cloud backup may exist
+
+### Account ID Hardening - Checkpoint 2A: Freshness Warning For Missing Local Receipt
+
+Completed in:
+
+- `client/ui/hooks/useChatApp.js`
+- `PROJECT_NOTES.md`
+
+Reason:
+
+- manual testing showed a realistic device-switching risk:
+  - a phone had an older local vault from before backup receipt metadata existed
+  - laptop saved a newer cloud backup
+  - phone could still press `Start` and chat from the older local vault without warning
+  - this can desynchronize Double Ratchet state
+
+Change:
+
+- if a matching cloud backup exists for the current identity
+- and the local vault does not have a local backup receipt timestamp
+- the UI now shows a non-blocking warning:
+  - status: `Cloud backup available`
+  - toast: `Cloud backup available. Restore first if this account was used on another device.`
+
+Important scope note:
+
+- the warning does not claim the local vault is definitely stale
+- the warning avoids internal wording such as `local backup checkpoint`
+- Start remains allowed
+- Restore remains manual
+- this still does not implement multi-device state synchronization
+
+Expected behavior:
+
+- devices with current local backup receipt should behave as before
+- devices with older local vaults and no receipt should get a clear restore-first warning when cloud backup exists
+- the warning is guidance for device switching, not a hard security block
+
+Follow-up correction after manual phone/laptop testing:
+
+- showing the warning only after `Start` is too late because the stale browser may already replace the active session
+- freshness risk is now checked before opening the chat session when a local vault exists
+- if the pre-start check detects risk, the app opens a backup safety modal before `initChat(...)`
+- the modal gives three explicit choices:
+  - `Restore from Cloud`
+  - `Start anyway`
+  - `Cancel`
+- this prevents an older browser vault from silently kicking a newer active device without a restore-first warning
+- after successful restore, the client now saves local backup receipt metadata from the restored cloud backup
+- a freshly restored device should therefore have a local `serverSavedAt` checkpoint for future freshness checks
+
+UI stability correction:
+
+- runtime bridge subscription now installs once per React app mount instead of rebinding on every active conversation change
+- the current active peer is tracked through a React ref so realtime events are routed against the latest selected peer
+- this reduces race risk where a realtime event arrives while the conversation pane is reloading and the visible message list can appear stale or empty
+- no chat protocol, storage schema, Mongo schema, or Double Ratchet behavior was changed by this correction

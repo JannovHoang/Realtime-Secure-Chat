@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import { buildLocalAccountProfile } from "../../account.js";
 import {
   destroyChat,
@@ -21,6 +21,7 @@ import {
   hasPersistedVault,
   importIdentityPayload,
   listConversationMetadata,
+  loadBackupMetadata,
   saveBackupMetadata,
   loadIdentityMetadata,
   verifyPersistedVaultPassword,
@@ -64,6 +65,7 @@ const initialState = {
   modal: null,
   backupPasswordInput: "",
   pendingRestore: null,
+  pendingStartWarning: null,
   toasts: [],
 };
 
@@ -137,6 +139,56 @@ function formatRestoreUpdatedAt(value) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function getTimeMs(value) {
+  if (!value) return 0;
+  const dt = new Date(value);
+  const ms = dt.getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function findMatchingCloudBackup(items, identityMeta, account) {
+  if (!Array.isArray(items) || !identityMeta?.identityId) return null;
+  return (
+    items.find((item) => {
+      if (item?.identityId !== identityMeta.identityId) return false;
+      if (item?.accountId && account?.accountId && item.accountId !== account.accountId) {
+        return false;
+      }
+      return true;
+    }) || null
+  );
+}
+
+function getBackupFreshnessSignal(cloudBackup, localBackupMeta) {
+  if (!cloudBackup?.serverSavedAt) return null;
+  const cloudServerMs = getTimeMs(cloudBackup.serverSavedAt);
+  if (!cloudServerMs) return null;
+
+  const localKnownMs = getTimeMs(
+    localBackupMeta?.localLastBackupServerSavedAt || localBackupMeta?.serverSavedAt
+  );
+  if (!localKnownMs) {
+    return {
+      status: "Cloud backup available",
+      toast:
+        "Cloud backup available. Restore first if this account was used on another device.",
+      modalTitle: "Cloud Backup Available",
+      modalSubtitle:
+        "A cloud backup exists for this identity. If this account was used on another device, restore before chatting.",
+    };
+  }
+
+  if (cloudServerMs <= localKnownMs) return null;
+  return {
+    status: "Cloud backup may be newer",
+    toast:
+      "A newer cloud backup may exist for this identity. Restore first if this browser may be using an older local state.",
+    modalTitle: "Cloud Backup May Be Newer",
+    modalSubtitle:
+      "The cloud backup appears newer than this browser's local backup record. Restore first if you recently used another device.",
+  };
 }
 
 function buildRestoreOverwriteMessage(username, localIdentityMeta, payload) {
@@ -391,6 +443,8 @@ function reducer(state, action) {
       return { ...state, backupPasswordInput: action.value };
     case "set_pending_restore":
       return { ...state, pendingRestore: action.value };
+    case "set_pending_start_warning":
+      return { ...state, pendingStartWarning: action.value };
     case "restore_success":
       return {
         ...state,
@@ -426,6 +480,11 @@ function reducer(state, action) {
 
 export function useChatApp() {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const activePeerRef = useRef(initialState.activePeer);
+
+  useEffect(() => {
+    activePeerRef.current = state.activePeer;
+  }, [state.activePeer]);
 
   function pushToast(text, tone = "info") {
     const id = nextToastId();
@@ -442,9 +501,10 @@ export function useChatApp() {
     dispatch({ type: "bridge_status", payload: runtimeSnapshotState() });
 
     const unsubscribe = subscribeToChatRuntime((event) => {
+      const activePeer = activePeerRef.current;
       if (
         event.type === "chat_message" &&
-        normalizePeer(event.payload?.from) === state.activePeer
+        normalizePeer(event.payload?.from) === activePeer
       ) {
         dispatch({
           type: "append_incoming_message",
@@ -457,7 +517,7 @@ export function useChatApp() {
       }
       if (
         event.type === "chat_message" &&
-        normalizePeer(event.payload?.from) !== state.activePeer
+        normalizePeer(event.payload?.from) !== activePeer
       ) {
         pushToast(`New message from ${event.payload?.from || "peer"}`, "info");
       }
@@ -470,7 +530,7 @@ export function useChatApp() {
     return () => {
       unsubscribe();
     };
-  }, [state.activePeer]);
+  }, []);
 
   useEffect(() => {
     if (!state.started) return;
@@ -564,6 +624,49 @@ export function useChatApp() {
     }
   }
 
+  async function checkBackupFreshness(username, account) {
+    try {
+      const [identityMeta, localBackupMeta, cloudItems] = await Promise.all([
+        loadIdentityMetadata(),
+        loadBackupMetadata().catch(() => null),
+        fetchCloudBackupIdentities(username),
+      ]);
+      const cloudBackup = findMatchingCloudBackup(cloudItems, identityMeta, account);
+      const signal = getBackupFreshnessSignal(cloudBackup, localBackupMeta);
+      if (!signal) return;
+
+      dispatch({
+        type: "set_status",
+        message: signal.status,
+        tone: "warning",
+      });
+      pushToast(signal.toast, "warning");
+    } catch (err) {
+      console.warn("[backup] freshness check skipped:", err);
+    }
+  }
+
+  async function getPreStartBackupWarning(username, password, account) {
+    try {
+      await initVault(password, username);
+      const [identityMeta, localBackupMeta, cloudItems] = await Promise.all([
+        loadIdentityMetadata(),
+        loadBackupMetadata().catch(() => null),
+        fetchCloudBackupIdentities(username),
+      ]);
+      const cloudBackup = findMatchingCloudBackup(cloudItems, identityMeta, account);
+      const signal = getBackupFreshnessSignal(cloudBackup, localBackupMeta);
+      if (!signal) return null;
+      return {
+        ...signal,
+        username,
+      };
+    } catch (err) {
+      console.warn("[backup] pre-start freshness check skipped:", err);
+      return null;
+    }
+  }
+
   async function performStart(options = {}) {
     const username = String(state.username || "").trim();
     const password = String(state.password || "");
@@ -592,11 +695,26 @@ export function useChatApp() {
       return;
     }
 
+    if (!options.skipBackupWarning && hasLocalVault && !state.restoredThisSession) {
+      const warning = await getPreStartBackupWarning(username, password, account);
+      if (warning) {
+        dispatch({ type: "set_pending_start_warning", value: { username } });
+        dispatch({
+          type: "open_modal",
+          modal: { type: "backup_freshness_warning", ...warning },
+        });
+        return;
+      }
+    }
+
     dispatch({ type: "start_begin" });
     try {
       await initChat(username, password, account);
       dispatch({ type: "start_success", account });
       pushToast("Ready.", "success");
+      if (!state.restoredThisSession && !options.skipBackupWarning) {
+        void checkBackupFreshness(username, account);
+      }
     } catch (err) {
       dispatch({
         type: "start_failure",
@@ -808,6 +926,21 @@ export function useChatApp() {
       }
 
       await importIdentityPayload(payload, username, identityId, account.accountId);
+      try {
+        await initVault(password, username);
+        await saveBackupMetadata({
+          username,
+          accountId: account.accountId,
+          displayName: account.displayName,
+          accountIdScheme: account.accountIdScheme,
+          identityId: payload.identityId,
+          backupVersion: blob.version || payload.version || 2,
+          clientSavedAt: blob.clientSavedAt || payload.clientSavedAt || null,
+          serverSavedAt: blob.serverSavedAt || null,
+        });
+      } catch (metadataErr) {
+        console.warn("[restore] failed to save local backup metadata:", metadataErr);
+      }
       dispatch({ type: "restore_success", account });
       dispatch({ type: "restore_end" });
       dispatch({ type: "close_modal" });
@@ -849,6 +982,18 @@ export function useChatApp() {
     }
   }
 
+  function handleBackupFreshnessWarning(choice) {
+    dispatch({ type: "close_modal" });
+    dispatch({ type: "set_pending_start_warning", value: null });
+    if (choice === "restore") {
+      void handleRestoreRequest();
+      return;
+    }
+    if (choice === "continue") {
+      void performStart({ skipGuard: true, skipBackupWarning: true });
+    }
+  }
+
   return {
     state,
     helpers: {
@@ -873,6 +1018,7 @@ export function useChatApp() {
       confirmRestoreChoice,
       cancelRestoreChoice,
       handleStartGuard,
+      handleBackupFreshnessWarning,
     },
   };
 }
