@@ -5752,3 +5752,63 @@ Checkpoint 4 test expectation:
 - cancelling overwrite leaves local chat usable
 - confirming overwrite restores the selected cloud identity and preserves the existing restore-then-Start flow
 - no secret material is shown in any backup/restore safety modal
+
+### Account ID Hardening - Checkpoint 5: Documentation + Demo Script
+
+Completed in:
+
+- `DEMO_SCRIPT.md`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- prepare a safe, readable demo script for the current Account ID Hardening state
+- document the exact demo flows that should be shown
+- describe current limitations clearly without overclaiming real authentication or multi-device sync
+
+Changes:
+
+- added `DEMO_SCRIPT.md` as a standalone demo guide
+- documented how to run the project with:
+  - local server on port `3000`
+  - named Cloudflare Tunnel
+  - quick tunnel fallback
+- documented demo flows for:
+  - realtime chat
+  - offline pending messages
+  - Backup to Cloud
+  - Restore from Cloud
+  - device-switch safety warning
+  - restore overwrite safety modal
+- added plain-language definitions for:
+  - display name
+  - accountId
+  - identityId
+  - vault
+  - Backup to Cloud
+  - Restore from Cloud
+- recorded demo safety guidance:
+  - use clean users that have not desynchronized
+  - backup before switching devices
+  - restore before chatting on a new device
+  - avoid showing secrets during demo
+
+Important scope note:
+
+- this checkpoint is documentation only
+- no app runtime code changed
+- no crypto, storage, WebSocket, MongoDB, React UI, or server behavior changed
+- no sensitive values were added to the documentation
+- the documentation continues to state that `accountId` is transitional and not real authentication
+
+Expected behavior:
+
+- app behavior remains exactly the same as Checkpoint 4
+- documentation can be read aloud during progress reporting
+- demo instructions should match the current domain and fallback tunnel setup
+
+Checkpoint 5 test expectation:
+
+- review `DEMO_SCRIPT.md` for clarity
+- confirm it does not contain passwords, tunnel credentials, private keys, backup payloads, Mongo connection strings, or account secrets
+- optionally run `npm start` and `cloudflared tunnel run realtime-secure-chat` to confirm the commands still match the current setup
