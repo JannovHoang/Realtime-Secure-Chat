@@ -94,6 +94,43 @@ function ToastViewport({ toasts }) {
   );
 }
 
+function AccountIdentityPanel({ info, helpers }) {
+  if (!info?.displayName && !info?.identityId) return null;
+
+  const accountShort = helpers.formatIdentityShort(info.accountId);
+  const identityShort = helpers.formatIdentityShort(info.identityId);
+  const backupTime = helpers.formatDateTimeShort(info.backupServerSavedAt);
+
+  return (
+    <div className="account-panel">
+      <div className="account-panel-head">
+        <span>Account identity</span>
+        <span className="account-panel-chip">
+          {info.backupServerSavedAt ? "Backed up" : "Local only"}
+        </span>
+      </div>
+      <dl className="account-panel-grid">
+        <div>
+          <dt>Display name</dt>
+          <dd>{info.displayName || "unknown"}</dd>
+        </div>
+        <div>
+          <dt>Account ID</dt>
+          <dd title={info.accountId || ""}>{accountShort}</dd>
+        </div>
+        <div>
+          <dt>Identity ID</dt>
+          <dd title={info.identityId || ""}>{identityShort}</dd>
+        </div>
+        <div>
+          <dt>Backup</dt>
+          <dd>{backupTime || "not saved yet"}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 function ModalFrame({ title, subtitle, children, actions, eyebrow = "Secure action" }) {
   return (
     <div className="modal-backdrop">
@@ -310,6 +347,8 @@ export default function App() {
                 : "Start or restore a session before choosing a peer."}
             </div>
           </div>
+
+          <AccountIdentityPanel info={state.identityPanel} helpers={helpers} />
 
           <div className="peer-list">
             <div className="peer-list-title-row">

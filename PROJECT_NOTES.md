@@ -5639,3 +5639,58 @@ UI stability correction:
 - the current active peer is tracked through a React ref so realtime events are routed against the latest selected peer
 - this reduces race risk where a realtime event arrives while the conversation pane is reloading and the visible message list can appear stale or empty
 - no chat protocol, storage schema, Mongo schema, or Double Ratchet behavior was changed by this correction
+
+### Account ID Hardening - Checkpoint 3: Account/Identity Info Panel
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make the transitional account model easier to see and explain during demo
+- show the difference between user-facing display name, internal account id, cryptographic identity id, and local backup receipt
+- keep all sensitive material hidden
+
+Changes:
+
+- added a sidebar `Account identity` panel after Start/Restore
+- the panel shows only non-secret summary fields:
+  - display name
+  - shortened account id
+  - shortened identity id
+  - last known local backup receipt time
+- the panel updates after:
+  - successful Start
+  - successful Backup to Cloud
+  - successful Restore from Cloud
+- added compact styling that fits inside the existing sidebar on desktop and mobile
+
+Important scope note:
+
+- this checkpoint does not change account derivation
+- this checkpoint does not add Firebase/Google authentication
+- this checkpoint does not change backup encryption
+- this checkpoint does not change Double Ratchet state
+- this checkpoint does not expose private keys, vault data, plaintext message history, or backup passwords
+- shortened ids are for demo/debug clarity only, not a user authentication mechanism
+
+Expected behavior:
+
+- before Start, the account panel should not appear
+- after Start, the panel should show the current display name, account id short value, identity id short value, and backup state
+- after Backup to Cloud, the backup chip should show the account has a local backup receipt
+- after Restore from Cloud, the restored identity id short value should be visible before the user presses Start again
+- chat, backup, restore, active-session replacement, and offline pending behavior should remain unchanged
+
+Checkpoint 3 test expectation:
+
+- app builds successfully
+- Alice/new clean user realtime chat still works
+- Backup to Cloud still succeeds and refreshes the panel
+- Restore from Cloud still succeeds and fills the panel with restored identity metadata
+- warning modal from Checkpoint 2A still appears before risky Start attempts
+- no secret key material or full backup payload is shown in the UI

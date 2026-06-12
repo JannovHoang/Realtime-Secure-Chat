@@ -42,6 +42,7 @@ const initialState = {
   backingUp: false,
   restoredThisSession: false,
   continueWithoutRestoreFor: {},
+  identityPanel: null,
   activePeer: "",
   peerDraft: "",
   conversations: [],
@@ -126,6 +127,18 @@ function formatIdentityShort(identityId) {
   const normalized = String(identityId || "").trim();
   if (!normalized) return "unknown";
   return normalized.slice(0, 8);
+}
+
+function formatDateTimeShort(value) {
+  if (!value) return "";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toLocaleString("vi-VN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function formatRestoreUpdatedAt(value) {
@@ -309,6 +322,8 @@ function reducer(state, action) {
         statusText: "Ready",
         statusTone: "success",
       };
+    case "identity_panel_set":
+      return { ...state, identityPanel: action.value || null };
     case "start_failure":
       return {
         ...state,
@@ -329,6 +344,7 @@ function reducer(state, action) {
         disconnected: false,
         accountId: "",
         displayName: "",
+        identityPanel: null,
         password: "",
         activePeer: "",
         peerDraft: "",
@@ -451,6 +467,7 @@ function reducer(state, action) {
         restoredThisSession: true,
         accountId: action.account?.accountId || state.accountId,
         displayName: action.account?.displayName || state.displayName,
+        identityPanel: action.identityPanel || state.identityPanel,
         password: "",
         statusText: "Restore ready",
         statusTone: "success",
@@ -646,6 +663,44 @@ export function useChatApp() {
     }
   }
 
+  async function refreshIdentityPanel(account) {
+    try {
+      const [identityMeta, backupMeta] = await Promise.all([
+        loadIdentityMetadata().catch(() => null),
+        loadBackupMetadata().catch(() => null),
+      ]);
+      dispatch({
+        type: "identity_panel_set",
+        value: {
+          displayName:
+            account?.displayName ||
+            identityMeta?.displayName ||
+            identityMeta?.username ||
+            "",
+          accountId: account?.accountId || identityMeta?.accountId || "",
+          accountIdScheme: account?.accountIdScheme || "",
+          identityId: identityMeta?.identityId || "",
+          backupServerSavedAt:
+            backupMeta?.localLastBackupServerSavedAt || backupMeta?.serverSavedAt || "",
+          backupClientSavedAt: backupMeta?.clientSavedAt || "",
+        },
+      });
+    } catch (err) {
+      console.warn("[identity] panel refresh skipped:", err);
+    }
+  }
+
+  function buildIdentityPanelFromRestore(account, payload, blob) {
+    return {
+      displayName: account?.displayName || payload?.displayName || payload?.username || "",
+      accountId: account?.accountId || payload?.accountId || "",
+      accountIdScheme: account?.accountIdScheme || payload?.accountIdScheme || "",
+      identityId: payload?.identityId || "",
+      backupServerSavedAt: blob?.serverSavedAt || "",
+      backupClientSavedAt: blob?.clientSavedAt || payload?.clientSavedAt || "",
+    };
+  }
+
   async function getPreStartBackupWarning(username, password, account) {
     try {
       await initVault(password, username);
@@ -711,6 +766,7 @@ export function useChatApp() {
     try {
       await initChat(username, password, account);
       dispatch({ type: "start_success", account });
+      void refreshIdentityPanel(account);
       pushToast("Ready.", "success");
       if (!state.restoredThisSession && !options.skipBackupWarning) {
         void checkBackupFreshness(username, account);
@@ -836,6 +892,17 @@ export function useChatApp() {
       } catch (metadataErr) {
         console.warn("[backup] failed to save local metadata:", metadataErr);
       }
+      dispatch({
+        type: "identity_panel_set",
+        value: {
+          displayName: account.displayName,
+          accountId: account.accountId,
+          accountIdScheme: account.accountIdScheme,
+          identityId: payload.identityId,
+          backupServerSavedAt: backupReceipt?.serverSavedAt || blob.serverSavedAt || "",
+          backupClientSavedAt: clientSavedAt,
+        },
+      });
       dispatch({ type: "set_status", message: "Ready", tone: "success" });
       pushToast("Cloud backup saved.", "success");
     } catch (err) {
@@ -941,7 +1008,11 @@ export function useChatApp() {
       } catch (metadataErr) {
         console.warn("[restore] failed to save local backup metadata:", metadataErr);
       }
-      dispatch({ type: "restore_success", account });
+      dispatch({
+        type: "restore_success",
+        account,
+        identityPanel: buildIdentityPanelFromRestore(account, payload, blob),
+      });
       dispatch({ type: "restore_end" });
       dispatch({ type: "close_modal" });
       dispatch({ type: "set_pending_restore", value: null });
@@ -999,6 +1070,7 @@ export function useChatApp() {
     helpers: {
       formatIdentityShort,
       formatRestoreUpdatedAt,
+      formatDateTimeShort,
     },
     actions: {
       setField,
