@@ -1324,6 +1324,8 @@ export async function saveCloudBackup(blobDoc) {
       type: "backup_save",
       requestId,
       username: myUser,
+      accountId: myAccountId,
+      displayName: myDisplayName,
       ...blobDoc,
     });
   });

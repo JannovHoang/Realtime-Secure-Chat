@@ -755,8 +755,20 @@ export function useChatApp() {
 
     try {
       const account = await buildLocalAccountProfile(username);
+      const selectedAccountId = state.pendingRestore?.items?.find(
+        (item) => item?.identityId === identityId
+      )?.accountId;
+      if (selectedAccountId && selectedAccountId !== account.accountId) {
+        throw new Error("Backup account mismatch");
+      }
       const blob = await fetchCloudBackup(username, identityId);
-      const payload = await decryptIdentityPayload(blob, password, username, identityId);
+      const payload = await decryptIdentityPayload(
+        blob,
+        password,
+        username,
+        identityId,
+        account.accountId
+      );
       const hasLocalVault = await hasPersistedVault(username);
       let localIdentityMeta = null;
       if (hasLocalVault) {
@@ -778,7 +790,7 @@ export function useChatApp() {
         }
       }
 
-      await importIdentityPayload(payload, username, identityId);
+      await importIdentityPayload(payload, username, identityId, account.accountId);
       dispatch({ type: "restore_success", account });
       dispatch({ type: "restore_end" });
       dispatch({ type: "close_modal" });

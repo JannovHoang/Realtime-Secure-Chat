@@ -161,6 +161,8 @@ async function saveIdentityBackup(username, backupDoc) {
       $set: {
         username,
         accountId: backupDoc.accountId || null,
+        displayName: backupDoc.displayName || username,
+        accountIdScheme: backupDoc.accountIdScheme || null,
         identityId: backupDoc.identityId,
         version: backupDoc.version,
         ciphertextB64: backupDoc.ciphertextB64,
@@ -196,7 +198,16 @@ async function listIdentityBackups(username) {
   return currentDb
     .collection("identity_backups")
     .find({ username })
-    .project({ _id: 0, username: 1, identityId: 1, createdAt: 1, updatedAt: 1 })
+    .project({
+      _id: 0,
+      username: 1,
+      accountId: 1,
+      displayName: 1,
+      accountIdScheme: 1,
+      identityId: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    })
     .sort({ updatedAt: -1, createdAt: -1, identityId: 1 })
     .toArray();
 }

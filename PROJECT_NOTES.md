@@ -5240,3 +5240,66 @@ Checkpoint 2 test expectation:
 - Mongo indexes are created without dropping existing username fallback behavior
 - existing browser-local identities still work
 - domain/named tunnel demo flow remains unchanged
+
+### Account ID Foundation - Checkpoint 3: Account-Aware Backup And Restore Metadata
+
+Completed in:
+
+- `client/storage.js`
+- `client/chat.js`
+- `client/ui/hooks/useChatApp.js`
+- `server/server.js`
+- `server/mongo.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make cloud backup and restore carry account metadata in a backward-compatible way
+- keep old encrypted backup blobs restorable
+- prevent new account-aware backups from being restored under a mismatched account id
+
+Changes:
+
+- encrypted backup payloads now preserve account metadata when available:
+  - `accountId`
+  - `displayName`
+  - `accountIdScheme`
+- encrypted backup upload now sends account metadata to the server additively
+- `identity_backups` server metadata now stores:
+  - `accountId`
+  - `displayName`
+  - `accountIdScheme`
+- backup list responses now include account metadata when available
+- backup fetch responses now include account metadata when available
+- restore validation now accepts an expected `accountId`
+- if a backup payload or server backup metadata has an accountId, restore requires it to match the locally derived accountId for the entered display name
+- legacy backups without accountId remain restorable through the existing username + identityId checks
+- server backup save rejects an accountId mismatch between the active WebSocket session and the uploaded backup metadata
+- backup identity targeting by `identityId` remains unchanged
+
+Important scope note:
+
+- this checkpoint does not implement real authentication
+- this checkpoint does not add Google/Firebase login
+- this checkpoint does not change the visible username input model
+- this checkpoint does not add user search/autocomplete
+- this checkpoint does not remove legacy backup support
+- this checkpoint does not solve multi-device ratchet-state synchronization
+
+Expected behavior:
+
+- new backups should show account metadata in MongoDB
+- old backups that do not have account metadata should still restore
+- restore with correct username/password/identity should still work
+- restore should fail safely if a new backup's accountId does not match the accountId derived from the entered display name
+- backup/save should fail safely if a client tries to upload backup metadata for a different accountId than the active session
+
+Checkpoint 3 test expectation:
+
+- app builds successfully
+- Alice/Bob/Giang existing realtime chat still works
+- Backup to Cloud still succeeds for a started local identity
+- Restore from Cloud still restores the selected identity
+- multiple backup identities under one display name still require explicit identity selection
+- legacy backup documents without accountId fields remain usable
+- MongoDB documents created after this checkpoint include account metadata where available

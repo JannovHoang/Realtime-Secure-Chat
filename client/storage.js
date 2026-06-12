@@ -160,7 +160,8 @@ function canonicalize(value) {
 function validateImportedPayload(
   payload,
   expectedUsername = null,
-  expectedIdentityId = null
+  expectedIdentityId = null,
+  expectedAccountId = null
 ) {
   if (!payload || typeof payload !== "object") {
     throw new Error("Invalid backup payload");
@@ -191,6 +192,12 @@ function validateImportedPayload(
   const expectedId = normalizeKeyName(expectedIdentityId || "");
   if (expectedId && payloadIdentityId !== expectedId) {
     throw new Error("Backup identity mismatch");
+  }
+
+  const payloadAccountId = normalizeAccountId(payload.accountId);
+  const expectedAccount = normalizeAccountId(expectedAccountId || "");
+  if (expectedAccount && payloadAccountId && payloadAccountId !== expectedAccount) {
+    throw new Error("Backup account mismatch");
   }
 }
 
@@ -565,6 +572,8 @@ export async function exportIdentityPayload(userId = "default") {
   return {
     version: 2,
     username,
+    accountId: identityMeta.accountId || null,
+    displayName: identityMeta.displayName || username,
     identityId: identityMeta.identityId,
     repr: persisted.repr,
     digest: persisted.digest,
@@ -599,6 +608,14 @@ export async function encryptIdentityPayload(payload, password) {
   return {
     version: 2,
     username: normalizeKeyName(payload.username),
+    accountId: normalizeAccountId(payload.accountId) || null,
+    displayName:
+      normalizeDisplayName(payload.displayName || payload.username) ||
+      normalizeKeyName(payload.username),
+    accountIdScheme:
+      typeof payload.accountIdScheme === "string" && payload.accountIdScheme.trim()
+        ? payload.accountIdScheme.trim()
+        : null,
     identityId: normalizeKeyName(payload.identityId),
     ciphertextB64: abToB64(ciphertextAb),
     ivB64: abToB64(ivAb),
@@ -615,7 +632,8 @@ export async function decryptIdentityPayload(
   blob,
   password,
   expectedUsername = null,
-  expectedIdentityId = null
+  expectedIdentityId = null,
+  expectedAccountId = null
 ) {
   if (!blob || typeof blob !== "object") {
     throw new Error("Invalid encrypted backup");
@@ -628,6 +646,12 @@ export async function decryptIdentityPayload(
   }
   if (typeof blob.saltB64 !== "string" || !blob.saltB64) {
     throw new Error("Invalid encrypted backup salt");
+  }
+
+  const expectedAccount = normalizeAccountId(expectedAccountId || "");
+  const blobAccount = normalizeAccountId(blob.accountId);
+  if (expectedAccount && blobAccount && blobAccount !== expectedAccount) {
+    throw new Error("Backup account mismatch");
   }
 
   const saltAb = b64ToAb(blob.saltB64);
@@ -656,7 +680,8 @@ export async function decryptIdentityPayload(
   validateImportedPayload(
     payload,
     expectedUsername || blob.username || null,
-    expectedIdentityId || blob.identityId || null
+    expectedIdentityId || blob.identityId || null,
+    expectedAccountId || blob.accountId || null
   );
   return payload;
 }
@@ -664,9 +689,15 @@ export async function decryptIdentityPayload(
 export async function importIdentityPayload(
   payload,
   expectedUsername = null,
-  expectedIdentityId = null
+  expectedIdentityId = null,
+  expectedAccountId = null
 ) {
-  validateImportedPayload(payload, expectedUsername, expectedIdentityId);
+  validateImportedPayload(
+    payload,
+    expectedUsername,
+    expectedIdentityId,
+    expectedAccountId
+  );
 
   const username = normalizeKeyName(payload.username);
   await writePersistedForUser(username, {

@@ -763,6 +763,12 @@ const server = http.createServer((req, res) => {
           .filter((doc) => doc?.identityId)
           .map((doc) => ({
             identityId: doc.identityId,
+            accountId: normalizeAccountId(doc.accountId) || null,
+            displayName: normalizeDisplayName(doc.displayName || doc.username) || username,
+            accountIdScheme:
+              typeof doc.accountIdScheme === "string" && doc.accountIdScheme.trim()
+                ? doc.accountIdScheme.trim()
+                : null,
             createdAt: doc.createdAt || null,
             updatedAt: doc.updatedAt || null,
           }));
@@ -822,6 +828,13 @@ const server = http.createServer((req, res) => {
         return writeJson(res, 200, {
           ok: true,
           username: doc.username,
+          accountId: normalizeAccountId(doc.accountId) || null,
+          displayName:
+            normalizeDisplayName(doc.displayName || doc.username) || doc.username,
+          accountIdScheme:
+            typeof doc.accountIdScheme === "string" && doc.accountIdScheme.trim()
+              ? doc.accountIdScheme.trim()
+              : null,
           identityId: doc.identityId || null,
           version: doc.version,
           ciphertextB64: doc.ciphertextB64,
@@ -1169,9 +1182,11 @@ wss.on("connection", (ws) => {
       const requestId = typeof data.requestId === "string" ? data.requestId : null;
       const registeredUser = getSessionUser(ws);
       const registeredAccountId = getSessionAccountId(ws);
+      const registeredDisplayName = getSessionDisplayName(ws);
       const registeredIdentityId = getSessionIdentityId(ws);
       const username = normalizeUsername(data.username);
       const identityId = normalizeIdentityId(data.identityId);
+      const backupAccountId = normalizeAccountId(data.accountId);
 
       if (!registeredUser || !username || username !== registeredUser) {
         return sendJson(ws, {
@@ -1221,9 +1236,29 @@ wss.on("connection", (ws) => {
         });
       }
 
+      if (
+        backupAccountId &&
+        registeredAccountId &&
+        backupAccountId !== registeredAccountId
+      ) {
+        return sendJson(ws, {
+          type: "backup_saved",
+          ok: false,
+          requestId,
+          error: "Backup save failed",
+        });
+      }
+
       try {
         await saveIdentityBackup(username, {
-          accountId: registeredAccountId || null,
+          accountId: registeredAccountId || backupAccountId || null,
+          displayName:
+            normalizeDisplayName(data.displayName || registeredDisplayName) ||
+            username,
+          accountIdScheme:
+            typeof data.accountIdScheme === "string" && data.accountIdScheme.trim()
+              ? data.accountIdScheme.trim()
+              : null,
           identityId,
           version: Number(data.version || 2),
           ciphertextB64: data.ciphertextB64,
