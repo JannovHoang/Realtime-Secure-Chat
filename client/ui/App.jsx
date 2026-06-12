@@ -131,6 +131,10 @@ function AccountIdentityPanel({ info, helpers }) {
   );
 }
 
+function ModalNote({ tone = "info", children }) {
+  return <div className={`modal-note is-${tone}`}>{children}</div>;
+}
+
 function ModalFrame({ title, subtitle, children, actions, eyebrow = "Secure action" }) {
   return (
     <div className="modal-backdrop">
@@ -533,6 +537,11 @@ export default function App() {
               <PasswordVisibilityIcon visible={showBackupPassword} />
             </button>
           </label>
+          <ModalNote>
+            Save a backup after important chats and before switching devices. The
+            server stores an encrypted backup only; it cannot read your messages
+            or keys.
+          </ModalNote>
         </ModalFrame>
       ) : null}
 
@@ -566,7 +575,12 @@ export default function App() {
               </button>
             </>
           }
-        />
+        >
+          <ModalNote tone="warning">
+            Choose Continue only when you want to create a new local identity for
+            this display name on this browser.
+          </ModalNote>
+        </ModalFrame>
       ) : null}
 
       {state.modal?.type === "backup_freshness_warning" ? (
@@ -602,7 +616,55 @@ export default function App() {
               </button>
             </>
           }
-        />
+        >
+          <ModalNote tone="warning">
+            Starting from an older local vault can desynchronize secure chat
+            state. Restore first if you recently used this account on another
+            browser or phone.
+          </ModalNote>
+        </ModalFrame>
+      ) : null}
+
+      {state.modal?.type === "restore_overwrite_confirm" ? (
+        <ModalFrame
+          title="Replace Local Identity?"
+          subtitle={`Restore will replace the local identity stored for ${state.modal.username}.`}
+          eyebrow="Restore safety"
+          actions={
+            <>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleRestoreOverwriteConfirm("cancel")}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => void actions.handleRestoreOverwriteConfirm("continue")}
+              >
+                Restore and Replace
+              </button>
+            </>
+          }
+        >
+          <div className="identity-compare">
+            <div>
+              <span>Current local identity</span>
+              <strong>{state.modal.localIdentityShort || "unknown"}</strong>
+            </div>
+            <div>
+              <span>Cloud backup identity</span>
+              <strong>{state.modal.targetIdentityShort || "unknown"}</strong>
+            </div>
+          </div>
+          <ModalNote tone={state.modal.sameIdentity ? "info" : "warning"}>
+            {state.modal.sameIdentity
+              ? "This appears to be the same identity. Restore will refresh this browser with the cloud backup state."
+              : "This browser currently has a different identity for the same display name. Continue only if you intend to replace the local vault identity."}
+          </ModalNote>
+        </ModalFrame>
       ) : null}
 
       {state.modal?.type === "restore_choice" ? (

@@ -66,6 +66,7 @@ const initialState = {
   modal: null,
   backupPasswordInput: "",
   pendingRestore: null,
+  pendingRestoreOverwrite: null,
   pendingStartWarning: null,
   toasts: [],
 };
@@ -459,6 +460,8 @@ function reducer(state, action) {
       return { ...state, backupPasswordInput: action.value };
     case "set_pending_restore":
       return { ...state, pendingRestore: action.value };
+    case "set_pending_restore_overwrite":
+      return { ...state, pendingRestoreOverwrite: action.value };
     case "set_pending_start_warning":
       return { ...state, pendingStartWarning: action.value };
     case "restore_success":
@@ -951,7 +954,12 @@ export function useChatApp() {
     }
   }
 
-  async function completeRestore(identityId, usernameArg = null, passwordArg = null) {
+  async function completeRestore(
+    identityId,
+    usernameArg = null,
+    passwordArg = null,
+    options = {}
+  ) {
     const username = String(usernameArg || state.username || "").trim();
     const password = String(passwordArg || state.password || "");
 
@@ -976,20 +984,35 @@ export function useChatApp() {
       if (hasLocalVault) {
         localIdentityMeta = await inspectPersistedLocalIdentity(username, password);
       }
-      if (hasLocalVault) {
-        const confirmMessage = buildRestoreOverwriteMessage(
-          username,
-          localIdentityMeta,
-          payload
-        );
-        const confirmed = window.confirm(confirmMessage);
-        if (!confirmed) {
-          dispatch({ type: "set_status", message: "Restore cancelled", tone: "info" });
-          dispatch({ type: "restore_end" });
-          dispatch({ type: "close_modal" });
-          dispatch({ type: "set_pending_restore", value: null });
-          return;
-        }
+      if (hasLocalVault && !options.skipOverwriteConfirm) {
+        dispatch({
+          type: "set_pending_restore_overwrite",
+          value: {
+            username,
+            password,
+            identityId,
+            localIdentityShort: formatIdentityShort(localIdentityMeta?.identityId),
+            targetIdentityShort: formatIdentityShort(payload.identityId),
+            sameIdentity:
+              !!localIdentityMeta?.identityId &&
+              localIdentityMeta.identityId === payload.identityId,
+          },
+        });
+        dispatch({ type: "restore_end" });
+        dispatch({ type: "close_modal" });
+        dispatch({
+          type: "open_modal",
+          modal: {
+            type: "restore_overwrite_confirm",
+            username,
+            localIdentityShort: formatIdentityShort(localIdentityMeta?.identityId),
+            targetIdentityShort: formatIdentityShort(payload.identityId),
+            sameIdentity:
+              !!localIdentityMeta?.identityId &&
+              localIdentityMeta.identityId === payload.identityId,
+          },
+        });
+        return;
       }
 
       await importIdentityPayload(payload, username, identityId, account.accountId);
@@ -1016,14 +1039,40 @@ export function useChatApp() {
       dispatch({ type: "restore_end" });
       dispatch({ type: "close_modal" });
       dispatch({ type: "set_pending_restore", value: null });
+      dispatch({ type: "set_pending_restore_overwrite", value: null });
       pushToast("Backup restored. Enter password and press Start.", "success");
     } catch (err) {
       dispatch({ type: "set_status", message: "Restore failed", tone: "error" });
       dispatch({ type: "restore_end" });
       dispatch({ type: "close_modal" });
       dispatch({ type: "set_pending_restore", value: null });
+      dispatch({ type: "set_pending_restore_overwrite", value: null });
       pushToast("Restore failed. Check your display name, password, or backup availability.", "error");
     }
+  }
+
+  async function handleRestoreOverwriteConfirm(choice) {
+    const pending = state.pendingRestoreOverwrite;
+    if (choice !== "continue") {
+      dispatch({ type: "set_pending_restore_overwrite", value: null });
+      dispatch({ type: "close_modal" });
+      dispatch({ type: "set_status", message: "Restore cancelled", tone: "info" });
+      return;
+    }
+
+    if (!pending?.username || !pending?.password || !pending?.identityId) {
+      dispatch({ type: "set_pending_restore_overwrite", value: null });
+      dispatch({ type: "close_modal" });
+      dispatch({ type: "set_status", message: "Restore failed", tone: "error" });
+      pushToast("Restore failed. Please try again.", "error");
+      return;
+    }
+
+    dispatch({ type: "close_modal" });
+    dispatch({ type: "restore_begin" });
+    await completeRestore(pending.identityId, pending.username, pending.password, {
+      skipOverwriteConfirm: true,
+    });
   }
 
   async function confirmRestoreChoice(identityId) {
@@ -1091,6 +1140,7 @@ export function useChatApp() {
       cancelRestoreChoice,
       handleStartGuard,
       handleBackupFreshnessWarning,
+      handleRestoreOverwriteConfirm,
     },
   };
 }

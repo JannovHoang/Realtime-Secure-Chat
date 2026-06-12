@@ -964,6 +964,57 @@ button.secondary:hover {
   box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.12);
 }
 
+.modal-note {
+  margin-top: 14px;
+  padding: 12px 13px;
+  border: 1px solid rgba(43, 89, 217, 0.14);
+  border-radius: 16px;
+  background: rgba(239, 246, 255, 0.74);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.modal-note.is-warning {
+  border-color: rgba(154, 103, 0, 0.2);
+  background: rgba(254, 243, 199, 0.5);
+  color: #7c4a03;
+}
+
+.identity-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.identity-compare div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(248, 251, 255, 0.82);
+}
+
+.identity-compare span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.identity-compare strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .modal-actions {
   margin-top: 20px;
   display: flex;

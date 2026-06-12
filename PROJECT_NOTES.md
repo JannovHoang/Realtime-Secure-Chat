@@ -5694,3 +5694,61 @@ Checkpoint 3 test expectation:
 - Restore from Cloud still succeeds and fills the panel with restored identity metadata
 - warning modal from Checkpoint 2A still appears before risky Start attempts
 - no secret key material or full backup payload is shown in the UI
+
+### Account ID Hardening - Checkpoint 4: Backup/Restore UX Safety
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make backup/restore decisions clearer before users switch devices
+- remove browser-native restore overwrite confirmation and replace it with an app-owned modal
+- reduce accidental restore/start choices that can desynchronize Double Ratchet state
+
+Changes:
+
+- replaced `window.confirm(...)` during restore overwrite with a React modal
+- the restore overwrite modal shows:
+  - current local identity short id
+  - cloud backup identity short id
+  - clear warning when the cloud backup identity differs from the local identity
+- restore overwrite now requires an explicit `Restore and Replace` action
+- added short safety notes to:
+  - Backup to Cloud modal
+  - Start Confirmation modal
+  - Backup Freshness warning modal
+- the safety copy explains when to backup, when to restore, and why `Start anyway` can be risky after device switching
+
+Important scope note:
+
+- this checkpoint does not change backup encryption
+- this checkpoint does not change cloud backup payload shape
+- this checkpoint does not change accountId derivation
+- this checkpoint does not change server routing, Mongo schema, WebSocket protocol, or Double Ratchet logic
+- password handling is not made worse; the existing restore flow already keeps restore password in React state while completing restore
+- no private keys, full vault payload, backup password, or plaintext history is displayed in the modal
+
+Expected behavior:
+
+- Backup to Cloud still opens the password modal and saves backup when the password is correct
+- Restore from Cloud still works for one-backup and multi-backup display names
+- restoring over an existing local vault now opens an app-styled confirmation modal instead of a browser popup
+- Cancel on the overwrite modal cancels restore without replacing the local vault
+- Restore and Replace proceeds with restore and then requires Start as before
+- Checkpoint 2A risky Start modal still appears before starting from a potentially stale local vault
+
+Checkpoint 4 test expectation:
+
+- app builds successfully
+- Alice/new clean user realtime chat still works
+- Backup to Cloud still succeeds
+- Restore from Cloud into a browser with no local vault still succeeds without overwrite modal
+- Restore from Cloud into a browser that already has a local vault opens the overwrite modal
+- cancelling overwrite leaves local chat usable
+- confirming overwrite restores the selected cloud identity and preserves the existing restore-then-Start flow
+- no secret material is shown in any backup/restore safety modal
