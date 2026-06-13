@@ -6693,3 +6693,226 @@ Checkpoint 5 test expectation:
 - documentation clearly states Firebase cannot recover lost E2EE keys
 - documentation clearly states Firebase does not solve multi-device ratchet sync
 - documentation records implementation guardrails for the later coding phase
+
+### Firebase Auth Planning - Checkpoint 6: Implementation Plan For Firebase Auth Foundation
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- convert the Firebase Auth planning decisions into a concrete coding roadmap for the next phase
+- keep the future implementation incremental and testable
+- avoid mixing Google sign-in, backend verification, backup migration, and UI cleanup into one risky change
+
+Recommended next coding branch:
+
+- `feature/firebase-auth-foundation`
+
+Preconditions before coding:
+
+- create or choose a Firebase project
+- enable Firebase Authentication
+- enable Google provider
+- Firebase Console checklist:
+  - Authentication -> Sign-in method -> Google -> Enable
+  - Authentication -> Settings -> Authorized domains
+  - add `chat.securechat.id.vn`
+  - add `localhost` if local auth testing is needed
+- add authorized domains:
+  - `chat.securechat.id.vn`
+  - `localhost` if local auth testing is needed
+- decide where server-side Firebase Admin credentials will live
+- do not commit Firebase Admin/service-account credentials
+- keep named Cloudflare Tunnel working before changing auth flow
+
+Auth mode feature flag:
+
+- future implementation should use an explicit auth mode flag, for example:
+  - `AUTH_MODE=legacy`
+  - `AUTH_MODE=firebase_optional`
+  - `AUTH_MODE=firebase_required`
+- recommended first implementation value:
+  - `AUTH_MODE=firebase_optional`
+- expected behavior:
+  - without Firebase login, legacy/local mode can still run
+  - with Firebase login, server uses verified `firebaseUid`
+  - if Firebase config is absent or disabled, app should not crash
+  - `firebase_required` should only be considered after Firebase paths are stable
+
+Coding phase checkpoint 0 - Baseline:
+
+- create the new implementation branch
+- run current regression:
+  - `npm start`
+  - named tunnel smoke
+  - realtime chat
+  - offline pending
+  - backup/restore
+  - device-switch warning
+- confirm current legacy/local mode still works before Firebase code starts
+
+Coding phase checkpoint 1 - Firebase Client Setup:
+
+- add Firebase client dependency/config loading
+- create a small client auth adapter, for example:
+  - `client/auth/firebaseClient.js`
+  - `getCurrentUser`
+  - `signInWithGoogle`
+  - `signOut`
+  - `getIdToken`
+- prefer environment/config injection rather than hard-coding project values throughout UI code
+- do not add Firebase Admin credentials to the frontend
+- make the difference explicit:
+  - Firebase client config can exist in frontend config
+  - Firebase Admin/service-account credentials must remain server-side only
+  - service account private keys must not be committed to Git
+- if Firebase config is absent/disabled:
+  - app should keep legacy mode working when `AUTH_MODE=firebase_optional`
+  - Google sign-in UI should be hidden or show a clear `Firebase auth disabled` state
+- test:
+  - app still builds
+  - legacy mode still works if Firebase config is absent or disabled
+
+Coding phase checkpoint 2 - Auth UI Shell:
+
+- add a minimal `Sign in with Google` UI state
+- show signed-in account profile summary after sign-in
+- do not auto-start chat after sign-in
+- keep Restore/Create/Start decisions explicit
+- first implementation can use `signInWithPopup`
+- mobile redirect can be deferred if popup is reliable enough for demo
+- decide auth persistence explicitly:
+  - Firebase signed-in state may persist across browser reloads
+  - persisted Firebase sign-in must not auto-open the local vault
+  - persisted Firebase sign-in must not auto-start chat
+- sign out must:
+  - close or unregister the current authenticated WebSocket/session
+  - stop/destroy active chat runtime
+  - return UI to signed-out account state
+  - not delete local vault by default
+- test:
+  - sign in on desktop domain
+  - sign out closes account session UI and active WebSocket/session
+  - local vault is not deleted on sign out
+  - existing chat flows are not opened automatically by sign-in
+  - refresh after sign-in keeps account auth state if persistence allows, but chat remains locked/not-started until vault Start/Restore
+
+Coding phase checkpoint 3 - Server Token Verification:
+
+- add Firebase Admin SDK on the server
+- add a verifier helper, for example:
+  - `server/auth/firebaseAdmin.js`
+  - `verifyFirebaseIdToken(token)`
+- server must derive `firebaseUid` from verified token claims
+- server must not trust client-sent uid/accountId in Firebase mode
+- MVP token lifecycle:
+  - client requests a fresh ID token immediately before authenticated WebSocket register
+  - if server rejects expired/invalid token, client should sign out or ask the user to sign in again
+  - deeper token refresh/re-auth during long-lived sockets can be a follow-up
+- keep legacy mode available for migration
+- test:
+  - missing token returns/produces auth-required behavior on authenticated path
+  - invalid token fails safely
+  - legacy mode still works when Firebase mode is not used
+
+Coding phase checkpoint 4 - Authenticated WebSocket Register:
+
+- extend WebSocket register to optionally include Firebase ID token
+- verify token before binding socket to Firebase account
+- session metadata should include:
+  - auth mode
+  - verified firebaseUid when present
+  - canonical account id, preferably namespaced during migration such as `firebase:<uid>`
+  - display metadata
+  - active identityId
+- active-session replacement should prefer verified account identity when present
+- test:
+  - Firebase signed-in user can Start
+  - second login for same account replaces active session predictably
+  - legacy users still work during migration
+  - no plaintext message behavior changes
+
+Coding phase checkpoint 5 - Firebase-Aware Backup Ownership:
+
+- add Firebase-aware backup metadata fields additively
+- new Firebase-mode backups should store verified `firebaseUid`
+- backup save should reject mismatched client-provided owner metadata
+- client must not decide backup owner in Firebase mode
+- server should set or verify owner metadata from verified `firebaseUid`
+- backup list/fetch should scope to verified Firebase account when authenticated
+- legacy backup restore remains available through explicit compatibility path
+- test:
+  - Firebase account cannot list another account's backups
+  - legacy backup still restores through legacy path
+  - new Firebase backup restores on another browser after sign-in
+  - encrypted payload remains encrypted
+
+Coding phase checkpoint 6 - Legacy Backup Linking UX:
+
+- design and implement explicit legacy backup linking only if needed
+- linking requires:
+  - signed-in Firebase account
+  - explicit legacy backup selection
+  - successful local decrypt with password
+  - explicit confirmation
+- do not auto-link by displayName
+- test:
+  - cancel leaves backup unlinked
+  - wrong password does not link
+  - confirmed link associates backup with verified account metadata only after decrypt succeeds
+
+Coding phase checkpoint 7 - Regression And Demo Update:
+
+- run full regression:
+  - Firebase sign-in
+  - sign-out
+  - local vault still requires Start/password
+  - realtime chat
+  - offline pending
+  - backup/restore
+  - device-switch warning
+  - legacy fallback
+  - mobile/domain smoke
+  - duplicate displayName across different Firebase accounts
+  - sign out does not leave an authenticated socket active
+  - Firebase sign-in persistence does not auto-unlock local vault
+- update `DEMO_SCRIPT.md` and `PROJECT_NOTES.md`
+- document what is now real auth and what remains transitional
+
+Recommended implementation order:
+
+1. Client Firebase setup
+2. Auth UI shell
+3. Server token verification
+4. Authenticated WebSocket register
+5. Firebase-aware backup ownership
+6. Legacy backup linking if needed
+7. Regression/docs
+
+Hard stop rules:
+
+- stop if Google sign-in works but legacy chat breaks
+- stop if WebSocket auth breaks quick tunnel/named domain smoke
+- stop if Firebase token is trusted without backend verification
+- stop if backup/restore can cross account boundaries
+- stop if the UI implies Google login restores E2EE keys automatically
+- stop if sign out leaves an authenticated WebSocket/session active
+- stop if Firebase login automatically opens a local vault without Start/password
+
+Important non-goals for the first coding phase:
+
+- no full multi-device Double Ratchet sync
+- no automatic cloud sync of all conversation history
+- no server plaintext access
+- no deletion of legacy fallback until tested
+- no migration that rewrites all old backup records in place
+
+Checkpoint 6 test expectation:
+
+- no runtime behavior changes
+- documentation gives a concrete checkpoint-by-checkpoint coding roadmap
+- roadmap starts with Firebase setup but delays risky backup migration until backend verification exists
+- roadmap preserves legacy fallback during initial implementation
+- roadmap includes regression and demo update steps
