@@ -6159,3 +6159,138 @@ Checkpoint 2 test expectation:
 - documentation clearly states a new browser still needs Restore from Cloud or Create New Identity
 - documentation records popup-first as the initial implementation preference
 - documentation includes authorized domain planning for `chat.securechat.id.vn` and `localhost`
+
+### Firebase Auth Planning - Checkpoint 2.5: Auth Session And Identity State Design
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- separate Firebase auth session state from local E2EE identity state
+- define how the future UI should behave when Firebase session, vault state, and chat runtime state do not match
+- prevent future code from treating a signed-in Google session as an unlocked chat session
+
+State layers:
+
+1. Auth session state:
+   - controlled by Firebase Auth
+   - answers whether a user is signed in and which verified account owns the session
+   - example values:
+     - `auth_loading`
+     - `signed_out`
+     - `signed_in`
+     - `auth_error`
+
+2. Local identity/vault state:
+   - controlled by browser-local storage and the user's vault password
+   - answers whether this browser has the cryptographic identity needed for E2EE
+   - example values:
+     - `unknown`
+     - `no_local_vault`
+     - `local_vault_exists`
+     - `restore_ready`
+     - `identity_started`
+     - `identity_locked`
+
+3. Chat runtime state:
+   - controlled by `client/chat.js`, WebSocket, certificates, and Double Ratchet state
+   - answers whether this browser currently has an active secure chat runtime
+   - example values:
+     - `not_started`
+     - `starting`
+     - `ready`
+     - `disconnected`
+     - `forced_logout`
+
+Key rule:
+
+- Firebase `signed_in` is necessary for future authenticated account ownership
+- Firebase `signed_in` is not sufficient for E2EE chat
+- E2EE chat requires a usable local identity/vault and a started chat runtime
+
+Expected state combinations:
+
+- `signed_out` + any local vault:
+  - do not open authenticated chat
+  - local vault may remain on disk/browser storage
+  - user can sign in again later without deleting local vault
+- `signed_in` + `no_local_vault`:
+  - show Restore/Create identity choices
+  - do not show normal chat composer
+- `signed_in` + `local_vault_exists` + `not_started`:
+  - allow Start after password/device-switch checks
+- `signed_in` + `restore_ready`:
+  - require Start before chat opens
+- `signed_in` + `identity_started` + `ready`:
+  - show normal chat UI
+- `signed_in` + `identity_started` + `disconnected`:
+  - allow reconnect/start flow without implying auth failed
+- `auth_error` + active chat:
+  - future implementation should close or pause authenticated WebSocket use safely
+  - do not delete local vault automatically
+
+Firebase persistence design:
+
+- Firebase Web Auth may persist signed-in state across browser restarts
+- restoring Firebase auth persistence must not auto-unlock the local vault
+- after page reload:
+  - Firebase may restore `signed_in`
+  - UI must still check local vault availability
+  - user may still need to enter vault password and press Start
+
+Token refresh / expiration design:
+
+- future WebSocket auth should use a Firebase ID token
+- ID tokens can expire and be refreshed by Firebase client SDK
+- if WebSocket reconnects:
+  - client should request a fresh ID token
+  - server should verify the new token
+  - server should derive account identity from verified token claims, not from client-provided accountId
+- if token refresh fails:
+  - close or pause authenticated chat session
+  - keep local vault intact
+  - ask user to sign in again
+
+Logout design:
+
+- `Sign out` from Firebase should:
+  - close authenticated WebSocket session
+  - stop/destroy active chat runtime
+  - clear transient UI/session state
+  - not delete the browser local vault by default
+- `Delete local identity/vault` should be a separate destructive action:
+  - explicit label
+  - confirmation modal
+  - clear explanation that cloud backup is needed to recover later
+
+Device switching design:
+
+- signing into Google on a second device proves account ownership only
+- the second device still needs Restore from Cloud or Create New Identity
+- if the device has an old local vault, existing freshness warnings should still run before Start
+- Start anyway should remain possible only as an explicit risky action, not as the default path
+
+Future UI implication:
+
+- topbar should eventually show two statuses:
+  - account/auth status, such as `Signed in`
+  - secure identity/session status, such as `Restore needed`, `Ready`, or `Disconnected`
+- this avoids misleading the user into thinking Google sign-in means secure chat state is ready
+
+Important non-goals for this checkpoint:
+
+- no Firebase Auth persistence code
+- no token refresh implementation
+- no WebSocket auth implementation
+- no local vault deletion feature
+- no UI implementation
+
+Checkpoint 2.5 test expectation:
+
+- no runtime behavior changes
+- documentation clearly separates auth session state, local vault state, and chat runtime state
+- documentation states Firebase persistence must not auto-unlock local vault
+- documentation states sign-out must not delete local vault by default
+- documentation states token refresh/reconnect must use freshly verified ID tokens in the future
