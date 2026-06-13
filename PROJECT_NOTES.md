@@ -5922,3 +5922,113 @@ Checkpoint 0 test expectation:
 - no code behavior changes
 - documentation clearly says `accountId` is transitional and not real authentication
 - documentation clearly separates Firebase account auth from local E2EE identity/vault state
+
+### Firebase Auth Planning - Checkpoint 1: Firebase Account Model Design
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- define the account and identity model that a later Firebase implementation should follow
+- prevent future code from using display names as trusted account identifiers
+- keep legacy fallback explicit so existing demo data remains understandable during migration
+
+Canonical model after Firebase:
+
+- `firebaseUid` is the trusted account owner id after Firebase token verification
+- `displayName` is a human-readable label only
+- `identityId` is the cryptographic identity id derived from the long-term public key
+- `email` is optional account profile information and must not be used as a primary key
+- local `accountId` remains the transitional id only while the app is in legacy/local mode
+
+Account identifier rules:
+
+- when Firebase is signed in and the backend has verified the ID token:
+  - canonical account id = `firebaseUid`
+  - server routing and ownership decisions should use the verified `firebaseUid`
+  - server must not trust a client-provided `accountId`
+- when Firebase is not enabled or the app runs in legacy demo mode:
+  - canonical account id = current transitional local `accountId`
+  - legacy username/display-name fallback remains available
+  - the fallback must be documented as transitional, not real authentication
+
+Display name rules:
+
+- display names can be duplicated
+- display names can change in a future UI
+- display names are acceptable for search/display labels
+- display names must not be used as the long-term ownership key after Firebase exists
+- existing username-oriented code can remain as a compatibility layer until Firebase-backed paths are implemented and tested
+
+Identity rules:
+
+- one Firebase account can have one or more cryptographic identities over time
+- one identity is represented by `identityId`
+- `identityId` remains necessary for:
+  - choosing the correct cloud backup
+  - avoiding restore into the wrong local identity
+  - routing to the active device identity
+  - explaining why Google login alone does not restore E2EE state
+- Firebase must not replace the `identityId` concept
+
+Backup ownership model:
+
+- future Firebase-era backups should be scoped by:
+  - verified `firebaseUid`
+  - `identityId`
+  - backup metadata timestamps
+- display name should remain metadata only
+- legacy backups without `firebaseUid` must remain restorable through explicit legacy fallback
+- legacy backups should not be automatically linked to a Firebase account just because display names match
+- linking a legacy backup to a Firebase account should require:
+  - user is signed in with Firebase
+  - user enters the correct backup/vault password
+  - user explicitly confirms linking
+
+Data model contract:
+
+- `canonicalAccountId`:
+  - `firebaseUid` when Firebase auth is active and verified
+  - transitional local `accountId` in legacy/local mode
+- `senderAccountId` / `recipientAccountId`:
+  - should become verified Firebase account ids in authenticated paths
+  - can keep transitional account ids in legacy paths
+- `senderIdentityId` / `recipientIdentityId`:
+  - remain cryptographic identity ids
+  - should not be replaced by Firebase ids
+- `displayName`:
+  - UI label only
+  - safe to show
+  - unsafe as a unique account key
+- `email`:
+  - optional UI/account profile metadata
+  - not a primary key
+  - should not be used for routing or backup ownership
+
+Migration stance:
+
+- do not remove current username/accountId fallback in the first Firebase coding phase
+- add Firebase fields additively first
+- prefer dual-read paths during migration:
+  - Firebase-aware lookup when `firebaseUid` is available
+  - legacy lookup when old records do not have Firebase metadata
+- only tighten or remove fallback after Firebase-backed backup, restore, routing, and regression tests are stable
+
+Important scope note:
+
+- this checkpoint is documentation only
+- no Firebase SDK was added
+- no server auth verification was added
+- no MongoDB schema changed
+- no React UI changed
+- no backup payload changed
+
+Checkpoint 1 test expectation:
+
+- no runtime behavior changes
+- documentation clearly states `firebaseUid` is the future trusted account id
+- documentation clearly states `displayName` is not a primary key
+- documentation clearly keeps `identityId` separate from Firebase account identity
+- documentation explicitly rejects auto-linking legacy backups by display name alone
