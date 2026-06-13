@@ -6572,3 +6572,124 @@ Checkpoint 4 test expectation:
 - documentation clearly states legacy backups remain restorable
 - documentation clearly rejects auto-linking legacy backups by displayName alone
 - documentation keeps backup encryption and Firebase account ownership as separate concerns
+
+### Firebase Auth Planning - Checkpoint 5: Threat Model / Safety Notes
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- define what Firebase Auth improves and what risks remain in an E2EE chat system
+- prevent future implementation from weakening the existing crypto/vault model
+- give clear explanations for demo/report questions about authentication vs encryption
+
+Assets to protect:
+
+- plaintext chat messages
+- long-term identity private keys
+- Double Ratchet state
+- encrypted local vault contents
+- backup password
+- encrypted cloud backup payloads
+- Firebase Admin/server credentials
+- WebSocket session ownership
+- backup ownership metadata
+
+Threats Firebase helps reduce:
+
+- two people claiming the same display name as an account owner
+- client forging account ownership by typing a different display name
+- server relying only on locally derived transitional accountId
+- accidental backup listing/fetching by displayName alone
+- weak account identity in future multi-device/account UX
+
+Threats Firebase does not solve:
+
+- compromised browser/device after vault is unlocked
+- lost local vault with no usable cloud backup
+- forgotten backup/vault password
+- stale Double Ratchet state after unsafe device switching
+- full multi-device Double Ratchet synchronization
+- malicious or buggy frontend code after the user is already signed in
+- users choosing `Start anyway` from an outdated local vault
+
+E2EE boundary:
+
+- Firebase Auth proves account ownership
+- Firebase Auth does not decrypt messages
+- Firebase Auth does not recover E2EE private keys
+- Firebase Auth does not prove a browser has the latest ratchet state
+- server should still only store ciphertext and metadata needed for routing, backup, and delivery
+- backup encryption must remain client-side
+
+Key safety statement:
+
+- signing in with Google/Firebase proves who owns the account
+- it does not prove this browser has the right local vault
+- it does not prove this browser has the newest Double Ratchet state
+- it does not let the server read plaintext
+
+Server trust boundary:
+
+- server may trust `decodedToken.uid` only after verifying the Firebase ID token
+- server must not trust client-sent `firebaseUid`, `accountId`, email, or displayName as ownership proof
+- server must not expose Firebase Admin credentials to the browser
+- server must not persist raw ID tokens unnecessarily
+
+Backup safety:
+
+- cloud backup remains encrypted
+- server-side ownership checks should prevent cross-account backup access
+- password-based decryption remains client-side
+- if a user loses both local vault and cloud backup/password, Firebase cannot recover the E2EE identity
+- legacy backup linking must be explicit because displayName is not a reliable ownership proof
+
+Device-switching safety:
+
+- Firebase login on a new device should not auto-start chat
+- a new device should restore the latest cloud backup or create a new identity explicitly
+- freshness warnings should remain even after Firebase Auth exists
+- Start anyway remains a risky action, not the normal path
+
+Implementation guardrails:
+
+- do not replace `identityId` with `firebaseUid`
+- do not route encrypted messages by displayName as the long-term design
+- do not let Firebase Auth bypass backup freshness warnings
+- do not store backup passwords on the server
+- do not place Firebase Admin/service-account credentials in frontend files
+- do not claim Firebase gives multi-device E2EE sync
+- do not remove legacy fallback until Firebase paths are fully tested
+
+Residual risks after Firebase:
+
+- if a browser is compromised, an attacker may interact with whatever that browser can access
+- if the user restores an old backup and chooses Start anyway, state can still desynchronize
+- if backup password is weak or reused, encrypted backup security depends on password strength and KDF parameters
+- if server auth verification is implemented incorrectly, account ownership checks can be bypassed
+- if legacy fallback remains too permissive, old username/displayName paths can remain a source of ambiguity
+
+Demo/report explanation:
+
+- "Firebase handles account login. The encryption layer is separate."
+- "The server can verify which account is signed in, but it still cannot read messages."
+- "A signed-in account still needs a local vault or restored backup to continue E2EE chat."
+- "If the local vault is deleted and no backup exists, Firebase cannot recreate the private keys."
+
+Important non-goals for this checkpoint:
+
+- no code changes
+- no Firebase setup
+- no new security mechanism implementation
+- no crypto parameter changes
+- no server auth middleware
+
+Checkpoint 5 test expectation:
+
+- no runtime behavior changes
+- documentation clearly separates authentication security from E2EE security
+- documentation clearly states Firebase cannot recover lost E2EE keys
+- documentation clearly states Firebase does not solve multi-device ratchet sync
+- documentation records implementation guardrails for the later coding phase
