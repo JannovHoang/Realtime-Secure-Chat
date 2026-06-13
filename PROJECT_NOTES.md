@@ -6422,3 +6422,153 @@ Checkpoint 3 test expectation:
 - documentation clearly says server must ignore unverified client-provided uid/accountId
 - documentation keeps `identityId` separate from Firebase uid
 - documentation preserves legacy fallback only as transitional migration behavior
+
+### Firebase Auth Planning - Checkpoint 4: Backup/Restore Migration Design
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- design how encrypted backup and restore should migrate from display-name/transitional account ids to Firebase-backed account ownership
+- preserve old backups while preventing accidental cross-account restore/linking
+- keep E2EE boundaries intact: server stores encrypted backup blobs but does not read vault secrets
+
+Current backup model recap:
+
+- backups are stored in `identity_backups`
+- backup payloads are encrypted client-side
+- backup metadata currently includes username/display name, transitional accountId, identityId, backup version, and backup timestamps
+- restore can select between multiple identities under the same display name
+- freshness warnings use backup metadata to reduce stale-device Start risk
+
+Future Firebase-era backup identity:
+
+- new backups should be associated with:
+  - verified `firebaseUid`
+  - `identityId`
+  - display/profile metadata
+  - backup schema version
+  - server-side save timestamp
+- `firebaseUid` proves account ownership only after backend token verification
+- `identityId` continues to identify the cryptographic identity inside the account
+- displayName remains metadata and must not be used as the ownership key
+
+Proposed backup metadata fields:
+
+- `firebaseUid`:
+  - set for backups created in authenticated Firebase mode
+  - null or missing for legacy backups
+- `legacyAccountId`:
+  - current transitional account id, retained for migration/debugging
+- `displayName`:
+  - UI label only
+- `identityId`:
+  - cryptographic identity id
+- `backupSchemaVersion`:
+  - version marker for backup metadata contract
+- `clientSavedAt`:
+  - client-side timestamp, informational
+- `serverSavedAt`:
+  - server-side timestamp, preferred for freshness comparison
+- `linkedAt`:
+  - optional timestamp when a legacy backup is explicitly linked to a Firebase account
+- `linkedFromLegacy`:
+  - optional boolean/metadata flag for migrated legacy backups
+
+Backup save rules after Firebase:
+
+- if Firebase mode is active:
+  - server verifies token
+  - server derives `firebaseUid`
+  - server stores backup under verified `firebaseUid + identityId`
+  - server should reject or ignore any mismatching client-supplied account owner fields
+- if legacy mode is active:
+  - server may continue using current transitional accountId/displayName metadata
+  - records should remain clearly marked as legacy/transitional
+- backup overwrite/upsert should be scoped by verified owner and identity:
+  - Firebase mode: `firebaseUid + identityId`
+  - legacy mode: existing legacy key rules
+
+Restore list rules after Firebase:
+
+- authenticated Firebase restore should list backups for the verified `firebaseUid`
+- legacy backups should not be mixed silently with Firebase-owned backups
+- UI may show a separate section such as `Legacy backups`
+- if multiple identities exist, restore selector must remain explicit
+- restore selector should show enough non-secret metadata:
+  - identity short id
+  - display label
+  - saved time
+  - legacy/Firebase-owned status
+
+Legacy backup linking rule:
+
+- do not auto-link a legacy backup to a Firebase account based only on displayName
+- linking a legacy backup should require:
+  - user is signed in with Firebase
+  - user chooses a specific legacy backup identity
+  - user enters the correct restore/vault password
+  - client successfully decrypts the backup locally
+  - user confirms linking this identity to the current Firebase account
+- only after those checks should metadata be updated to associate that backup with the verified `firebaseUid`
+
+Restore overwrite rules:
+
+- restoring into a browser with no local vault:
+  - allow restore after password decrypt succeeds
+- restoring into a browser with an existing local vault:
+  - keep explicit overwrite confirmation
+  - show current local identity short id
+  - show cloud backup identity short id
+  - do not overwrite silently
+- restoring a Firebase-owned backup while signed into a different Firebase account:
+  - server should reject before returning the backup
+- restoring a legacy backup:
+  - UI should make legacy status visible
+  - optional linking to current Firebase account must be explicit
+
+Freshness warning after Firebase:
+
+- freshness comparison should prefer `serverSavedAt`
+- Firebase-owned backups should compare only within the same verified `firebaseUid + identityId`
+- legacy backups should keep current fallback behavior until migrated
+- a signed-in Firebase session must not suppress freshness warnings
+- device-switch warnings still matter because Firebase does not sync Double Ratchet state
+
+Mongo migration stance:
+
+- add fields additively first
+- do not delete or rewrite existing backup records in the first Firebase coding phase
+- add indexes only after deciding final query patterns
+- likely future indexes:
+  - `{ firebaseUid: 1, identityId: 1 }`
+  - `{ legacyAccountId: 1, identityId: 1 }`
+  - `{ displayName: 1, identityId: 1 }` only as legacy/support lookup
+- legacy fields should remain readable while old demo identities exist
+
+Security and privacy notes:
+
+- backup payload remains encrypted client-side
+- server should never receive backup password
+- server should never decrypt vault state
+- Firebase auth changes backup ownership checks, not backup encryption
+- losing local vault without a valid cloud backup still means E2EE identity may be unrecoverable
+
+Important non-goals for this checkpoint:
+
+- no schema migration
+- no new MongoDB indexes
+- no backup API changes
+- no restore UI changes
+- no Firebase token verification code
+- no legacy-link implementation
+
+Checkpoint 4 test expectation:
+
+- no runtime behavior changes
+- documentation clearly states future backups should scope by verified `firebaseUid + identityId`
+- documentation clearly states legacy backups remain restorable
+- documentation clearly rejects auto-linking legacy backups by displayName alone
+- documentation keeps backup encryption and Firebase account ownership as separate concerns
