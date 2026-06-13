@@ -6294,3 +6294,131 @@ Checkpoint 2.5 test expectation:
 - documentation states Firebase persistence must not auto-unlock local vault
 - documentation states sign-out must not delete local vault by default
 - documentation states token refresh/reconnect must use freshly verified ID tokens in the future
+
+### Firebase Auth Planning - Checkpoint 3: Backend Auth Boundary Design
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- define the backend security boundary for future Firebase Auth implementation
+- ensure the server trusts only Firebase ID tokens that it verifies itself
+- keep legacy/local demo mode explicit during migration
+
+Core backend rule:
+
+- client-provided `firebaseUid`, `accountId`, `email`, or display name must not be trusted as proof of account ownership
+- the client may send a Firebase ID token
+- the server must verify that token using Firebase Admin SDK or an equivalent trusted backend verifier
+- only after verification may the server use `decodedToken.uid` as the authenticated account id
+
+Future authenticated request model:
+
+- HTTP APIs that need account ownership should accept:
+  - `Authorization: Bearer <firebase-id-token>`
+  - or an equivalent explicit auth field during transitional development
+- WebSocket register should include an auth token when Firebase mode is enabled
+- server should derive:
+  - `authenticatedFirebaseUid` from verified token claims
+  - `canonicalAccountId` from `authenticatedFirebaseUid`
+  - display/profile fields only as metadata
+
+WebSocket register design:
+
+- current register payload includes legacy/transitional account metadata
+- future authenticated register should include:
+  - Firebase ID token
+  - client display label metadata
+  - active `identityId` after cert/identity setup
+- server should:
+  - verify token before treating the socket as authenticated
+  - bind the socket to verified `firebaseUid`
+  - ignore or downgrade any client-sent `accountId` when a verified Firebase token exists
+  - keep `identityId` as the active cryptographic identity for routing
+
+Server session model after Firebase:
+
+- `wsToSession` should eventually contain:
+  - verified `firebaseUid` when authenticated
+  - canonical account id
+  - display name metadata
+  - active `identityId`
+  - auth mode, such as `firebase` or `legacy`
+- active session lookup should prefer verified Firebase account id when present
+- legacy username/accountId lookup should remain only for migration/demo fallback
+
+HTTP backup/restore boundary:
+
+- Firebase-era backup list/fetch APIs should be scoped by verified `firebaseUid`
+- server should not allow one authenticated Firebase account to list or fetch another account's backups
+- encrypted backup payloads still remain unreadable to server
+- display name should be used only for filtering/display compatibility, not as ownership proof
+- legacy restore path should remain visibly separate while old backups exist
+
+Certificate and messaging boundary:
+
+- Firebase auth proves account ownership
+- certificates and `identityId` still prove cryptographic identity/device continuity
+- server should not replace `senderIdentityId` / `recipientIdentityId` with Firebase uid
+- message routing should eventually use:
+  - verified account id for account ownership/session grouping
+  - active `identityId` for device/identity targeting
+
+Error handling design:
+
+- missing token in authenticated-only path:
+  - return or emit `auth_required`
+- invalid/expired token:
+  - return or emit `auth_invalid`
+  - client should sign in again or refresh token
+- token verifies but account/identity mismatch:
+  - return or emit `account_identity_mismatch`
+- legacy fallback used:
+  - log as transitional mode
+  - avoid presenting it as fully authenticated Firebase behavior
+
+Token lifecycle design:
+
+- client should request a fresh ID token before opening/reopening authenticated WebSocket
+- server should verify token during WebSocket registration
+- server should not store long-lived client tokens in MongoDB
+- server may store verified uid/session metadata, not raw secrets
+- if token expires during a long WebSocket session, the implementation phase must decide between:
+  - periodic re-auth message
+  - reconnect with fresh token
+  - server-side session TTL
+
+Security non-negotiables:
+
+- never trust `uid` copied from client JSON without token verification
+- never use email as the database ownership key
+- never authorize backup ownership by displayName alone
+- never expose Firebase Admin credentials to the browser
+- never put service-account credentials in frontend bundles or public docs
+- never weaken E2EE because Firebase Auth exists
+
+Migration stance:
+
+- first Firebase coding phase should add authenticated paths beside legacy paths
+- legacy mode can remain for local demo and old records
+- once Firebase paths are stable, later phases can tighten fallback usage
+- removing fallback should be a separate migration phase, not part of initial auth integration
+
+Important non-goals for this checkpoint:
+
+- no Firebase Admin SDK code
+- no token verifier code
+- no WebSocket register change
+- no API auth middleware implementation
+- no MongoDB schema/index change
+- no client Firebase SDK
+
+Checkpoint 3 test expectation:
+
+- no runtime behavior changes
+- documentation clearly says server must verify Firebase ID tokens itself
+- documentation clearly says server must ignore unverified client-provided uid/accountId
+- documentation keeps `identityId` separate from Firebase uid
+- documentation preserves legacy fallback only as transitional migration behavior
