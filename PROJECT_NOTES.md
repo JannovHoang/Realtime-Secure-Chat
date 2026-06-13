@@ -6032,3 +6032,130 @@ Checkpoint 1 test expectation:
 - documentation clearly states `displayName` is not a primary key
 - documentation clearly keeps `identityId` separate from Firebase account identity
 - documentation explicitly rejects auto-linking legacy backups by display name alone
+
+### Firebase Auth Planning - Checkpoint 2: Auth Flow UX Design
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- define the intended user flow after adding Google/Firebase sign-in
+- prevent the UI from implying that Google login automatically unlocks E2EE chat state
+- preserve the existing Start / Restore / Backup mental model while introducing real account auth
+
+Core UX principle:
+
+- Firebase sign-in authenticates the account owner
+- local vault availability determines whether this browser can continue as a cryptographic identity
+- chat should open only after both conditions are handled:
+  - account/auth state is valid
+  - local identity state is available and started
+
+Primary auth states:
+
+- signed out:
+  - show `Sign in with Google`
+  - keep legacy/local demo mode available only if explicitly supported during migration
+- signed in:
+  - show the authenticated account profile summary
+  - show display name as editable profile/display label only if that is part of the later UI
+  - do not auto-start chat
+- auth loading:
+  - show a non-destructive loading state while Firebase restores auth persistence
+- auth error:
+  - show a user-readable error and keep the current local session safe
+
+Primary identity states after sign-in:
+
+- no local vault for this Firebase account:
+  - offer `Restore from Cloud`
+  - offer `Create New Identity`
+  - do not show normal chat composer yet
+- local vault exists:
+  - allow `Start`
+  - still run backup freshness/device-switch warnings before starting
+- restored but not started:
+  - show `Restore ready`
+  - require pressing `Start`
+- started:
+  - show chat UI
+  - allow Backup to Cloud and Logout
+- locked/disconnected:
+  - require password/Start or reconnect flow according to the final implementation design
+
+Recommended first Google sign-in UX:
+
+1. User clicks `Sign in with Google`.
+2. Firebase client completes sign-in and exposes a user object.
+3. UI shows signed-in account summary:
+   - Google display name or local display label
+   - email if available
+   - no sensitive token data
+4. UI checks whether a local vault exists for the canonical account.
+5. If no local vault exists:
+   - primary action: `Restore from Cloud`
+   - secondary action: `Create New Identity`
+6. If local vault exists:
+   - primary action: `Start Secure Chat`
+   - secondary action: `Restore from Cloud`
+7. User must explicitly Start after Restore/Create.
+
+Restore UX after Firebase:
+
+- Restore should be scoped to the signed-in Firebase account when possible
+- legacy backup restore should be a separate compatibility path
+- if a backup does not have `firebaseUid`, UI should say it is a legacy backup
+- linking a legacy backup to the signed-in Firebase account should require explicit confirmation
+- restore must not happen silently just because display names match
+
+Create New Identity UX after Firebase:
+
+- creating a new identity should be explicit
+- UI should explain that a new cryptographic identity is being created for this browser
+- after creation, the user should be encouraged to Backup to Cloud
+- if the same Firebase account already has cloud backups, UI should recommend Restore first before creating a new identity
+
+Logout UX after Firebase:
+
+- `Logout` should have two layers in the final design:
+  - sign out of Firebase account
+  - close/destroy active chat session
+- signing out should disconnect WebSocket/chat session
+- signing out should not automatically delete local vault
+- deleting local vault should be a separate destructive action with explicit confirmation
+
+Popup vs redirect decision:
+
+- first implementation should prefer `signInWithPopup` for desktop/demo simplicity
+- mobile must be tested separately because popup behavior can vary across browsers
+- if popup is unreliable on mobile, a later checkpoint/phase can design `signInWithRedirect`
+- redirect flow should not be added casually because it introduces additional state restoration and domain/authDomain considerations
+
+Firebase Console planning requirements:
+
+- Google provider must be enabled in Firebase Authentication sign-in methods
+- authorized domains should include:
+  - `chat.securechat.id.vn`
+  - `localhost` for local testing if needed
+- do not store Firebase config secrets in documentation
+- client Firebase config is not equivalent to server credentials
+- server credentials/Admin SDK configuration must remain server-side only in the later implementation phase
+
+Important non-goals for this checkpoint:
+
+- no Google sign-in code
+- no Firebase client config
+- no Firebase Admin SDK
+- no auth token verification
+- no UI implementation yet
+- no change to existing Start/Restore behavior
+
+Checkpoint 2 test expectation:
+
+- no runtime behavior changes
+- documentation clearly states login does not auto-open chat
+- documentation clearly states a new browser still needs Restore from Cloud or Create New Identity
+- documentation records popup-first as the initial implementation preference
+- documentation includes authorized domain planning for `chat.securechat.id.vn` and `localhost`
