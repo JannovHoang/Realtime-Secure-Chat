@@ -5812,3 +5812,113 @@ Checkpoint 5 test expectation:
 - review `DEMO_SCRIPT.md` for clarity
 - confirm it does not contain passwords, tunnel credentials, private keys, backup payloads, Mongo connection strings, or account secrets
 - optionally run `npm start` and `cloudflared tunnel run realtime-secure-chat` to confirm the commands still match the current setup
+
+## Firebase Auth Planning / Auth Provider Design
+
+This phase is a planning/design phase before coding Firebase or Google sign-in.
+
+Goal:
+
+- design how a real authentication provider should fit into the existing E2EE chat architecture
+- avoid confusing Firebase account identity with local vault identity or Double Ratchet state
+- prepare a safe implementation plan for a later coding phase
+- preserve the current demo-ready behavior while planning the next architecture step
+
+Non-goals:
+
+- no Firebase SDK installation in this phase
+- no Google sign-in button in this phase
+- no Firebase Admin SDK in this phase
+- no WebSocket authentication token verification in this phase
+- no MongoDB schema migration in this phase
+- no change to Double Ratchet, vault encryption, backup encryption, or message protocol
+
+Recommended checkpoint order:
+
+1. Auth Design Baseline
+2. Firebase Account Model Design
+3. Auth Flow UX Design
+4. Auth Session And Identity State Design
+5. Backend Auth Boundary Design
+6. Backup/Restore Migration Design
+7. Threat Model / Safety Notes
+8. Implementation Plan For Firebase Auth Foundation
+
+### Firebase Auth Planning - Checkpoint 0: Auth Design Baseline
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- capture the current account, identity, vault, backup, and routing model before introducing Firebase
+- clearly state what problem Firebase is expected to solve later
+- clearly state what Firebase will not solve in an E2EE chat app
+
+Current account model:
+
+- users currently type a human-readable `displayName` in the UI
+- the app derives a transitional local `accountId` from that display name
+- the current `accountId` is not real authentication
+- `identityId` is derived from the long-term public key and identifies the cryptographic identity
+- one display name can have multiple backup identities, so restore may require identity selection
+
+Current local identity model:
+
+- each browser stores an encrypted local vault
+- the vault contains identity metadata, Double Ratchet state, local message history, conversation metadata, and backup receipt metadata
+- if browser site data/localStorage is deleted, the local vault is deleted too
+- cloud backup is still required to recover identity state on a new browser/device
+
+Current backup/restore model:
+
+- Backup to Cloud uploads an encrypted backup blob
+- Restore from Cloud downloads and decrypts a selected backup locally
+- the server stores encrypted backup data and metadata but does not receive the backup password
+- newer backup metadata is used to warn before risky device switching
+- restore overwrite now requires explicit confirmation if a local vault already exists
+
+Current server/routing model:
+
+- backend serves UI/static files, HTTP APIs, and WebSocket on port `3000`
+- public access is available through the named Cloudflare Tunnel at `https://chat.securechat.id.vn`
+- server runtime tracks active sessions with account-aware metadata while keeping legacy fallback
+- current mode is still best treated as one active browser/device per account label at a time
+
+Current MongoDB role:
+
+- `certs`: signed public certificate material and identity metadata used for peer setup
+- `identity_backups`: encrypted cloud identity backups plus backup metadata
+- `messages`: encrypted message envelopes for recent-message catch-up
+- `pending_messages`: encrypted offline messages waiting for recipient delivery
+- `account_active_devices`: account/session metadata for active device routing
+
+Firebase will eventually solve:
+
+- real account authentication
+- stable account owner identity through `firebaseUid`
+- reduced reliance on user-entered display names for account identity
+- a safer foundation for future multi-device/account UX
+
+Firebase will not automatically solve:
+
+- E2EE key recovery if the user loses local vault and has no backup
+- Double Ratchet state synchronization across multiple devices
+- plaintext message access for the server
+- backup password recovery
+- automatic restore of a browser that has no local identity
+
+Important architecture boundary:
+
+- Firebase/Google Auth answers: who owns this account?
+- local vault and Double Ratchet answer: does this browser have the cryptographic identity and current secure chat state?
+- signing into Google later must not automatically mean the browser can chat immediately
+- a new browser may still need Restore from Cloud or Create New Identity after authentication
+
+Checkpoint 0 test expectation:
+
+- no runtime behavior changes
+- no code behavior changes
+- documentation clearly says `accountId` is transitional and not real authentication
+- documentation clearly separates Firebase account auth from local E2EE identity/vault state
