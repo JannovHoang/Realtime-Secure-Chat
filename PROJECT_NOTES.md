@@ -6988,3 +6988,104 @@ Checkpoint 0 test expectation:
 - app builds successfully
 - existing legacy/local demo flow still works before Firebase code starts
 - branch is ready for Checkpoint 1: Firebase Client Setup
+
+### Firebase Auth Foundation - Checkpoint 1: Firebase Client Setup
+
+Completed in:
+
+- `package.json`
+- `package-lock.json`
+- `.env.example`
+- `.gitignore`
+- `client/auth/firebaseClient.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- add the Firebase Web client SDK as a frontend dependency
+- add a small Firebase Auth adapter that can be wired into React in later checkpoints
+- keep the current legacy/local chat flow working when Firebase config is absent
+
+Implemented:
+
+- installed the `firebase` package and updated the lockfile
+- added `.env.example` with safe Vite-side Firebase config placeholders
+- kept real `.env` and `.env.*` files ignored while allowing `.env.example` to be committed
+- added `client/auth/firebaseClient.js`
+  - reads `VITE_AUTH_MODE`
+  - reads optional Firebase Web app config from `VITE_FIREBASE_*`
+  - exposes Firebase availability helpers
+  - lazily initializes Firebase Auth only when config is complete and mode is not `legacy`
+  - exposes Google popup sign-in, sign-out, auth-state subscription, current user, and ID token helpers for later checkpoints
+
+Important behavior:
+
+- default auth mode is `firebase_optional`
+- if Firebase config is missing or incomplete, the adapter reports Firebase as unavailable instead of crashing
+- this checkpoint does not import the adapter into the UI yet
+- no Google sign-in button was added
+- no Firebase Admin SDK was added
+- no backend token verification was added
+- no WebSocket register behavior changed
+- no MongoDB schema changed
+- no backup/restore behavior changed
+
+Security notes:
+
+- Firebase Web config belongs to the browser-side app and is not an Admin secret
+- Firebase Admin/service-account credentials must remain server-side only and must not be committed
+- Firebase sign-in will not unlock the local vault by itself in later checkpoints
+- E2EE identity, vault password, `identityId`, and Double Ratchet state remain separate from Firebase account identity
+
+Checkpoint 1 test expectation:
+
+- app builds successfully with the new Firebase client dependency
+- app still starts without `.env.local` Firebase config
+- current legacy/local Start, realtime chat, offline pending, Backup to Cloud, and Restore from Cloud behavior should remain unchanged
+- no Google sign-in UI is expected yet
+
+### Firebase Auth Foundation - Checkpoint 1A: Restore/Start Guard Regression Fix
+
+Completed in:
+
+- `client/ui/hooks/useChatApp.js`
+- `client/chat.js`
+- `server/server.js`
+- `PROJECT_NOTES.md`
+
+Reason:
+
+- during Checkpoint 1 named-domain testing, repeated device-switch restore/start flows exposed two safety gaps:
+  - Restore failures were too generic, so rate-limit or decrypt errors looked like unexplained password failures.
+  - Pre-start warning only checked cloud backups that matched the current local `identityId`; if a browser/phone had a different old local identity for the same display name, Start could proceed without a strong restore warning.
+
+Implemented:
+
+- added a pre-start cloud-backup signal for the case where a cloud backup exists for the display name/account but does not match the browser's current local identity
+- tightened Start guard so a browser is considered safe to Start silently only when it has a usable local identity metadata record, not merely any local vault blob
+- existing local vault with wrong password now fails clearly before any chat start attempt
+- scoped the in-session restore bypass to the exact restored display name, so restoring one user no longer lets a different newly typed user skip the first-start guard in the same tab
+- kept the existing "newer cloud backup" warning behavior for matching identities
+- preserved the user's ability to continue intentionally through the existing confirmation modal
+- changed restore API rate-limit responses to return a clear message
+- changed the client restore API wrapper to preserve server-provided restore errors
+- changed restore UI toast handling to show the specific error message when available
+
+Important behavior:
+
+- this still does not add Google sign-in UI
+- this still does not add Firebase Admin verification
+- this still does not change MongoDB schema
+- this still does not change Double Ratchet or backup encryption
+- the fix is intentionally conservative: if a device has a local identity but cloud has a different identity for the same display name/account, the UI should warn before Start
+
+Checkpoint 1A test expectation:
+
+- if a device has no local vault for a display name, Start still opens the existing Restore/Continue guard
+- if a device only has an empty/partial local vault without valid identity metadata, Start also opens the Restore/Continue guard
+- if one display name was restored in the current tab, a different new display name must still show the Restore/Continue guard
+- if a device has a local vault but the password is wrong, Start fails with a local identity password error
+- if a device has an older/different local identity and cloud backup exists, Start opens a cloud-backup warning instead of silently starting
+- if Restore is rate-limited, the UI shows a rate-limit message instead of a generic password-looking failure
+- successful Restore still says backup restored, then requires pressing Start
+- realtime chat, Backup to Cloud, and Restore from Cloud remain functional after the fix

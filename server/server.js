@@ -752,7 +752,7 @@ const server = http.createServer((req, res) => {
     if (isRateLimited(ip)) {
       return writeJson(res, 429, {
         ok: false,
-        error: "Restore unavailable",
+        error: "Restore temporarily rate limited. Please wait a few minutes and try again.",
       });
     }
 
@@ -809,7 +809,7 @@ const server = http.createServer((req, res) => {
     if (isRateLimited(ip)) {
       return writeJson(res, 429, {
         ok: false,
-        error: "Restore unavailable",
+        error: "Restore temporarily rate limited. Please wait a few minutes and try again.",
       });
     }
 

@@ -1392,7 +1392,7 @@ export async function fetchCloudBackup(username, identityId = null) {
   }
 
   if (!res.ok || !data?.ok) {
-    throw new Error("Restore failed");
+    throw new Error(data?.error || "Restore failed");
   }
 
   return data;
@@ -1415,7 +1415,7 @@ export async function fetchCloudBackupIdentities(username) {
   }
 
   if (!res.ok || !data?.ok || !Array.isArray(data.items)) {
-    throw new Error("Restore failed");
+    throw new Error(data?.error || "Restore failed");
   }
 
   return data.items;

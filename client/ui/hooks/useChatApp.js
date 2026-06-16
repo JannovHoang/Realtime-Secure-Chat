@@ -41,6 +41,7 @@ const initialState = {
   restoring: false,
   backingUp: false,
   restoredThisSession: false,
+  restoredUsername: "",
   continueWithoutRestoreFor: {},
   identityPanel: null,
   activePeer: "",
@@ -175,6 +176,17 @@ function findMatchingCloudBackup(items, identityMeta, account) {
   );
 }
 
+function getAccountCloudBackups(items, account) {
+  if (!Array.isArray(items)) return [];
+  return items.filter((item) => {
+    if (!item?.identityId) return false;
+    if (item?.accountId && account?.accountId && item.accountId !== account.accountId) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function getBackupFreshnessSignal(cloudBackup, localBackupMeta) {
   if (!cloudBackup?.serverSavedAt) return null;
   const cloudServerMs = getTimeMs(cloudBackup.serverSavedAt);
@@ -203,6 +215,26 @@ function getBackupFreshnessSignal(cloudBackup, localBackupMeta) {
     modalSubtitle:
       "The cloud backup appears newer than this browser's local backup record. Restore first if you recently used another device.",
   };
+}
+
+function getPreStartCloudBackupSignal(cloudItems, identityMeta, localBackupMeta, account) {
+  const matchingCloudBackup = findMatchingCloudBackup(cloudItems, identityMeta, account);
+  const freshnessSignal = getBackupFreshnessSignal(matchingCloudBackup, localBackupMeta);
+  if (freshnessSignal) return freshnessSignal;
+
+  const accountBackups = getAccountCloudBackups(cloudItems, account);
+  if (!matchingCloudBackup && accountBackups.length > 0) {
+    return {
+      status: "Cloud backup identity differs",
+      toast:
+        "Cloud backup exists, but it does not match this browser's local identity. Restore first if this account was used elsewhere.",
+      modalTitle: "Cloud Backup Identity Differs",
+      modalSubtitle:
+        "This display name has a cloud backup, but this browser is holding a different local identity. Restore from Cloud before chatting unless you intentionally want to continue with this local identity.",
+    };
+  }
+
+  return null;
 }
 
 function buildRestoreOverwriteMessage(username, localIdentityMeta, payload) {
@@ -343,6 +375,8 @@ function reducer(state, action) {
         started: false,
         starting: false,
         disconnected: false,
+        restoredThisSession: false,
+        restoredUsername: "",
         accountId: "",
         displayName: "",
         identityPanel: null,
@@ -468,6 +502,7 @@ function reducer(state, action) {
       return {
         ...state,
         restoredThisSession: true,
+        restoredUsername: normalizePeer(action.username),
         accountId: action.account?.accountId || state.accountId,
         displayName: action.account?.displayName || state.displayName,
         identityPanel: action.identityPanel || state.identityPanel,
@@ -712,8 +747,12 @@ export function useChatApp() {
         loadBackupMetadata().catch(() => null),
         fetchCloudBackupIdentities(username),
       ]);
-      const cloudBackup = findMatchingCloudBackup(cloudItems, identityMeta, account);
-      const signal = getBackupFreshnessSignal(cloudBackup, localBackupMeta);
+      const signal = getPreStartCloudBackupSignal(
+        cloudItems,
+        identityMeta,
+        localBackupMeta,
+        account
+      );
       if (!signal) return null;
       return {
         ...signal,
@@ -738,11 +777,33 @@ export function useChatApp() {
     }
 
     const account = await buildLocalAccountProfile(username);
+    const restoredThisUsername =
+      state.restoredThisSession && normalizePeer(state.restoredUsername) === username;
     const hasLocalVault = await hasPersistedVault(username);
+    let localIdentityMeta = null;
+    if (hasLocalVault) {
+      const passwordOk = await verifyPersistedVaultPassword(username, password);
+      if (!passwordOk) {
+        dispatch({
+          type: "start_failure",
+          message:
+            "The password did not unlock the local identity currently stored in this browser. Restore from Cloud first if this is a different identity.",
+        });
+        pushToast(
+          "Start failed: incorrect password for this browser's local identity.",
+          "error"
+        );
+        return;
+      }
+
+      localIdentityMeta = await inspectPersistedLocalIdentity(username, password);
+    }
+
+    const hasUsableLocalIdentity = hasLocalVault && !!localIdentityMeta?.identityId;
     const shouldGuard =
       !options.skipGuard &&
-      !hasLocalVault &&
-      !state.restoredThisSession &&
+      !hasUsableLocalIdentity &&
+      !restoredThisUsername &&
       !state.continueWithoutRestoreFor[username];
 
     if (shouldGuard) {
@@ -753,7 +814,7 @@ export function useChatApp() {
       return;
     }
 
-    if (!options.skipBackupWarning && hasLocalVault && !state.restoredThisSession) {
+    if (!options.skipBackupWarning && hasUsableLocalIdentity && !restoredThisUsername) {
       const warning = await getPreStartBackupWarning(username, password, account);
       if (warning) {
         dispatch({ type: "set_pending_start_warning", value: { username } });
@@ -771,7 +832,7 @@ export function useChatApp() {
       dispatch({ type: "start_success", account });
       void refreshIdentityPanel(account);
       pushToast("Ready.", "success");
-      if (!state.restoredThisSession && !options.skipBackupWarning) {
+      if (!restoredThisUsername && !options.skipBackupWarning) {
         void checkBackupFreshness(username, account);
       }
     } catch (err) {
@@ -950,7 +1011,10 @@ export function useChatApp() {
     } catch (err) {
       dispatch({ type: "set_status", message: "Restore failed", tone: "error" });
       dispatch({ type: "restore_end" });
-      pushToast("Restore failed. Check your display name, password, or backup availability.", "error");
+      pushToast(
+        String(err?.message || "Restore failed. Check your display name, password, or backup availability."),
+        "error"
+      );
     }
   }
 
@@ -1033,6 +1097,7 @@ export function useChatApp() {
       }
       dispatch({
         type: "restore_success",
+        username,
         account,
         identityPanel: buildIdentityPanelFromRestore(account, payload, blob),
       });
@@ -1047,7 +1112,10 @@ export function useChatApp() {
       dispatch({ type: "close_modal" });
       dispatch({ type: "set_pending_restore", value: null });
       dispatch({ type: "set_pending_restore_overwrite", value: null });
-      pushToast("Restore failed. Check your display name, password, or backup availability.", "error");
+      pushToast(
+        String(err?.message || "Restore failed. Check your display name, password, or backup availability."),
+        "error"
+      );
     }
   }
 
