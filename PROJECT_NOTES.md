@@ -6916,3 +6916,75 @@ Checkpoint 6 test expectation:
 - roadmap starts with Firebase setup but delays risky backup migration until backend verification exists
 - roadmap preserves legacy fallback during initial implementation
 - roadmap includes regression and demo update steps
+
+## Firebase Auth Foundation
+
+This phase starts the actual Firebase/Google authentication implementation.
+
+Goal:
+
+- add Firebase Auth incrementally without breaking existing legacy/local demo behavior
+- keep E2EE, vault, Double Ratchet, backup/restore, and offline pending behavior stable
+- introduce real account authentication only through verified Firebase tokens
+- preserve `AUTH_MODE=firebase_optional` as the safe initial migration mode
+
+Important phase rule:
+
+- each checkpoint must remain testable on its own
+- do not implement backup ownership changes before backend token verification exists
+- do not make Google sign-in auto-open chat or auto-unlock local vault
+- do not remove legacy fallback until Firebase paths are fully tested
+
+### Firebase Auth Foundation - Checkpoint 0: Baseline
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- confirm the branch starts from a clean, working legacy/local baseline
+- verify the app still builds before adding Firebase code
+- record the regression expectations for the rest of this phase
+
+Branch:
+
+- `feature/firebase-auth-foundation`
+
+Automated checks run:
+
+- `npm run build`
+- `node --check server/server.js`
+- `node --check server/mongo.js`
+
+Result:
+
+- React/Vite production build passed
+- server syntax check passed
+- Mongo helper syntax check passed
+
+Baseline expectations before Checkpoint 1:
+
+- legacy/local login should still work
+- realtime Alice/new-user chat should still work
+- offline pending delivery should still work
+- Backup to Cloud should still save encrypted backup
+- Restore from Cloud should still restore selected identity
+- device-switch warning from Account ID Hardening should still appear for risky Start attempts
+- named tunnel should still expose `https://chat.securechat.id.vn`
+- quick tunnel should remain available as fallback
+
+Important scope note:
+
+- no Firebase SDK was added in this checkpoint
+- no Google sign-in UI was added
+- no backend token verification was added
+- no WebSocket register behavior changed
+- no MongoDB schema changed
+- no backup/restore behavior changed
+
+Checkpoint 0 test expectation:
+
+- app builds successfully
+- existing legacy/local demo flow still works before Firebase code starts
+- branch is ready for Checkpoint 1: Firebase Client Setup
