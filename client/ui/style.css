@@ -131,6 +131,62 @@ body {
   padding-left: 6px;
 }
 
+.firebase-auth-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: min(420px, 100%);
+  max-width: 520px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 255, 0.92));
+  box-shadow: var(--shadow-sm);
+}
+
+.firebase-auth-copy {
+  min-width: 0;
+}
+
+.firebase-auth-eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-soft);
+  font-weight: 800;
+}
+
+.firebase-auth-title {
+  margin-top: 4px;
+  font-weight: 800;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.firebase-auth-detail {
+  margin-top: 3px;
+  max-width: 340px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.firebase-auth-error {
+  margin-top: 5px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.firebase-auth-actions {
+  flex: 0 0 auto;
+}
+
 .login label {
   display: flex;
   flex-direction: column;
@@ -260,6 +316,12 @@ button.secondary {
 
 button.secondary:hover {
   background: #eef2f7;
+}
+
+button.compact {
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 13px;
 }
 
 .status {
@@ -1166,6 +1228,11 @@ button.secondary:hover {
     padding-left: 0;
   }
 
+  .firebase-auth-card {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
   .content {
     grid-template-columns: 1fr;
     min-height: auto;
@@ -1282,7 +1349,8 @@ button.secondary:hover {
 
   .auth-fields,
   .topbar-actions,
-  .topbar-status {
+  .topbar-status,
+  .firebase-auth-card {
     width: 100%;
     min-width: 0;
   }
@@ -1330,6 +1398,23 @@ button.secondary:hover {
     min-width: 0;
     width: 100%;
     text-align: center;
+  }
+
+  .firebase-auth-card {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .firebase-auth-detail {
+    max-width: none;
+  }
+
+  .firebase-auth-actions,
+  .firebase-auth-actions button {
+    width: 100%;
   }
 
   .status-label {

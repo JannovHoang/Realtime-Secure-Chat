@@ -7089,3 +7089,113 @@ Checkpoint 1A test expectation:
 - if Restore is rate-limited, the UI shows a rate-limit message instead of a generic password-looking failure
 - successful Restore still says backup restored, then requires pressing Start
 - realtime chat, Backup to Cloud, and Restore from Cloud remain functional after the fix
+
+### Firebase Auth Foundation - Checkpoint 2: Auth UI Shell
+
+Completed in:
+
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- expose a minimal Firebase/Google auth shell in the React UI
+- keep Firebase account sign-in separate from local vault Start/Restore
+- avoid changing backend token verification, WebSocket register, MongoDB schema, or backup ownership in this checkpoint
+
+Implemented:
+
+- wired the Firebase client adapter into React state
+- added auth availability state from `getFirebaseAuthAvailability()`
+- subscribed to Firebase auth state only when Firebase client config is complete and auth mode is not `legacy`
+- added a topbar `Account auth` panel
+  - when Firebase is not configured, it shows a disabled/legacy state
+  - when Firebase is configured, it exposes `Sign in with Google`
+  - when signed in, it shows a short signed-in account summary and `Sign out`
+- added Google sign-in action through the existing Firebase client adapter
+- added Firebase sign-out action
+- sign-out also destroys the active chat runtime if a local chat session is currently started
+- sign-in does not call `Start`
+- sign-in does not restore cloud backup
+- sign-in does not unlock the local vault
+- sign-in does not change Double Ratchet state
+- added responsive CSS for the auth panel on desktop, tablet, and mobile
+
+Important behavior:
+
+- without `.env.local` Firebase config, the panel should say Firebase is not configured and the Google sign-in button should be disabled
+- legacy/local display-name Start/Restore/Backup remains available
+- Firebase signed-in state may persist after browser refresh if Firebase is configured
+- persisted Firebase sign-in must still leave chat locked until the user explicitly presses Start or Restore
+- this checkpoint still does not verify Firebase ID tokens on the server
+- this checkpoint still does not bind WebSocket sessions to verified Firebase accounts
+- this checkpoint still does not change backup ownership
+
+Security notes:
+
+- Google sign-in proves future account ownership only
+- Google sign-in does not prove this browser has the latest E2EE identity or Double Ratchet state
+- local vault password and cloud restore remain required for E2EE state
+- server must not trust client-side Firebase user data until the backend verifies an ID token in a later checkpoint
+
+Checkpoint 2 test expectation:
+
+- app builds successfully
+- without Firebase config, named-domain demo still works in legacy/local mode
+- auth panel appears but does not block Start/Restore/Backup
+- Google sign-in button is disabled when Firebase config is absent
+- local Start guard, backup freshness warning, restore, realtime chat, and offline pending still work
+- if Firebase config is later provided, signing in should not auto-start chat or unlock the vault
+
+### Firebase Auth Foundation - Checkpoint 2A: Backup Flush And Peer Switch Safety
+
+Completed in:
+
+- `client/chat.js`
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/App.jsx`
+- `PROJECT_NOTES.md`
+
+Reason:
+
+- named-domain device-switch testing exposed a risk where a user could switch to a random peer, switch back, see an empty/loading chat pane, then run Backup to Cloud
+- if backup exported the persisted vault before the live chat runtime had flushed its latest Double Ratchet state, a restored device could load message history but continue from stale ratchet counters/keys
+
+Implemented:
+
+- added `flushChatState()` to the chat runtime public API
+- Backup to Cloud now verifies the local vault password and then forces a runtime state flush before exporting/encrypting the cloud backup payload
+- Backup to Cloud is blocked while local history, recent catch-up, or send is still in progress
+- the Backup button is disabled during chat sync so the user cannot accidentally save a backup while the active conversation is still changing
+- conversation load/recent catch-up now uses an active-peer snapshot for the async flow, reducing race risk when the user changes peer quickly
+- typing a peer display name now only opens the peer when the peer already has a local conversation or a ready certificate
+- unknown peer names no longer switch the active runtime conversation; the UI shows a warning instead
+- Backup to Cloud is also blocked if the active conversation has stored metadata/preview but the message pane is unexpectedly empty after loading
+- selecting the already-active peer no longer clears the current timeline before reloading
+- if a local/recent reload returns an empty result while the current timeline already has messages, React keeps the existing messages instead of replacing them with an empty pane
+- when an unknown peer name is rejected, the Chat with input is reset back to the current active peer
+- a browser that receives forced logout because the same account started elsewhere is marked with a local stale-session flag
+- the next Start on that browser opens a restore/start-anyway warning instead of silently using the old local ratchet state
+- the stale-session flag is cleared after a successful Restore from Cloud or Backup to Cloud
+
+Important behavior:
+
+- this does not change Double Ratchet cryptography
+- this does not change MongoDB schema
+- this does not change backup encryption format
+- this does not make already-desynced identities safe again; those should be restored from a known-good backup or replaced during testing
+- backup remains a manual action, but it now waits for a stable local runtime state before exporting
+
+Checkpoint 2A test expectation:
+
+- while switching conversations or fetching recent messages, Backup to Cloud should be temporarily unavailable
+- after chat sync finishes, Backup to Cloud should work normally
+- after sending/receiving messages, Backup to Cloud should save the latest runtime state
+- restoring that backup on another device should load history and continue sending/receiving without ratchet desync
+- typing a random peer name and then returning to a valid peer should not allow a stale backup to be created during the transition
+- typing a random peer name with no ready certificate/local conversation should leave the current conversation unchanged and show a warning
+- if the UI ever shows an empty pane for a conversation that has an existing preview, Backup to Cloud should remain blocked until the conversation is reloaded/reselected correctly
+- when a laptop is kicked by a phone login, starting again on the laptop should warn that the local session may be stale
+- if the phone sent or received messages, the safe flow is Backup to Cloud on the phone before returning to the laptop, then Restore from Cloud on the laptop

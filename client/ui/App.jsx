@@ -131,6 +131,62 @@ function AccountIdentityPanel({ info, helpers }) {
   );
 }
 
+function FirebaseAuthPanel({ state, actions }) {
+  const availability = state.authAvailability || {};
+  const enabled = !!availability.enabled;
+  const signedIn = !!state.authUser?.uid;
+  const label = signedIn
+    ? state.authUser.email || state.authUser.displayName || "Google account"
+    : enabled
+      ? "Google sign-in available"
+      : availability.authMode === "legacy"
+        ? "Legacy account mode"
+        : "Firebase not configured";
+  const detail = signedIn
+    ? "Account signed in. Start or restore your local vault to chat."
+    : enabled
+      ? "Sign-in proves account ownership only; it does not unlock E2EE keys."
+      : "Current local display-name flow remains active.";
+
+  return (
+    <div className="firebase-auth-card">
+      <div className="firebase-auth-copy">
+        <div className="firebase-auth-eyebrow">Account auth</div>
+        <div className="firebase-auth-title">{label}</div>
+        <div className="firebase-auth-detail">{detail}</div>
+        {state.authError ? (
+          <div className="firebase-auth-error">{state.authError}</div>
+        ) : null}
+      </div>
+      <div className="firebase-auth-actions">
+        {signedIn ? (
+          <button
+            className="secondary compact"
+            type="button"
+            disabled={state.authBusy}
+            onClick={() => {
+              void actions.handleFirebaseSignOut();
+            }}
+          >
+            Sign out
+          </button>
+        ) : (
+          <button
+            className="secondary compact"
+            type="button"
+            disabled={state.authBusy || !enabled}
+            onClick={() => {
+              void actions.handleGoogleSignIn();
+            }}
+          >
+            Sign in with Google
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ModalNote({ tone = "info", children }) {
   return <div className={`modal-note is-${tone}`}>{children}</div>;
 }
@@ -168,8 +224,22 @@ export default function App() {
   const showPasswordField = !state.started || state.disconnected;
   const startLabel = state.disconnected ? "Reconnect" : "Start";
   const busy = state.starting || state.restoring || state.backingUp || state.sending;
+  const chatSyncing = state.messageLoading || state.recentLoading;
+  const activeConversation = Array.isArray(state.conversations)
+    ? state.conversations.find((item) => item.peer === state.activePeer)
+    : null;
+  const activeConversationLooksBlank =
+    !!state.activePeer &&
+    !!activeConversation &&
+    (!!String(activeConversation.lastMessagePreview || "").trim() ||
+      Number(activeConversation.lastMessageAt) > 0) &&
+    !chatSyncing &&
+    Array.isArray(state.messages) &&
+    state.messages.length === 0;
   const startDisabled = busy || (state.started && !state.disconnected);
   const logoutDisabled = busy || !state.started;
+  const backupDisabled =
+    busy || chatSyncing || activeConversationLooksBlank || !state.started || state.disconnected;
   const peerInputValue = state.peerDraft || "";
   const sendDisabled =
     !state.started ||
@@ -295,7 +365,7 @@ export default function App() {
             <button
               className="secondary"
               type="button"
-              disabled={busy || !state.started || state.disconnected}
+              disabled={backupDisabled}
               onClick={() => {
                 actions.openBackupModal();
               }}
@@ -320,6 +390,8 @@ export default function App() {
               {state.statusText}
             </div>
           </div>
+
+          <FirebaseAuthPanel state={state} actions={actions} />
         </div>
       </div>
 

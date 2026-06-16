@@ -1,10 +1,17 @@
 import { useEffect, useReducer, useRef } from "react";
 import { buildLocalAccountProfile } from "../../account.js";
 import {
+  getFirebaseAuthAvailability,
+  onAuthStateChanged,
+  signInWithGoogle,
+  signOut as signOutFirebase,
+} from "../../auth/firebaseClient.js";
+import {
   destroyChat,
   fetchCloudBackup,
   fetchCloudBackupIdentities,
   fetchRecentMessages,
+  flushChatState,
   initChat,
   isPeerReady,
   mergeRecentMessagesForDisplay,
@@ -69,8 +76,15 @@ const initialState = {
   pendingRestore: null,
   pendingRestoreOverwrite: null,
   pendingStartWarning: null,
+  authAvailability: getFirebaseAuthAvailability(),
+  authReady: false,
+  authBusy: false,
+  authUser: null,
+  authError: "",
   toasts: [],
 };
+
+const STALE_SESSION_PREFIX = "securechat:stale-session:";
 
 function trimPreview(text, max = 72) {
   const value = String(text || "").replace(/\s+/g, " ").trim();
@@ -80,6 +94,44 @@ function trimPreview(text, max = 72) {
 
 function normalizePeer(value) {
   return String(value || "").trim();
+}
+
+function staleSessionKey(username) {
+  const normalized = normalizePeer(username);
+  return normalized ? `${STALE_SESSION_PREFIX}${normalized}` : "";
+}
+
+function markLocalSessionStale(username, reason = "logged_in_elsewhere") {
+  const key = staleSessionKey(username);
+  if (!key) return;
+  try {
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        reason: String(reason || "logged_in_elsewhere"),
+        at: new Date().toISOString(),
+      })
+    );
+  } catch {}
+}
+
+function clearLocalSessionStale(username) {
+  const key = staleSessionKey(username);
+  if (!key) return;
+  try {
+    localStorage.removeItem(key);
+  } catch {}
+}
+
+function readLocalSessionStale(username) {
+  const key = staleSessionKey(username);
+  if (!key) return null;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeConversationItem(item) {
@@ -237,6 +289,29 @@ function getPreStartCloudBackupSignal(cloudItems, identityMeta, localBackupMeta,
   return null;
 }
 
+function normalizeFirebaseUser(user) {
+  if (!user) return null;
+  return {
+    uid: String(user.uid || ""),
+    displayName: String(user.displayName || ""),
+    email: String(user.email || ""),
+    photoURL: String(user.photoURL || ""),
+  };
+}
+
+function findConversationByPeer(conversations, peer) {
+  const normalizedPeer = normalizePeer(peer);
+  if (!normalizedPeer || !Array.isArray(conversations)) return null;
+  return conversations.find((item) => normalizePeer(item?.peer) === normalizedPeer) || null;
+}
+
+function hasConversationEvidence(item) {
+  return !!(
+    item &&
+    (String(item.lastMessagePreview || "").trim() || Number(item.lastMessageAt) > 0)
+  );
+}
+
 function buildRestoreOverwriteMessage(username, localIdentityMeta, payload) {
   const sameLocalIdentity =
     localIdentityMeta?.identityId &&
@@ -286,6 +361,13 @@ function reducer(state, action) {
     case "set_peer_draft":
       return { ...state, peerDraft: action.value };
     case "set_active_peer":
+      if (normalizePeer(action.peer) === state.activePeer) {
+        return {
+          ...state,
+          peerDraft: normalizePeer(action.peer),
+          activePeerReady: isPeerReady(action.peer),
+        };
+      }
       return {
         ...state,
         activePeer: normalizePeer(action.peer),
@@ -300,6 +382,16 @@ function reducer(state, action) {
     case "history_load_begin":
       return { ...state, messageLoading: true };
     case "history_load_success":
+      if (
+        Array.isArray(action.items) &&
+        action.items.length === 0 &&
+        state.messages.length > 0
+      ) {
+        return {
+          ...state,
+          messageLoading: false,
+        };
+      }
       return {
         ...state,
         messageLoading: false,
@@ -310,6 +402,16 @@ function reducer(state, action) {
     case "recent_begin":
       return { ...state, recentLoading: true };
     case "recent_success":
+      if (
+        Array.isArray(action.items) &&
+        action.items.length === 0 &&
+        state.messages.length > 0
+      ) {
+        return {
+          ...state,
+          recentLoading: false,
+        };
+      }
       return {
         ...state,
         recentLoading: false,
@@ -498,6 +600,31 @@ function reducer(state, action) {
       return { ...state, pendingRestoreOverwrite: action.value };
     case "set_pending_start_warning":
       return { ...state, pendingStartWarning: action.value };
+    case "auth_state":
+      return {
+        ...state,
+        authReady: true,
+        authBusy: false,
+        authError: "",
+        authUser: normalizeFirebaseUser(action.user),
+      };
+    case "auth_begin":
+      return {
+        ...state,
+        authBusy: true,
+        authError: "",
+      };
+    case "auth_error":
+      return {
+        ...state,
+        authBusy: false,
+        authError: String(action.message || "Authentication failed"),
+      };
+    case "auth_availability":
+      return {
+        ...state,
+        authAvailability: action.value || state.authAvailability,
+      };
     case "restore_success":
       return {
         ...state,
@@ -536,10 +663,29 @@ function reducer(state, action) {
 export function useChatApp() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const activePeerRef = useRef(initialState.activePeer);
+  const usernameRef = useRef(initialState.username);
 
   useEffect(() => {
     activePeerRef.current = state.activePeer;
   }, [state.activePeer]);
+
+  useEffect(() => {
+    usernameRef.current = state.username;
+  }, [state.username]);
+
+  useEffect(() => {
+    const availability = getFirebaseAuthAvailability();
+    dispatch({ type: "auth_availability", value: availability });
+
+    if (!availability.enabled) {
+      dispatch({ type: "auth_state", user: null });
+      return () => {};
+    }
+
+    return onAuthStateChanged((user) => {
+      dispatch({ type: "auth_state", user });
+    });
+  }, []);
 
   function pushToast(text, tone = "info") {
     const id = nextToastId();
@@ -557,6 +703,12 @@ export function useChatApp() {
 
     const unsubscribe = subscribeToChatRuntime((event) => {
       const activePeer = activePeerRef.current;
+      if (event.type === "forced_logout") {
+        markLocalSessionStale(
+          usernameRef.current,
+          event.payload?.reason || "logged_in_elsewhere"
+        );
+      }
       if (
         event.type === "chat_message" &&
         normalizePeer(event.payload?.from) === activePeer
@@ -630,10 +782,11 @@ export function useChatApp() {
     if (!state.started || !state.activePeer) return;
 
     let cancelled = false;
+    const activePeer = state.activePeer;
     void (async () => {
       dispatch({ type: "history_load_begin" });
       try {
-        const localHistory = await openConversation(state.activePeer);
+        const localHistory = await openConversation(activePeer);
         const localItems = Array.isArray(localHistory)
           ? localHistory.map(normalizeMessageItem).filter(Boolean)
           : [];
@@ -647,8 +800,8 @@ export function useChatApp() {
 
       dispatch({ type: "recent_begin" });
       try {
-        const recent = await fetchRecentMessages(state.activePeer, 50);
-        const merged = await mergeRecentMessagesForDisplay(state.activePeer, recent);
+        const recent = await fetchRecentMessages(activePeer, 50);
+        const merged = await mergeRecentMessagesForDisplay(activePeer, recent);
         const mergedItems = Array.isArray(merged)
           ? merged.map(normalizeMessageItem).filter(Boolean)
           : [];
@@ -814,6 +967,31 @@ export function useChatApp() {
       return;
     }
 
+    const staleSession = readLocalSessionStale(username);
+    if (
+      !options.skipBackupWarning &&
+      hasUsableLocalIdentity &&
+      staleSession &&
+      !restoredThisUsername &&
+      !state.continueWithoutRestoreFor[username]
+    ) {
+      dispatch({ type: "set_pending_start_warning", value: { username } });
+      dispatch({
+        type: "open_modal",
+        modal: {
+          type: "backup_freshness_warning",
+          username,
+          status: "Local session may be stale",
+          toast:
+            "This browser was logged out because the account started elsewhere. Restore before chatting unless you intentionally want to continue.",
+          modalTitle: "Local Session May Be Stale",
+          modalSubtitle:
+            "This browser was replaced by another active device. If you used the account on that phone/browser, restore the latest cloud backup before chatting here.",
+        },
+      });
+      return;
+    }
+
     if (!options.skipBackupWarning && hasUsableLocalIdentity && !restoredThisUsername) {
       const warning = await getPreStartBackupWarning(username, password, account);
       if (warning) {
@@ -863,6 +1041,48 @@ export function useChatApp() {
     }
   }
 
+  async function handleGoogleSignIn() {
+    const availability = getFirebaseAuthAvailability();
+    dispatch({ type: "auth_availability", value: availability });
+
+    if (!availability.enabled) {
+      const message =
+        availability.authMode === "legacy"
+          ? "Firebase Auth is disabled in legacy mode."
+          : "Firebase Auth is not configured yet.";
+      dispatch({ type: "auth_error", message });
+      pushToast(message, "info");
+      return;
+    }
+
+    dispatch({ type: "auth_begin" });
+    try {
+      await signInWithGoogle();
+      pushToast("Signed in with Google. Start or restore your local vault to chat.", "success");
+    } catch (err) {
+      const message = String(err?.message || err || "Google sign-in failed");
+      dispatch({ type: "auth_error", message });
+      pushToast(message, "error");
+    }
+  }
+
+  async function handleFirebaseSignOut() {
+    dispatch({ type: "auth_begin" });
+    try {
+      if (state.started || state.disconnected) {
+        await destroyChat();
+        dispatch({ type: "logout_success" });
+      }
+      await signOutFirebase();
+      dispatch({ type: "auth_state", user: null });
+      pushToast("Signed out. Local vault data was not deleted.", "success");
+    } catch (err) {
+      const message = String(err?.message || err || "Sign out failed");
+      dispatch({ type: "auth_error", message });
+      pushToast(message, "error");
+    }
+  }
+
   function setField(field, value) {
     dispatch({ type: "field_change", field, value });
   }
@@ -878,7 +1098,28 @@ export function useChatApp() {
   function commitPeerDraft() {
     const peer = normalizePeer(state.peerDraft);
     if (!state.started || state.disconnected || !peer) return;
+    const knownConversation = !!findConversationByPeer(state.conversations, peer);
+    if (!knownConversation && !isPeerReady(peer)) {
+      dispatch({ type: "set_peer_draft", value: state.activePeer || "" });
+      pushToast(
+        `No ready certificate or local conversation found for ${peer}. Check the display name or ask the peer to start first.`,
+        "warning"
+      );
+      return;
+    }
     dispatch({ type: "set_active_peer", peer });
+  }
+
+  function isActiveConversationDisplaySuspicious() {
+    const activeConversation = findConversationByPeer(state.conversations, state.activePeer);
+    return (
+      !!state.activePeer &&
+      hasConversationEvidence(activeConversation) &&
+      !state.messageLoading &&
+      !state.recentLoading &&
+      Array.isArray(state.messages) &&
+      state.messages.length === 0
+    );
   }
 
   async function handleSend() {
@@ -911,6 +1152,17 @@ export function useChatApp() {
 
   function openBackupModal() {
     if (!state.started || state.disconnected) return;
+    if (state.messageLoading || state.recentLoading || state.sending) {
+      pushToast("Wait for chat sync to finish before backup.", "warning");
+      return;
+    }
+    if (isActiveConversationDisplaySuspicious()) {
+      pushToast(
+        "Backup blocked because the active conversation did not load correctly. Reload or reselect the conversation first.",
+        "warning"
+      );
+      return;
+    }
     dispatch({ type: "set_backup_password_input", value: "" });
     dispatch({ type: "open_modal", modal: { type: "backup_password" } });
   }
@@ -922,6 +1174,17 @@ export function useChatApp() {
       pushToast("Backup failed: password is required.", "error");
       return;
     }
+    if (state.messageLoading || state.recentLoading || state.sending) {
+      pushToast("Backup paused: wait for chat sync to finish.", "warning");
+      return;
+    }
+    if (isActiveConversationDisplaySuspicious()) {
+      pushToast(
+        "Backup blocked because the active conversation did not load correctly.",
+        "warning"
+      );
+      return;
+    }
 
     dispatch({ type: "close_modal" });
     dispatch({ type: "backup_begin" });
@@ -929,6 +1192,7 @@ export function useChatApp() {
       const account = await buildLocalAccountProfile(username);
       const passwordOk = await verifyPersistedVaultPassword(username, password);
       if (!passwordOk) throw new Error("Incorrect password");
+      await flushChatState();
       const clientSavedAt = new Date().toISOString();
       const payload = await exportIdentityPayload(username);
       const blob = await encryptIdentityPayload(
@@ -956,6 +1220,7 @@ export function useChatApp() {
       } catch (metadataErr) {
         console.warn("[backup] failed to save local metadata:", metadataErr);
       }
+      clearLocalSessionStale(username);
       dispatch({
         type: "identity_panel_set",
         value: {
@@ -1080,6 +1345,7 @@ export function useChatApp() {
       }
 
       await importIdentityPayload(payload, username, identityId, account.accountId);
+      clearLocalSessionStale(username);
       try {
         await initVault(password, username);
         await saveBackupMetadata({
@@ -1200,6 +1466,8 @@ export function useChatApp() {
       commitPeerDraft,
       handleStart,
       handleLogout,
+      handleGoogleSignIn,
+      handleFirebaseSignOut,
       handleSend,
       openBackupModal,
       confirmBackup,

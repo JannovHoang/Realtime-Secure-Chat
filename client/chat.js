@@ -686,6 +686,10 @@ function scheduleSaveState() {
   saveTimer = setTimeout(() => void saveStateNow(), SAVE_DEBOUNCE_MS);
 }
 
+export async function flushChatState() {
+  await saveStateNow();
+}
+
 function emitPeerReady(peer) {
   for (const fn of peerReadyListeners) {
     try {
