@@ -7258,3 +7258,100 @@ Checkpoint 3 test expectation:
 - `GET /api/auth/firebase/status` returns JSON and does not require a token
 - `POST /api/auth/firebase/verify` without Firebase server config returns disabled/configuration JSON instead of crashing
 - if `SERVER_AUTH_MODE=firebase_optional` and `FIREBASE_PROJECT_ID` are configured later, missing/invalid tokens should fail safely with `401`
+
+### Firebase Auth Foundation - Checkpoint 4: Authenticated WebSocket Register
+
+Completed in:
+
+- `client/chat.js`
+- `server/server.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- allow the WebSocket register handshake to carry a Firebase ID token when the browser is signed in
+- verify that token on the server before treating the socket as Firebase-authenticated
+- keep legacy/local register behavior working when Firebase is not configured or no token is present
+
+Implemented:
+
+- client chat runtime now asks the Firebase client adapter for a fresh ID token before opening the WebSocket
+- if a Firebase user is signed in and Firebase client config is available, `register` sends `firebaseIdToken`
+- if Firebase is not configured or no user is signed in, `register` continues in legacy/local mode
+- client now waits for both `config` and `registered` before continuing chat initialization
+- server verifies `firebaseIdToken` during WebSocket `register`
+- when verification succeeds:
+  - server derives `firebaseUid` from verified token claims
+  - server derives canonical account id as `firebase:<uid>`
+  - server ignores client-supplied account id for the authenticated session
+  - `registered` and `identity_bound` responses include `authMode: "firebase"` and `firebaseUid`
+- when no token is present:
+  - legacy mode continues unless `SERVER_AUTH_MODE=firebase_required`
+- when token is missing in required mode or invalid when provided:
+  - server sends `auth_error`
+  - server closes the socket safely
+
+Important behavior:
+
+- this checkpoint still does not change backup ownership rules
+- this checkpoint still does not scope backup list/fetch by Firebase account
+- this checkpoint still does not change MongoDB schema
+- this checkpoint still does not change Double Ratchet, local vault, or ciphertext format
+- Firebase sign-in still does not unlock the vault or auto-start chat
+- legacy named-domain demo remains available when Firebase config is absent
+
+Security notes:
+
+- Firebase `uid` is only accepted after server-side ID token verification
+- client-provided `accountId`, `uid`, or email is not trusted for Firebase-authenticated sessions
+- the server uses the verified uid only as account ownership/routing metadata, not as an encryption key
+- E2EE identity remains `identityId`; Firebase account identity remains separate
+
+Checkpoint 4 test expectation:
+
+- app builds successfully
+- server syntax check passes
+- without Firebase client/server config, legacy Start, realtime chat, Backup to Cloud, Restore from Cloud, and offline pending still work
+- `GET /api/auth/firebase/status` still reports legacy/disabled by default
+- if Firebase client config is later provided, sign-in should make WebSocket register include an ID token
+- if server Firebase mode is later enabled and token verifies, server should register the session as `authMode: "firebase"`
+- invalid Firebase token should fail safely without binding a socket to a trusted Firebase account
+
+### Firebase Auth Foundation - Checkpoint 4A: Send Delivery Confirmation Guard
+
+Completed in:
+
+- `client/chat.js`
+- `server/server.js`
+- `PROJECT_NOTES.md`
+
+Reason:
+
+- device-switch testing showed a risky failure mode where the sender UI could show outgoing messages even when the server had not explicitly confirmed delivery or offline queue acceptance
+- this made it hard to tell whether the problem was UI-only, routing/session-related, or a Double Ratchet state issue
+
+Implemented:
+
+- each outgoing chat message now includes a client `requestId`
+- server `delivery` responses now echo the matching `requestId`
+- server send rejections such as inactive identity binding now return a structured `delivery` failure instead of an uncorrelated generic error
+- client waits for server delivery confirmation before writing the outgoing plaintext message into local conversation history
+- client only treats a message as sent after the server confirms either:
+  - direct realtime delivery to an online recipient
+  - successful offline queue storage for an offline recipient
+- if delivery confirmation fails, times out, or the WebSocket closes, the client rolls the local Double Ratchet state back to the pre-send snapshot
+
+Important behavior:
+
+- this checkpoint does not change ciphertext format
+- this checkpoint does not change MongoDB schema
+- this checkpoint does not change certificate, backup, or restore payload format
+- successful offline sends are still allowed; they are considered successful only after the server accepts them into the pending queue
+- failed sends should now show an error instead of silently appearing as successful local messages
+
+Checkpoint 4A test expectation:
+
+- normal realtime chat still works both directions
+- offline pending still works: sender sees the message only after the server accepts it for queueing
+- when a stale/kicked browser tries to send, the UI should report an error instead of appending a fake successful message
+- after switching a user from laptop to phone via restore, multiple messages from the phone should either arrive at the peer or fail visibly; they should not silently appear only on the sender

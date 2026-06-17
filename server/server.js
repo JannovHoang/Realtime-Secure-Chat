@@ -136,7 +136,7 @@ async function importECDHPrivateKeyFromJwk(jwk) {
 }
 
 // ===== In-memory state =====
-const wsToSession = new Map(); // ws -> { user, accountId, displayName, identityId }
+const wsToSession = new Map(); // ws -> { user, accountId, displayName, identityId, authMode, firebaseUid }
 const accountSessions = new Map(); // accountKey -> { username, accountId, displayName, activeIdentityId, ws }
 const usernameSessions = new Map(); // username -> accountKey
 const signedCerts = new Map(); // username:identityId -> { certificate, signatureB64, identityId }
@@ -170,6 +170,11 @@ function normalizeDisplayName(v) {
 
 function makeLegacyAccountKey(username) {
   return `username:${normalizeUsername(username)}`;
+}
+
+function makeFirebaseAccountId(firebaseUid) {
+  const uid = String(firebaseUid || "").trim();
+  return uid ? `firebase:${uid}` : "";
 }
 
 function makeAccountSessionKey(username, accountId = null) {
@@ -992,17 +997,56 @@ wss.on("connection", (ws) => {
     if (data.type === "register" && typeof data.user === "string") {
       const user = normalizeUsername(data.user);
       const identityId = normalizeIdentityId(data.identityId);
-      const accountId = normalizeAccountId(data.accountId);
       const displayName = normalizeDisplayName(data.displayName) || user;
       if (!user) {
         return sendJson(ws, { type: "error", error: "Empty username" });
       }
+
+      const serverAuthStatus = getFirebaseAuthServerStatus();
+      const firebaseIdToken =
+        typeof data.firebaseIdToken === "string" && data.firebaseIdToken.trim()
+          ? data.firebaseIdToken.trim()
+          : typeof data.auth?.idToken === "string" && data.auth.idToken.trim()
+            ? data.auth.idToken.trim()
+            : "";
+      let verifiedFirebase = null;
+
+      if (firebaseIdToken) {
+        try {
+          verifiedFirebase = await verifyFirebaseIdToken(firebaseIdToken);
+        } catch (err) {
+          sendJson(ws, {
+            type: "auth_error",
+            error: "Firebase auth token invalid",
+          });
+          try {
+            ws.close(4003, "Invalid Firebase token");
+          } catch {}
+          return;
+        }
+      } else if (serverAuthStatus.required) {
+        sendJson(ws, {
+          type: "auth_error",
+          error: "Firebase auth token required",
+        });
+        try {
+          ws.close(4003, "Firebase token required");
+        } catch {}
+        return;
+      }
+
+      const accountId = verifiedFirebase
+        ? makeFirebaseAccountId(verifiedFirebase.firebaseUid)
+        : normalizeAccountId(data.accountId);
+      const authMode = verifiedFirebase ? "firebase" : "legacy";
 
       wsToSession.set(ws, {
         user,
         accountId: accountId || null,
         displayName,
         identityId: identityId || null,
+        authMode,
+        firebaseUid: verifiedFirebase?.firebaseUid || null,
       });
 
       sendJson(ws, {
@@ -1011,6 +1055,8 @@ wss.on("connection", (ws) => {
         accountId: accountId || null,
         displayName,
         identityId: identityId || null,
+        authMode,
+        firebaseUid: verifiedFirebase?.firebaseUid || null,
       });
 
       if (identityId) {
@@ -1022,7 +1068,9 @@ wss.on("connection", (ws) => {
     if (data.type === "identity_bind") {
       const session = getSession(ws);
       const identityId = normalizeIdentityId(data.identityId);
-      const accountId = normalizeAccountId(data.accountId || session?.accountId);
+      const accountId = session?.firebaseUid
+        ? normalizeAccountId(session.accountId)
+        : normalizeAccountId(data.accountId || session?.accountId);
       const displayName =
         normalizeDisplayName(data.displayName || session?.displayName) ||
         session?.user;
@@ -1047,6 +1095,8 @@ wss.on("connection", (ws) => {
         accountId: accountId || null,
         displayName,
         identityId,
+        authMode: session.authMode || "legacy",
+        firebaseUid: session.firebaseUid || null,
       });
       await activateAccountSession(
         ws,
@@ -1061,6 +1111,8 @@ wss.on("connection", (ws) => {
         accountId: accountId || null,
         displayName,
         identityId,
+        authMode: session.authMode || "legacy",
+        firebaseUid: session.firebaseUid || null,
       });
     }
 
@@ -1133,6 +1185,13 @@ wss.on("connection", (ws) => {
 
     // 3) Send DM ciphertext
     if (data.type === "send" && typeof data.to === "string") {
+      const requestId = typeof data.requestId === "string" ? data.requestId : null;
+      const sendDelivery = (payload) =>
+        sendJson(ws, {
+          type: "delivery",
+          requestId,
+          ...payload,
+        });
       console.log(
         "[send] from=",
         getSessionUser(ws),
@@ -1143,14 +1202,18 @@ wss.on("connection", (ws) => {
       );
       const from = getSessionUser(ws) ?? "unknown";
       if (!isActiveAccountSocket(ws)) {
-        return sendJson(ws, { type: "error", error: "Identity not bound" });
+        return sendDelivery({
+          ok: false,
+          to: normalizeUsername(data.to) || null,
+          error: "Identity not bound",
+        });
       }
       const senderIdentityId = getSessionIdentityId(ws);
       const senderAccountId = getSessionAccountId(ws);
       const senderDisplayName = getSessionDisplayName(ws);
       const to = normalizeUsername(data.to);
       if (!to) {
-        return sendJson(ws, { type: "error", error: "Empty recipient" });
+        return sendDelivery({ ok: false, to: null, error: "Empty recipient" });
       }
 
       const activeTargetSession = getActiveAccountSession(to);
@@ -1192,7 +1255,7 @@ wss.on("connection", (ws) => {
       if (toWs && toWs.readyState === WebSocket.OPEN) {
         const ok = sendJson(toWs, msgObj);
         if (ok) {
-          return sendJson(ws, { type: "delivery", ok: true, to, queued: false });
+          return sendDelivery({ ok: true, to, queued: false });
         }
       }
 
@@ -1200,7 +1263,7 @@ wss.on("connection", (ws) => {
       await enqueuePendingWithFallback(to, msgObj);
 
       // Tell sender it was queued
-      return sendJson(ws, { type: "delivery", ok: true, to, queued: true });
+      return sendDelivery({ ok: true, to, queued: true });
     }
 
     if (data.type === "history_fetch_recent") {

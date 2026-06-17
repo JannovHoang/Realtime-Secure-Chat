@@ -26,6 +26,7 @@ import {
   normalizeAccountId,
   normalizeDisplayName,
 } from "./account.js";
+import { getIdToken as getFirebaseIdToken } from "./auth/firebaseClient.js";
 import { MessengerClient } from "../crypto/dr/messenger.browser.js";
 
 const LOCAL_DEV_UI_PORT = "5173";
@@ -33,6 +34,7 @@ const LOCAL_DEV_SERVER_PORT = "3000";
 const DEFAULT_WS_PATH = "/ws";
 const BACKUP_REQUEST_TIMEOUT_MS = 10000;
 const HISTORY_REQUEST_TIMEOUT_MS = 10000;
+const SEND_REQUEST_TIMEOUT_MS = 10000;
 const HISTORY_RECENT_DEFAULT_LIMIT = 50;
 const HISTORY_RECENT_MAX_LIMIT = 100;
 
@@ -58,6 +60,8 @@ const backupSaveRequests = new Map();
 let backupRequestSeq = 0;
 const historyFetchRequests = new Map();
 let historyRequestSeq = 0;
+const sendRequests = new Map();
+let sendRequestSeq = 0;
 
 // Persisted DR state key (per-username)
 const drStateKey = (u) => `dr:state:${u}`;
@@ -125,6 +129,11 @@ function nextBackupRequestId() {
 function nextHistoryRequestId() {
   historyRequestSeq += 1;
   return `history-${Date.now()}-${historyRequestSeq}`;
+}
+
+function nextSendRequestId() {
+  sendRequestSeq += 1;
+  return `send-${Date.now()}-${sendRequestSeq}`;
 }
 
 function getRuntimeConfigValue(key) {
@@ -256,6 +265,26 @@ function settleHistoryFetchRequest(requestId, ok, messages = [], error = "Histor
   if (ok) pendingReq.resolve(messages);
   else pendingReq.reject(new Error(error));
   return true;
+}
+
+function settleSendRequest(requestId, ok, payload = null, error = "Send failed") {
+  if (!requestId) return false;
+  const pendingReq = sendRequests.get(requestId);
+  if (!pendingReq) return false;
+
+  sendRequests.delete(requestId);
+  clearTimeout(pendingReq.timer);
+  if (ok) pendingReq.resolve(payload);
+  else pendingReq.reject(new Error(error));
+  return true;
+}
+
+function rejectAllSendRequests(error = "Chat connection closed") {
+  for (const [requestId, pendingReq] of sendRequests) {
+    sendRequests.delete(requestId);
+    clearTimeout(pendingReq.timer);
+    pendingReq.reject(new Error(error));
+  }
 }
 
 function abToB64(ab) {
@@ -1054,12 +1083,26 @@ export async function initChat(username, password, accountProfile = null) {
 
   await initVault(password, myUser);
 
+  const firebaseIdToken = await getFirebaseIdToken(true).catch((err) => {
+    console.warn("[chat] Firebase ID token unavailable:", err);
+    return null;
+  });
+
   socket = new WebSocket(getServerWsUrl());
 
   let resolveConfig;
+  let rejectConfig;
   const configPromise = new Promise((resolve, reject) => {
     resolveConfig = resolve;
+    rejectConfig = reject;
     setTimeout(() => reject(new Error("No server config")), 5000);
+  });
+  let resolveRegistered;
+  let rejectRegistered;
+  const registeredPromise = new Promise((resolve, reject) => {
+    resolveRegistered = resolve;
+    rejectRegistered = reject;
+    setTimeout(() => reject(new Error("Server registration timed out")), 5000);
   });
 
   socket.onopen = () => {
@@ -1069,6 +1112,7 @@ export async function initChat(username, password, accountProfile = null) {
       accountId: myAccountId,
       displayName: myDisplayName,
       accountIdScheme: normalizedAccount.accountIdScheme,
+      firebaseIdToken: firebaseIdToken || null,
     });
     flushPending();
   };
@@ -1076,6 +1120,7 @@ export async function initChat(username, password, accountProfile = null) {
   socket.onerror = (e) => console.warn("[chat] ws error", e);
   socket.onclose = () => {
     console.warn("[chat] disconnected");
+    rejectAllSendRequests("Chat connection closed before delivery confirmation");
     notifyDisconnected();
   };
 
@@ -1101,8 +1146,48 @@ export async function initChat(username, password, accountProfile = null) {
       return;
     }
 
+    if (data.type === "registered") {
+      resolveRegistered(data);
+      return;
+    }
+
+    if (data.type === "auth_error") {
+      const err = new Error(String(data.error || "Authentication failed"));
+      rejectConfig(err);
+      rejectRegistered(err);
+      try {
+        socket?.close();
+      } catch {}
+      return;
+    }
+
     if (data.type === "backup_saved") {
       settleBackupSaveRequest(data.requestId, data.ok === true, data.error, data.backup || null);
+      return;
+    }
+
+    if (data.type === "delivery") {
+      settleSendRequest(
+        data.requestId,
+        data.ok === true,
+        data,
+        data.error || data.reason || "Message delivery failed"
+      );
+      return;
+    }
+
+    if (data.type === "error") {
+      if (
+        settleSendRequest(
+          data.requestId,
+          false,
+          null,
+          data.error || "Server rejected the request"
+        )
+      ) {
+        return;
+      }
+      console.warn("[chat] server error:", data.error || data);
       return;
     }
 
@@ -1130,6 +1215,7 @@ export async function initChat(username, password, accountProfile = null) {
   };
 
   const cfg = await configPromise;
+  await registeredPromise;
 
   caPubKey = await crypto.subtle.importKey(
     "jwk",
@@ -1277,6 +1363,9 @@ export async function openConversation(peer) {
 
 export async function sendMessage(peer, text) {
   if (!messenger) throw new Error("Call initChat() first");
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    throw new Error("Chat connection is not ready");
+  }
 
   const p = normalizeUsername(peer);
   const msg = String(text || "").trim();
@@ -1286,7 +1375,36 @@ export async function sendMessage(peer, text) {
     throw new Error(`Chưa có certificate của ${p} (mở tab người kia và Start trước)`);
   }
 
+  const stateBeforeSend = await exportMessengerState(messenger);
   const [header, ciphertext] = await messenger.sendMessage(p, msg);
+  const requestId = nextSendRequestId();
+  const deliveryPromise = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      sendRequests.delete(requestId);
+      reject(new Error("Message delivery timed out"));
+    }, SEND_REQUEST_TIMEOUT_MS);
+
+    sendRequests.set(requestId, { resolve, reject, timer });
+  });
+
+  wsSend({
+    type: "send",
+    requestId,
+    to: p,
+    header,
+    ciphertextB64: abToB64(ciphertext),
+  });
+
+  try {
+    await deliveryPromise;
+  } catch (err) {
+    try {
+      await importMessengerState(messenger, stateBeforeSend);
+    } catch (rollbackErr) {
+      console.warn("[chat] failed to roll back send state:", rollbackErr);
+    }
+    throw err;
+  }
 
   const key = await threadKey(p);
   const history = (await loadRecord(key)) || "[]";
@@ -1305,13 +1423,6 @@ export async function sendMessage(peer, text) {
   await storeRecord(key, JSON.stringify(arr));
   await rememberConversationPeer(p);
   await updateConversationMetadataFromMessage(p, msg, ts);
-
-  wsSend({
-    type: "send",
-    to: p,
-    header,
-    ciphertextB64: abToB64(ciphertext),
-  });
 
   scheduleSaveState();
 }
