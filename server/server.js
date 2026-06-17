@@ -36,6 +36,11 @@ const {
   generateEG,
   cryptoKeyToJSON, // exports CryptoKey -> JWK (JSON object)
 } = require("../crypto/dr/lib.js");
+const {
+  getFirebaseAuthServerStatus,
+  readBearerToken,
+  verifyFirebaseIdToken,
+} = require("./auth/firebaseVerifier");
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const PROJECT_ROOT = path.join(__dirname, "..");
@@ -362,6 +367,13 @@ function writeJson(res, statusCode, obj, extraHeaders = {}) {
     ...extraHeaders,
   });
   res.end(JSON.stringify(obj));
+}
+
+function writeAuthRequired(res, error = "Firebase auth token required") {
+  return writeJson(res, 401, {
+    ok: false,
+    error,
+  });
 }
 
 function getRequestIp(req) {
@@ -726,14 +738,65 @@ const server = http.createServer((req, res) => {
   if (
     req.method === "OPTIONS" &&
     (reqUrl.pathname.startsWith("/api/backup/") ||
-      reqUrl.pathname.startsWith("/api/backups/"))
+      reqUrl.pathname.startsWith("/api/backups/") ||
+      reqUrl.pathname.startsWith("/api/auth/"))
   ) {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type",
     });
     return res.end();
+  }
+
+  if (req.method === "GET" && reqUrl.pathname === "/api/auth/firebase/status") {
+    const status = getFirebaseAuthServerStatus();
+    return writeJson(res, 200, {
+      ok: true,
+      authMode: status.authMode,
+      configured: status.configured,
+      enabled: status.enabled,
+      required: status.required,
+      reason: status.reason,
+    });
+  }
+
+  if (req.method === "POST" && reqUrl.pathname === "/api/auth/firebase/verify") {
+    const status = getFirebaseAuthServerStatus();
+    if (!status.enabled) {
+      return writeJson(res, 200, {
+        ok: false,
+        authMode: status.authMode,
+        configured: status.configured,
+        enabled: false,
+        error: status.reason,
+      });
+    }
+
+    const token = readBearerToken(req);
+    if (!token) {
+      return writeAuthRequired(res);
+    }
+
+    void (async () => {
+      try {
+        const decoded = await verifyFirebaseIdToken(token);
+        return writeJson(res, 200, {
+          ok: true,
+          firebaseUid: decoded.firebaseUid,
+          email: decoded.email || "",
+          emailVerified: decoded.emailVerified,
+          provider: decoded.provider || "",
+        });
+      } catch (err) {
+        return writeJson(res, 401, {
+          ok: false,
+          error: "Firebase auth token invalid",
+          detail: String(err?.message || err || ""),
+        });
+      }
+    })();
+    return;
   }
 
   if (req.method === "GET" && reqUrl.pathname.startsWith("/api/backups/")) {

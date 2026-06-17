@@ -7199,3 +7199,62 @@ Checkpoint 2A test expectation:
 - if the UI ever shows an empty pane for a conversation that has an existing preview, Backup to Cloud should remain blocked until the conversation is reloaded/reselected correctly
 - when a laptop is kicked by a phone login, starting again on the laptop should warn that the local session may be stale
 - if the phone sent or received messages, the safe flow is Backup to Cloud on the phone before returning to the laptop, then Restore from Cloud on the laptop
+
+### Firebase Auth Foundation - Checkpoint 3: Server Token Verification Boundary
+
+Completed in:
+
+- `server/auth/firebaseVerifier.js`
+- `server/server.js`
+- `.env.example`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- add a backend-only Firebase ID token verification boundary
+- keep legacy/local named-domain demo behavior unchanged while Firebase server config is absent
+- avoid trusting client-provided Firebase user data until the server verifies an ID token
+
+Implemented:
+
+- added `server/auth/firebaseVerifier.js`
+  - reads optional server auth mode from `SERVER_AUTH_MODE`
+  - reads Firebase project id from `FIREBASE_PROJECT_ID`
+  - verifies Firebase ID tokens server-side using Firebase Secure Token public certificates
+  - validates token signature, `aud`, `iss`, `sub`, `iat`, and `exp`
+  - derives `firebaseUid` only from verified token claims
+  - caches Firebase public certs according to the response cache header
+- added `GET /api/auth/firebase/status`
+  - reports whether server-side Firebase verification is enabled/configured
+  - does not expose secrets
+- added `POST /api/auth/firebase/verify`
+  - expects `Authorization: Bearer <firebase-id-token>`
+  - returns `401` for missing/invalid tokens when server Firebase verification is enabled
+  - returns disabled/configuration status when server auth remains legacy or unconfigured
+- added safe server-side env placeholders to `.env.example`
+
+Important behavior:
+
+- this checkpoint does not require Firebase Admin/service-account credentials
+- this checkpoint does not commit any Firebase secret
+- this checkpoint does not change WebSocket register behavior yet
+- this checkpoint does not change backup ownership yet
+- this checkpoint does not change MongoDB schema
+- this checkpoint does not change Double Ratchet, vault, backup encryption, or message ciphertext behavior
+- legacy mode remains the default through `SERVER_AUTH_MODE=legacy`
+
+Security notes:
+
+- the server may only treat a Firebase account as authenticated after `verifyFirebaseIdToken()` succeeds
+- the server must not trust `uid`, email, or accountId values copied from client JSON
+- Firebase Auth proves account ownership only; it does not unlock local vaults or prove the browser has the newest Double Ratchet state
+- WebSocket and backup APIs still need separate Firebase-aware integration in later checkpoints before Firebase ownership is enforced
+
+Checkpoint 3 test expectation:
+
+- app builds successfully
+- server syntax check passes
+- with default/legacy server auth config, named-domain legacy chat, Backup to Cloud, and Restore from Cloud still work
+- `GET /api/auth/firebase/status` returns JSON and does not require a token
+- `POST /api/auth/firebase/verify` without Firebase server config returns disabled/configuration JSON instead of crashing
+- if `SERVER_AUTH_MODE=firebase_optional` and `FIREBASE_PROJECT_ID` are configured later, missing/invalid tokens should fail safely with `401`
