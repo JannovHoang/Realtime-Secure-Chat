@@ -17,6 +17,7 @@ The current demo focuses on:
 - encrypted identity backup and restore
 - account and identity metadata visibility
 - safer device switching warnings
+- Firebase Auth foundation in optional/legacy-safe mode
 - fixed public domain access through Cloudflare Tunnel
 
 ## 2. How To Run The Demo
@@ -68,6 +69,14 @@ The current account model is transitional. The user still enters a display name,
 but the app also derives an internal `accountId` and tracks a cryptographic
 `identityId`. This helps make routing and restore decisions safer, while keeping
 the UI understandable for demo.
+
+The Firebase Auth foundation has been added incrementally. In the current safe
+demo configuration, Firebase can be disabled or optional, so the existing local
+display-name flow still works. When Firebase is configured later, the server is
+prepared to verify Firebase ID tokens and use the verified Firebase user id for
+authenticated account ownership. Firebase login does not unlock the encrypted
+vault and does not recover Double Ratchet keys; the user still needs the local
+vault password and cloud restore flow for E2EE state.
 
 For public access, the app runs locally on port `3000`, and Cloudflare Tunnel
 exposes it through `https://chat.securechat.id.vn`. This does not turn the laptop
@@ -165,6 +174,45 @@ Expected result:
 - confirm replaces the local identity with the selected cloud backup
 - the flow still requires pressing `Start` after restore
 
+### G. Stale Backup Restore Guard
+
+1. Start a clean throwaway user.
+2. Send messages successfully with Alice.
+3. Click `Backup to Cloud`.
+4. Send a few more messages after that backup.
+5. Click `Restore from Cloud` on the same browser.
+6. Confirm the first `Replace Local Identity?` modal.
+
+Expected result:
+
+- the app shows `Cloud Backup May Be Older`
+- choosing `Cancel` leaves the local vault unchanged
+- choosing `Restore Anyway` is available only as an explicit rollback/recovery
+  action
+- for normal use, save a fresh backup from the newest working device before
+  restoring elsewhere
+
+### H. Firebase Auth Foundation Smoke
+
+Current safe demo mode can run without Firebase being configured.
+
+1. Open the app on `https://chat.securechat.id.vn`.
+2. Check the `Account auth` panel.
+3. If Firebase is not configured, it should say `Firebase not configured` or
+   `Legacy account mode`.
+4. Run the auth verify smoke test if needed:
+
+```powershell
+Invoke-RestMethod -Method POST https://chat.securechat.id.vn/api/auth/firebase/verify
+```
+
+Expected result in current legacy demo mode:
+
+- the endpoint returns a safe legacy/disabled response
+- Google sign-in is not required for local demo chat
+- local vault Start/Restore still controls E2EE state
+- signing in with Firebase later must not auto-open the vault
+
 ## 5. Important Terms
 
 `Display name`
@@ -174,9 +222,10 @@ this is still the main visible account label.
 
 `accountId`
 
-An internal transitional identifier derived locally from the display name. It is
-not real authentication yet. It prepares the project for a future Firebase or
-Google Auth phase.
+An internal account identifier. In legacy mode it is still derived locally from
+the display name. In Firebase-aware mode it can be namespaced from a verified
+Firebase user id, for example `firebase:<uid>`. The server must derive Firebase
+ownership from a verified token, not from client-supplied text.
 
 `identityId`
 
@@ -200,10 +249,19 @@ not receive the plaintext vault or backup password.
 Downloads an encrypted backup, decrypts it locally with the user's password, and
 imports the selected identity into the browser.
 
+`Firebase Auth`
+
+A real account authentication layer for proving account ownership when it is
+configured. It does not decrypt messages, does not unlock the vault, and does not
+replace Backup to Cloud / Restore from Cloud.
+
 ## 6. Current Limitations
 
-- This phase does not implement Firebase or Google login yet.
-- `accountId` is still transitional and derived from display name.
+- Firebase Auth foundation is present, but the safe demo configuration may still
+  run in legacy or optional mode.
+- Google sign-in is not required for the current local-vault demo unless Firebase
+  environment variables and server verification are configured.
+- Legacy `accountId` is still transitional and derived from display name.
 - The project still works best with one active browser/device per account at a
   time.
 - Switching devices should be done by backing up on the old device and restoring
@@ -212,6 +270,9 @@ imports the selected identity into the browser.
 - If a user continues chatting from an old local vault, secure chat state can
   desynchronize. The warning modals reduce this risk but do not replace real
   multi-device sync.
+- Firebase Auth does not solve stale Double Ratchet state by itself. The newest
+  working device still needs to save a fresh cloud backup before another device
+  restores.
 
 ## 7. Safe Demo Checklist
 
@@ -223,6 +284,10 @@ Before demo:
 - use clean demo users that have not already desynchronized
 - backup before switching devices
 - restore before chatting on a new device
+- after important test messages, save a fresh backup from the newest working
+  device before restoring elsewhere
+- if a restore warning says the cloud backup may be older, cancel unless you are
+  intentionally testing rollback
 
 Avoid during demo:
 

@@ -7513,3 +7513,56 @@ Checkpoint 6A test expectation:
 - cancelling the stale restore warning should preserve the current local vault
 - choosing `Restore Anyway` should still allow explicit recovery/rollback for throwaway test identities
 - normal Backup to Cloud, Restore from Cloud, realtime chat, and offline pending continue to work after a fresh backup is saved from the newest working device
+
+### Firebase Auth Foundation - Checkpoint 7: Regression And Demo Update
+
+Completed in:
+
+- `DEMO_SCRIPT.md`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- close the Firebase Auth Foundation phase with demo-safe documentation
+- document what has actually changed and what remains transitional
+- keep demo guidance aligned with the current named-domain workflow
+- avoid implying that Firebase Auth replaces E2EE vault restore or Double Ratchet state management
+
+Implemented:
+
+- updated the demo script to include Firebase Auth foundation behavior
+- documented that the current safe demo mode can still run with Firebase disabled or optional
+- documented the server auth verify smoke test for legacy/disabled mode
+- added demo guidance for the stale cloud restore guard
+- clarified that Firebase Auth proves account ownership only when configured and verified server-side
+- clarified that Firebase Auth does not unlock the encrypted vault, decrypt messages, or recover Double Ratchet keys
+- clarified that Backup to Cloud / Restore from Cloud remains necessary for moving E2EE state between browsers/devices
+- updated demo limitations and safe demo checklist for device switching and fresh backups
+
+Important behavior:
+
+- this checkpoint does not change runtime code
+- this checkpoint does not change MongoDB schema
+- this checkpoint does not change Firebase configuration
+- this checkpoint does not enable Firebase-required mode
+- this checkpoint does not remove legacy display-name mode
+
+Current phase result:
+
+- Firebase client integration is present and can be configured later through environment variables
+- auth UI shell exists and remains safe when Firebase is not configured
+- backend token verification boundary exists and defaults safely to legacy mode
+- WebSocket register can carry Firebase token/account context when configured
+- backup ownership is Firebase-aware when verified auth is available
+- legacy restore remains explicit rather than silent
+- stale cloud restore guard reduces accidental rollback of newer local ratchet state
+
+Checkpoint 7 test expectation:
+
+- app builds successfully
+- server syntax checks pass
+- named-domain smoke still works
+- default legacy/local demo still supports Start, realtime chat, offline pending, Backup to Cloud, and Restore from Cloud
+- `POST /api/auth/firebase/verify` still returns a safe legacy/disabled response when Firebase server config is absent
+- demo script clearly states that Firebase Auth does not replace local vault password or cloud restore
+- demo script does not contain secrets, tunnel credentials, private keys, passwords, or backup payloads
