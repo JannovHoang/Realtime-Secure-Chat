@@ -7355,3 +7355,63 @@ Checkpoint 4A test expectation:
 - offline pending still works: sender sees the message only after the server accepts it for queueing
 - when a stale/kicked browser tries to send, the UI should report an error instead of appending a fake successful message
 - after switching a user from laptop to phone via restore, multiple messages from the phone should either arrive at the peer or fail visibly; they should not silently appear only on the sender
+
+### Firebase Auth Foundation - Checkpoint 5: Firebase-Aware Backup Ownership
+
+Completed in:
+
+- `client/chat.js`
+- `server/server.js`
+- `server/mongo.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make new cloud backups aware of verified Firebase ownership when the active WebSocket session is Firebase-authenticated
+- keep the existing legacy display-name backup/restore path working while Firebase is not configured or not signed in
+- avoid trusting client-provided Firebase ownership metadata
+
+Implemented:
+
+- `identity_backups` documents can now store additive ownership metadata:
+  - `authMode`
+  - `firebaseUid`
+- `saveIdentityBackup()` writes the ownership metadata when provided
+- backup list/fetch helpers can optionally filter by verified Firebase owner
+- `backup_save` now derives Firebase ownership from the verified WebSocket session
+- if a Firebase-authenticated session saves a backup, the server stores:
+  - `authMode: "firebase"`
+  - verified `firebaseUid`
+  - canonical Firebase account id already derived during WebSocket register
+- if a client tries to provide a different `firebaseUid` during backup save, the server rejects the backup
+- `GET /api/backups/:username` and `GET /api/backup/:username` now support optional Bearer token authentication
+- when a valid Firebase token is supplied to backup list/fetch, the server scopes results to that verified `firebaseUid`
+- when no Firebase token is supplied, the legacy username/display-name restore path remains available
+- client backup list/fetch now sends a Firebase Bearer token when the browser is signed in and Firebase client config is available
+
+Important behavior:
+
+- this checkpoint does not change backup encryption
+- this checkpoint does not change backup payload ciphertext format
+- this checkpoint does not rewrite old backup records
+- this checkpoint does not auto-link old legacy backups to a Firebase account
+- this checkpoint does not remove legacy restore
+- with default legacy server config, current named-domain demo behavior should remain unchanged
+
+Security notes:
+
+- the client still encrypts backup payloads before upload
+- the server still cannot decrypt cloud backups
+- Firebase ownership is accepted only from verified server-side token claims
+- client-supplied `firebaseUid` is not trusted
+- authenticated backup list/fetch does not fall back to cross-account display-name lookup when Firebase verification is active
+
+Checkpoint 5 test expectation:
+
+- app builds successfully
+- server syntax check passes
+- default legacy mode still supports Start, realtime chat, Backup to Cloud, Restore from Cloud, and offline pending
+- `POST /api/auth/firebase/verify` still returns the expected legacy/disabled response when Firebase server config is absent
+- backup documents saved in legacy mode remain `authMode: "legacy"` or have no Firebase owner
+- later, when Firebase server verification is enabled, a signed-in account should only list/fetch backups owned by the verified Firebase uid
+- invalid Bearer token on backup list/fetch should fail safely instead of returning legacy backup data

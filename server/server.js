@@ -402,6 +402,30 @@ function isRateLimited(ip) {
   return false;
 }
 
+async function resolveOptionalFirebaseHttpAuth(req) {
+  const token = readBearerToken(req);
+  if (!token) return null;
+
+  const status = getFirebaseAuthServerStatus();
+  if (!status.enabled) {
+    return null;
+  }
+
+  const decoded = await verifyFirebaseIdToken(token);
+  return {
+    authMode: "firebase",
+    firebaseUid: decoded.firebaseUid,
+    accountId: makeFirebaseAccountId(decoded.firebaseUid),
+  };
+}
+
+function backupOwnerFilterFromAuth(auth) {
+  if (!auth?.firebaseUid) return null;
+  return {
+    firebaseUid: auth.firebaseUid,
+  };
+}
+
 function abToB64(ab) {
   return Buffer.from(new Uint8Array(ab)).toString("base64");
 }
@@ -826,7 +850,11 @@ const server = http.createServer((req, res) => {
 
     void (async () => {
       try {
-        const items = await listIdentityBackups(username);
+        const httpAuth = await resolveOptionalFirebaseHttpAuth(req);
+        const items = await listIdentityBackups(
+          username,
+          backupOwnerFilterFromAuth(httpAuth)
+        );
         const safeItems = items
           .filter((doc) => doc?.identityId)
           .map((doc) => ({
@@ -837,6 +865,10 @@ const server = http.createServer((req, res) => {
               typeof doc.accountIdScheme === "string" && doc.accountIdScheme.trim()
                 ? doc.accountIdScheme.trim()
                 : null,
+            authMode:
+              typeof doc.authMode === "string" && doc.authMode.trim()
+                ? doc.authMode.trim()
+                : "legacy",
             backupVersion: Number(doc.version || 2),
             clientSavedAt: doc.clientSavedAt || null,
             serverSavedAt: doc.serverSavedAt || doc.updatedAt || null,
@@ -851,6 +883,12 @@ const server = http.createServer((req, res) => {
         });
       } catch (err) {
         console.warn("[backup_list] failed:", err);
+        if (readBearerToken(req)) {
+          return writeJson(res, 401, {
+            ok: false,
+            error: "Restore authentication failed",
+          });
+        }
         return writeJson(res, 200, {
           ok: false,
           error: "Restore unavailable",
@@ -883,7 +921,12 @@ const server = http.createServer((req, res) => {
 
     void (async () => {
       try {
-        const doc = await getIdentityBackup(username, identityId || null);
+        const httpAuth = await resolveOptionalFirebaseHttpAuth(req);
+        const doc = await getIdentityBackup(
+          username,
+          identityId || null,
+          backupOwnerFilterFromAuth(httpAuth)
+        );
         if (
           !doc?.username ||
           typeof doc.ciphertextB64 !== "string" ||
@@ -906,6 +949,10 @@ const server = http.createServer((req, res) => {
             typeof doc.accountIdScheme === "string" && doc.accountIdScheme.trim()
               ? doc.accountIdScheme.trim()
               : null,
+          authMode:
+            typeof doc.authMode === "string" && doc.authMode.trim()
+              ? doc.authMode.trim()
+              : "legacy",
           identityId: doc.identityId || null,
           version: doc.version,
           clientSavedAt: doc.clientSavedAt || null,
@@ -917,6 +964,12 @@ const server = http.createServer((req, res) => {
         });
       } catch (err) {
         console.warn("[backup_get] failed:", err);
+        if (readBearerToken(req)) {
+          return writeJson(res, 401, {
+            ok: false,
+            error: "Restore authentication failed",
+          });
+        }
         return writeJson(res, 200, {
           ok: false,
           error: "Restore unavailable",
@@ -1315,9 +1368,14 @@ wss.on("connection", (ws) => {
       const registeredAccountId = getSessionAccountId(ws);
       const registeredDisplayName = getSessionDisplayName(ws);
       const registeredIdentityId = getSessionIdentityId(ws);
+      const session = getSession(ws);
       const username = normalizeUsername(data.username);
       const identityId = normalizeIdentityId(data.identityId);
       const backupAccountId = normalizeAccountId(data.accountId);
+      const backupFirebaseUid =
+        typeof data.firebaseUid === "string" && data.firebaseUid.trim()
+          ? data.firebaseUid.trim()
+          : "";
 
       if (!registeredUser || !username || username !== registeredUser) {
         return sendJson(ws, {
@@ -1380,6 +1438,19 @@ wss.on("connection", (ws) => {
         });
       }
 
+      if (
+        session?.firebaseUid &&
+        backupFirebaseUid &&
+        backupFirebaseUid !== session.firebaseUid
+      ) {
+        return sendJson(ws, {
+          type: "backup_saved",
+          ok: false,
+          requestId,
+          error: "Backup save failed",
+        });
+      }
+
       try {
         const savedBackup = await saveIdentityBackup(username, {
           accountId: registeredAccountId || backupAccountId || null,
@@ -1390,6 +1461,8 @@ wss.on("connection", (ws) => {
             typeof data.accountIdScheme === "string" && data.accountIdScheme.trim()
               ? data.accountIdScheme.trim()
               : null,
+          authMode: session?.firebaseUid ? "firebase" : "legacy",
+          firebaseUid: session?.firebaseUid || null,
           identityId,
           version: Number(data.version || 2),
           clientSavedAt:

@@ -238,6 +238,14 @@ function buildApiUrl(pathname) {
   return new URL(pathname, `${getServerHttpBase()}/`);
 }
 
+async function buildOptionalFirebaseAuthHeaders() {
+  const token = await getFirebaseIdToken(true).catch((err) => {
+    console.warn("[chat] Firebase ID token unavailable for API request:", err);
+    return null;
+  });
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 function settleBackupSaveRequest(
   requestId,
   ok,
@@ -1497,7 +1505,8 @@ export async function fetchCloudBackup(username, identityId = null) {
     url.searchParams.set("identityId", normalizedIdentityId);
   }
 
-  const res = await fetch(url.toString());
+  const headers = await buildOptionalFirebaseAuthHeaders();
+  const res = await fetch(url.toString(), { headers });
 
   let data = null;
   try {
@@ -1520,7 +1529,8 @@ export async function fetchCloudBackupIdentities(username) {
   }
 
   const url = buildApiUrl(`/api/backups/${encodeURIComponent(user)}`);
-  const res = await fetch(url.toString());
+  const headers = await buildOptionalFirebaseAuthHeaders();
+  const res = await fetch(url.toString(), { headers });
 
   let data = null;
   try {

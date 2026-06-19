@@ -164,6 +164,8 @@ async function saveIdentityBackup(username, backupDoc) {
         accountId: backupDoc.accountId || null,
         displayName: backupDoc.displayName || username,
         accountIdScheme: backupDoc.accountIdScheme || null,
+        authMode: backupDoc.authMode || "legacy",
+        firebaseUid: backupDoc.firebaseUid || null,
         identityId: backupDoc.identityId,
         version: backupDoc.version,
         clientSavedAt: backupDoc.clientSavedAt || null,
@@ -186,6 +188,8 @@ async function saveIdentityBackup(username, backupDoc) {
     accountId: backupDoc.accountId || null,
     displayName: backupDoc.displayName || username,
     accountIdScheme: backupDoc.accountIdScheme || null,
+    authMode: backupDoc.authMode || "legacy",
+    firebaseUid: backupDoc.firebaseUid || null,
     identityId: backupDoc.identityId,
     backupVersion: backupDoc.version,
     clientSavedAt: backupDoc.clientSavedAt || null,
@@ -193,31 +197,44 @@ async function saveIdentityBackup(username, backupDoc) {
   };
 }
 
-async function getIdentityBackup(username, identityId = null) {
+function buildBackupOwnerQuery(username, owner = null) {
+  const query = { username };
+  if (owner?.firebaseUid) {
+    query.firebaseUid = owner.firebaseUid;
+    query.authMode = "firebase";
+  }
+  return query;
+}
+
+async function getIdentityBackup(username, identityId = null, owner = null) {
   const currentDb = getDb();
+  const query = buildBackupOwnerQuery(username, owner);
   if (identityId) {
-    return currentDb.collection("identity_backups").findOne({ username, identityId });
+    return currentDb.collection("identity_backups").findOne({ ...query, identityId });
   }
 
   return currentDb
     .collection("identity_backups")
-    .find({ username })
+    .find(query)
     .sort({ updatedAt: -1, createdAt: -1, identityId: 1 })
     .limit(1)
     .next();
 }
 
-async function listIdentityBackups(username) {
+async function listIdentityBackups(username, owner = null) {
   const currentDb = getDb();
+  const query = buildBackupOwnerQuery(username, owner);
   return currentDb
     .collection("identity_backups")
-    .find({ username })
+    .find(query)
     .project({
       _id: 0,
       username: 1,
       accountId: 1,
       displayName: 1,
       accountIdScheme: 1,
+      authMode: 1,
+      firebaseUid: 1,
       identityId: 1,
       version: 1,
       clientSavedAt: 1,
@@ -297,6 +314,10 @@ async function ensureIndexes() {
 
   await dropLegacyUniqueIndexIfPresent(backups, "username_1");
   await backups.createIndex({ username: 1, identityId: 1 }, { unique: true });
+  await backups.createIndex(
+    { firebaseUid: 1, username: 1, identityId: 1 },
+    { sparse: true }
+  );
 
   await activeDevices.createIndex({ username: 1 }, { unique: true });
   await activeDevices.createIndex(
