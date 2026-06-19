@@ -672,6 +672,15 @@ export async function verifyPersistedVaultPassword(userId, password) {
   }
 }
 
+export async function getPersistedVaultMetadata(userId) {
+  const persisted = await readPersistedForUser(userId);
+  if (!persisted?.repr || !persisted?.digest) return null;
+  return {
+    savedAt: normalizeTimestamp(persisted.savedAt, 0),
+    hasVault: true,
+  };
+}
+
 export async function encryptIdentityPayload(payload, password) {
   validateImportedPayload(payload);
   const clientSavedAt =

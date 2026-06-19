@@ -1493,7 +1493,7 @@ export async function mergeRecentMessagesForDisplay(peer, recentItems) {
   return mergeDisplayMessagesIntoLocalHistory(peer, displayMessages);
 }
 
-export async function fetchCloudBackup(username, identityId = null) {
+export async function fetchCloudBackup(username, identityId = null, options = {}) {
   const user = normalizeUsername(username);
   if (!user) {
     throw new Error("Username is required");
@@ -1505,7 +1505,8 @@ export async function fetchCloudBackup(username, identityId = null) {
     url.searchParams.set("identityId", normalizedIdentityId);
   }
 
-  const headers = await buildOptionalFirebaseAuthHeaders();
+  const headers =
+    options.includeAuth === false ? {} : await buildOptionalFirebaseAuthHeaders();
   const res = await fetch(url.toString(), { headers });
 
   let data = null;
@@ -1522,14 +1523,15 @@ export async function fetchCloudBackup(username, identityId = null) {
   return data;
 }
 
-export async function fetchCloudBackupIdentities(username) {
+export async function fetchCloudBackupIdentities(username, options = {}) {
   const user = normalizeUsername(username);
   if (!user) {
     throw new Error("Username is required");
   }
 
   const url = buildApiUrl(`/api/backups/${encodeURIComponent(user)}`);
-  const headers = await buildOptionalFirebaseAuthHeaders();
+  const headers =
+    options.includeAuth === false ? {} : await buildOptionalFirebaseAuthHeaders();
   const res = await fetch(url.toString(), { headers });
 
   let data = null;

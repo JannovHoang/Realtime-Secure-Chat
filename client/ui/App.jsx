@@ -739,11 +739,81 @@ export default function App() {
         </ModalFrame>
       ) : null}
 
+      {state.modal?.type === "legacy_restore_confirm" ? (
+        <ModalFrame
+          title="Try Legacy Restore?"
+          subtitle={`No Firebase-owned backup was found for ${state.modal.username}. You can still try the older display-name restore path.`}
+          eyebrow="Legacy backup"
+          actions={
+            <>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleLegacyRestoreConfirm("cancel")}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => void actions.handleLegacyRestoreConfirm("continue")}
+              >
+                Try Legacy Restore
+              </button>
+            </>
+          }
+        >
+          <ModalNote tone="warning">
+            Legacy restore searches encrypted backups by display name. Continue
+            only if this is your old backup. After restoring, Start and save a
+            new cloud backup to associate the identity with your signed-in
+            account.
+          </ModalNote>
+        </ModalFrame>
+      ) : null}
+
+      {state.modal?.type === "restore_stale_confirm" ? (
+        <ModalFrame
+          title="Cloud Backup May Be Older"
+          subtitle={`This browser has local chat state for ${state.modal.username} that appears newer than the selected cloud backup.`}
+          eyebrow="Restore safety"
+          actions={
+            <>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleRestoreStaleConfirm("cancel")}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => void actions.handleRestoreStaleConfirm("continue")}
+              >
+                Restore Anyway
+              </button>
+            </>
+          }
+        >
+          <ModalNote tone="warning">
+            Restoring an older backup can roll back secure chat state and make
+            later messages fail to decrypt. Cancel if this browser was used for
+            newer chats; save a fresh backup from the newest working device
+            instead.
+          </ModalNote>
+        </ModalFrame>
+      ) : null}
+
       {state.modal?.type === "restore_choice" ? (
         <ModalFrame
           title="Choose Backup Identity"
-          subtitle="This display name has multiple cloud backups. Choose the device identity you want to restore."
-          eyebrow="Cloud restore"
+          subtitle={
+            state.modal.legacyRestore
+              ? "This display name has multiple legacy cloud backups. Choose the identity you own and want to restore."
+              : "This display name has multiple cloud backups. Choose the device identity you want to restore."
+          }
+          eyebrow={state.modal.legacyRestore ? "Legacy restore" : "Cloud restore"}
           actions={
             <button className="secondary" type="button" onClick={actions.cancelRestoreChoice}>
               Cancel

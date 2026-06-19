@@ -7415,3 +7415,101 @@ Checkpoint 5 test expectation:
 - backup documents saved in legacy mode remain `authMode: "legacy"` or have no Firebase owner
 - later, when Firebase server verification is enabled, a signed-in account should only list/fetch backups owned by the verified Firebase uid
 - invalid Bearer token on backup list/fetch should fail safely instead of returning legacy backup data
+
+### Firebase Auth Foundation - Checkpoint 6: Explicit Legacy Restore Compatibility
+
+Completed in:
+
+- `client/chat.js`
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/App.jsx`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- keep old encrypted display-name backups recoverable after Firebase-aware backup ownership is introduced
+- avoid silently falling back from Firebase-scoped restore to legacy display-name restore
+- make legacy restore an explicit user choice
+
+Implemented:
+
+- backup fetch helpers now support `includeAuth: false`
+- normal Restore from Cloud still sends Firebase Bearer token when the browser is signed in and Firebase client config is available
+- if a signed-in user has no Firebase-owned backup for the display name, the UI opens a confirmation modal before trying legacy restore
+- the legacy restore confirmation explains that the app will search older display-name backups
+- if the user confirms, backup list/fetch runs without Firebase Bearer token
+- multiple legacy backup identities still require explicit identity selection
+- successful legacy restore shows guidance to Start and save a new cloud backup so the identity can be associated with the signed-in account going forward
+
+Important behavior:
+
+- this checkpoint does not auto-link legacy backups to Firebase accounts
+- this checkpoint does not rewrite Mongo backup records
+- this checkpoint does not change encrypted backup payload format
+- this checkpoint does not remove legacy restore
+- invalid Firebase auth does not silently fall back to legacy restore
+- default legacy named-domain demo behavior remains unchanged
+
+Security notes:
+
+- legacy restore remains a compatibility path, not a proof of Firebase account ownership
+- users must explicitly opt into legacy restore
+- the server still cannot decrypt backup payloads
+- a wrong password still cannot import or link a backup
+- future full linking should only happen after successful decrypt and explicit confirmation
+
+Checkpoint 6 test expectation:
+
+- app builds successfully
+- normal legacy Restore from Cloud still works when Firebase is not configured
+- Backup to Cloud and Restore from Cloud still work on named domain
+- realtime chat and offline pending still work after restore
+- when Firebase is configured later and a signed-in user has no Firebase-owned backup, the UI should show Try Legacy Restore instead of silently searching legacy backups
+- cancelling Try Legacy Restore should leave local vault unchanged
+- confirming Try Legacy Restore should use the existing identity selection flow for multiple legacy backups
+
+### Firebase Auth Foundation - Checkpoint 6A: Stale Cloud Restore Guard
+
+Completed in:
+
+- `client/storage.js`
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/App.jsx`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- prevent a browser with newer local chat state from accidentally restoring an older cloud backup
+- reduce the risk of rolling back Double Ratchet state after a user has chatted since the last backup
+- make risky restore explicit instead of silent
+
+Implemented:
+
+- added a storage helper to read local persisted vault metadata without importing or decrypting backup payloads
+- restore flow now records the local vault `savedAt` timestamp before opening the local vault
+- after the normal Replace Local Identity confirmation, restore compares:
+  - selected cloud backup timestamp
+  - local backup metadata timestamp
+  - current local vault saved timestamp
+  - local identity id
+- if the selected cloud backup appears older than the browser's current local state for the same identity, the UI opens a `Cloud Backup May Be Older` warning
+- user can cancel safely, leaving local vault unchanged
+- user can still choose `Restore Anyway` for intentional rollback/recovery
+
+Important behavior:
+
+- this checkpoint does not change Double Ratchet crypto
+- this checkpoint does not change backup encryption
+- this checkpoint does not change MongoDB schema
+- this checkpoint does not change realtime/pending message routing
+- the guard is intentionally local-browser focused; it prevents overwriting a newer local vault with an older cloud backup
+- recent catch-up can still display messages without mutating live ratchet state, so visible history is not treated as proof that restore state is current
+
+Checkpoint 6A test expectation:
+
+- app builds successfully
+- restoring on a new browser/device still works normally
+- restoring on a browser that has chatted after its last backup should show `Cloud Backup May Be Older`
+- cancelling the stale restore warning should preserve the current local vault
+- choosing `Restore Anyway` should still allow explicit recovery/rollback for throwaway test identities
+- normal Backup to Cloud, Restore from Cloud, realtime chat, and offline pending continue to work after a fresh backup is saved from the newest working device
