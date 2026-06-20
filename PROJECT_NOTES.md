@@ -7566,3 +7566,302 @@ Checkpoint 7 test expectation:
 - `POST /api/auth/firebase/verify` still returns a safe legacy/disabled response when Firebase server config is absent
 - demo script clearly states that Firebase Auth does not replace local vault password or cloud restore
 - demo script does not contain secrets, tunnel credentials, private keys, passwords, or backup payloads
+
+## Firebase Auth Activation / Google Sign-In Enablement - Planned Next Phase
+
+This is the recommended next phase after Firebase Auth Foundation.
+
+Primary goal:
+
+- enable real Google Sign-In on `https://chat.securechat.id.vn`
+- verify Firebase ID tokens on the server using the existing public-cert verifier
+- bind authenticated WebSocket sessions to `accountId = firebase:<uid>`
+- make new backups owned by verified `firebaseUid`
+- make signed-in restore list/fetch only backups owned by that verified Firebase account
+- keep legacy mode and explicit legacy restore available during migration
+
+Non-goals for this phase:
+
+- do not add Firebase Admin SDK yet
+- do not add service account credentials
+- do not make Firebase login replace the encrypted vault password
+- do not make Firebase login auto-start chat
+- do not make Firebase login auto-restore E2EE keys
+- do not remove legacy restore
+- do not implement full multi-device Double Ratchet sync
+
+### Design Rules For Account, Display Name, And Identity
+
+These rules should guide the activation phase:
+
+- one Google account represents one real user/account
+- `firebase:<uid>` is the canonical authenticated account id after server token verification
+- `displayName` is the visible account label, not the account ownership boundary
+- do not use multiple display names under the same Gmail as separate independent users
+- a single account can have multiple `identityId` values, but these represent cryptographic identities, devices, restore states, or backup identities
+- multiple `identityId` values under the same account are not separate users
+- if identities need human-friendly names later, use `identityLabel` or `deviceLabel`
+- do not overload `displayName` to name devices or individual backup identities
+- in Firebase mode, backup ownership must be derived from verified Firebase token claims
+- client-supplied `firebaseUid`, `accountId`, or backup owner metadata must not be trusted
+
+Correct mental model:
+
+```text
+Google account -> real account/user
+displayName    -> visible name of that account
+identityId     -> cryptographic identity / local E2EE state
+backup identity -> encrypted saved identity/device state
+deviceLabel or identityLabel -> optional future label for each identity
+```
+
+### Demo And Test Account Strategy
+
+Recommended demo approach:
+
+- use 1-2 real Google accounts for the main named-domain demo
+- two Google accounts are enough to demonstrate real ownership boundaries:
+  - Google account A -> Alice
+  - Google account B -> Bob or Giang
+- a third Gmail is optional, not required
+- avoid using a personal primary Gmail if possible
+- if a personal Gmail must be used, the UI should avoid exposing the full email/avatar during demo
+
+Recommended development/test approach:
+
+- use Firebase Auth Emulator for many test accounts when doing local/dev testing
+- alternatively use Firebase Email/Password test users for ownership/scoping tests
+- example test accounts can be:
+  - `alice@test.local`
+  - `bob@test.local`
+  - `charlie@test.local`
+- emulator or email/password test users are useful for:
+  - duplicate displayName with different Firebase uid
+  - account A cannot list/restore account B backup
+  - many identities under one account
+  - wrong-account restore
+  - legacy restore migration
+
+Important demo distinction:
+
+- Google provider must be tested at least once on the real named domain because the phase goal is Google Sign-In activation
+- emulator/email-password users are supplementary for broader account ownership testing
+- they do not replace the real Google Sign-In smoke test
+
+### Checkpoint 0: Firebase Project And Config Baseline
+
+Scope:
+
+- create or select the Firebase project
+- enable Firebase Authentication
+- enable Google provider
+- add authorized domains:
+  - `chat.securechat.id.vn`
+  - `localhost` if local auth testing is needed
+- fill Firebase Web config in local `.env`
+- keep `.env.example` updated without real secrets
+- keep `SERVER_AUTH_MODE` explicit
+- do not add Firebase Admin SDK
+- do not commit service-account credentials
+
+Test expectation:
+
+- app runs on named domain
+- UI does not crash
+- auth panel reflects whether Firebase client config is available
+- legacy Start, realtime chat, offline pending, backup, and restore still work
+
+### Checkpoint 1: Client Google Sign-In Real Smoke
+
+Scope:
+
+- make Google Sign-In work with the real Firebase project on the named domain
+- show signed-in account state in the UI
+- support sign out
+- sign-in must not auto-start chat
+- sign-in must not auto-open the local vault
+- sign-in must not auto-restore cloud backup
+- sign-out must close/destroy any active chat session
+- sign-out must not delete local vault by default
+
+Test expectation:
+
+- Google Sign-In works on `https://chat.securechat.id.vn`
+- refresh preserves Firebase auth state if Firebase persistence is active
+- local vault remains locked until the user enters password and presses Start
+- sign out returns the UI to signed-out state
+- active WebSocket/session is closed after sign out
+- legacy chat still works when not signed in
+
+### Checkpoint 2: Server Firebase Verification Real Config
+
+Scope:
+
+- continue using the existing Firebase Secure Token public-cert verifier
+- set `SERVER_AUTH_MODE=firebase_optional`
+- set real `FIREBASE_PROJECT_ID`
+- verify real Firebase ID tokens on the backend
+- missing or invalid token must fail safely
+- do not add Firebase Admin SDK in this phase
+- do not add service-account/private-key credentials
+
+Rationale:
+
+- the public-cert verifier is enough for this activation phase
+- adding Firebase Admin SDK now would combine too many risks:
+  - Google Sign-In activation
+  - backend verifier replacement
+  - credential strategy
+  - WebSocket auth
+  - backup ownership
+  - restore scoping
+- if a production-style Admin SDK verifier is needed later, create a separate hardening phase that only swaps the internals of `verifyFirebaseIdToken()`
+
+Test expectation:
+
+- valid Firebase ID token passes verification
+- invalid token fails
+- missing token fails on authenticated paths
+- legacy/local mode still works in `firebase_optional`
+- `/api/auth/firebase/verify` reflects real config state
+
+### Checkpoint 3: Authenticated WebSocket Session
+
+Scope:
+
+- if signed in, client gets a fresh Firebase ID token immediately before WebSocket register
+- WebSocket register sends the token
+- server verifies the token
+- server binds session metadata:
+  - `authMode: firebase`
+  - verified `firebaseUid`
+  - `accountId: firebase:<uid>`
+  - display metadata
+  - active `identityId`
+- if not signed in, keep the legacy register path in `firebase_optional`
+- sign out must unregister/close the authenticated socket
+
+Test expectation:
+
+- signed-in Start registers a Firebase-authenticated session
+- active device routing uses `firebase:<uid>` where applicable
+- second login for the same Firebase account replaces the first session predictably
+- invalid/missing token cannot register as Firebase
+- legacy users still work when not signed in
+- refresh then Start obtains a fresh token before registering
+
+### Checkpoint 4: Firebase-Owned Backup Save
+
+Scope:
+
+- backup save must derive owner from verified Firebase auth, not from client-supplied owner fields
+- if backup save uses HTTP, each request must send `Authorization: Bearer <idToken>`
+- server verifies the Bearer token on that request
+- server sets:
+  - `authMode: firebase`
+  - verified `firebaseUid`
+  - canonical account id
+- if backup save uses an authenticated WebSocket message, the server may use the already verified socket auth context
+- legacy backup save remains available when unsigned-in and allowed by optional mode
+
+Test expectation:
+
+- signed-in backup creates a Firebase-owned `identity_backups` record
+- client cannot spoof `firebaseUid`
+- unsigned-in backup remains legacy if optional mode allows it
+- encrypted backup payload format remains unchanged
+- server still cannot decrypt backup contents
+
+### Checkpoint 5: Firebase-Scoped Restore
+
+Scope:
+
+- signed-in backup list/fetch sends Bearer token
+- server verifies the token per request
+- signed-in restore only lists/fetches backups owned by the verified `firebaseUid`
+- if no Firebase-owned backup exists, UI offers explicit legacy restore
+- no silent fallback from Firebase-scoped restore to legacy display-name restore
+- multiple backup identities still require explicit identity selection
+
+Test expectation:
+
+- Google account A cannot list or restore Google account B backups
+- duplicate displayName under different Firebase accounts does not cross account boundaries
+- correct Google account can restore its own backup on another browser/device
+- wrong password still cannot decrypt or import backup
+- legacy restore remains explicit
+
+### Checkpoint 6: Legacy Backup Linking Decision, Optional
+
+This checkpoint should be skipped unless actually needed.
+
+If implemented:
+
+- signed-in user can choose a legacy backup explicitly
+- legacy backup must decrypt successfully with the vault password
+- UI asks whether to associate the restored identity with the signed-in Google account
+- linking only happens after explicit confirmation and a new backup save
+- never auto-link by matching displayName alone
+
+Test expectation:
+
+- cancel leaves backup unlinked
+- wrong password does not link
+- confirmed link creates Firebase-owned backup metadata only after successful decrypt and save
+- another Firebase account cannot claim the linked backup
+
+### Checkpoint 7: Auth UX Polish And Demo Safety
+
+Scope:
+
+- make auth state readable without implying Google unlocks E2EE
+- UI should distinguish:
+  - Google account: signed in / signed out
+  - local vault: locked / unlocked / no local vault
+  - backup ownership: Google account / legacy / unknown
+- recommended UI wording:
+  - `Google sign-in proves account ownership.`
+  - `Password still unlocks your encrypted local vault.`
+- avoid exposing full personal email/avatar during demo if possible
+- keep mobile layout usable
+
+Test expectation:
+
+- desktop layout remains clean
+- mobile layout remains usable
+- signed-in identity is understandable
+- no UI text claims Google can recover encrypted messages or keys
+
+### Checkpoint 8: Full Regression And Docs
+
+Regression checklist:
+
+- Google Sign-In on named domain
+- Google sign-out
+- Start still requires password
+- Restore still requires password
+- realtime chat
+- offline pending
+- Firebase-owned backup save
+- Firebase-scoped restore
+- account A cannot restore account B backup
+- duplicate displayName across different Firebase accounts
+- explicit legacy restore path
+- stale cloud restore guard
+- device switching warning
+- mobile smoke
+- quick tunnel fallback if needed
+
+Docs to update:
+
+- `PROJECT_NOTES.md`
+- `DEMO_SCRIPT.md`
+- `.env.example`
+- `README.md` if still outdated
+
+Recommended scope boundary:
+
+- implement Checkpoint 0 through Checkpoint 5 first
+- pause for strong regression after Checkpoint 5
+- keep Checkpoint 6 optional
+- use Checkpoint 7 and Checkpoint 8 to make the phase demo-safe
