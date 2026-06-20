@@ -7991,3 +7991,203 @@ Checkpoint 1 test expectation:
 - Sign out returns the Account Auth panel to the signed-out state
 - Sign out does not delete local vault data
 - no `.env` or Firebase config values are committed
+
+## Forward Roadmap After Firebase Client Sign-In
+
+This roadmap captures the intended development order after the first Firebase client sign-in smoke test.
+
+The main principle is to avoid turning Google Sign-In into a misleading shortcut for E2EE state. Google/Firebase can identify the account owner, but it does not contain the local vault, private keys, Double Ratchet state, or encrypted backup password. Those pieces remain separate and must be reflected clearly in the UI and backend authorization model.
+
+### Roadmap Phase 1: Auth UX / Vault Clarity
+
+Goal:
+
+- make the post-Google-sign-in experience understandable before tightening ownership rules
+- explain the difference between Google account, display name, vault password, local vault, chat session, and backup/restore
+- keep legacy mode working while the authenticated model is introduced gradually
+
+Key model:
+
+- Google/Firebase account:
+  - identifies the real account owner
+  - eventually produces the trusted account id `firebase:<uid>`
+  - does not contain E2EE private keys or Double Ratchet state
+- display name:
+  - user-facing chat label
+  - transitional lookup key for existing legacy local vaults
+  - should not be treated as a security boundary after Firebase ownership is enabled
+- vault password:
+  - unlocks the encrypted local vault
+  - decrypts encrypted backup payloads when restoring
+  - is not the Google account password
+  - is not sent to the server
+- local vault:
+  - stores E2EE identity material, local records, and chat metadata
+  - can be locked independently from Google sign-in
+- chat session:
+  - runtime WebSocket and Double Ratchet state
+  - should be closed when the vault is locked or Google is signed out
+
+Recommended checkpoints:
+
+1. Regression baseline:
+   - verify Google Sign-In smoke, legacy Start, realtime chat, offline pending, legacy Backup/Restore, named-domain access, and quick tunnel fallback
+2. Rename actions:
+   - `Logout` -> `Lock vault`
+   - `Sign out` -> `Sign out Google`
+   - `Password` -> `Vault password`
+   - use `Unlock vault` instead of `Start` when a Google account is signed in and a local vault is being opened
+3. Signed-in Google UX:
+   - prefill display name from Google profile when useful
+   - reduce display name to a chat label / legacy vault selector
+   - do not silently remove display-name lookup until `firebaseUid -> local identity` mapping is fully implemented
+4. Dynamic primary action labels:
+   - legacy unsigned-in flow: `Start`
+   - Google signed-in with locked local vault: `Unlock vault`
+   - active local chat session: `Lock vault`
+   - no local vault: recommend `Restore from Cloud` or `Create new identity`
+5. Vault freshness guard before unlock:
+   - before opening a local vault in signed-in mode, compare local backup receipt metadata with cloud backup metadata when available
+   - if cloud backup appears newer, warn that this device may have stale Double Ratchet state
+   - offer `Restore latest backup`, `Unlock local vault anyway`, and `Cancel`
+   - do not auto-restore or silently overwrite local vault data
+6. Account Auth panel polish:
+   - show account and vault state in user-facing language
+   - hide long ids by default
+   - expose technical details only behind an explicit debug/details toggle
+7. Docs and regression:
+   - update project notes and demo script
+   - retest Google sign-in, Lock vault, Unlock vault, Sign out Google, freshness warning, legacy Start, realtime chat, offline pending, legacy Backup/Restore, mobile layout, and named-domain smoke
+
+Important boundary:
+
+- this phase should not implement Firebase-owned backup enforcement yet
+- this phase should not remove legacy restore
+- this phase should not change cryptographic primitives or MongoDB schema
+- this phase should primarily clarify UX and add stale-vault safety before deeper auth enforcement
+
+### Roadmap Phase 2: Firebase Account Ownership Enforcement
+
+Goal:
+
+- make Firebase Auth the real ownership boundary for authenticated paths
+- stop relying on display name as the backup/account ownership key when signed in
+
+Recommended checkpoints:
+
+1. Authenticated WebSocket register:
+   - client sends a fresh Firebase ID token when signed in
+   - server verifies the token
+   - server derives `firebaseUid` and `accountId = firebase:<uid>`
+   - server ignores client-supplied `firebaseUid` or authenticated `accountId`
+2. Session metadata:
+   - track `authMode`, verified `firebaseUid`, canonical `accountId`, display name, active `identityId`, connection time, and optional device label
+3. Firebase-owned backup save:
+   - signed-in backup requests include `Authorization: Bearer <Firebase ID token>`
+   - server verifies token and writes ownership metadata from verified claims
+   - encrypted backup payload remains opaque to the server
+4. Firebase-scoped restore:
+   - signed-in restore lists/fetches only backups owned by the verified Firebase uid
+   - no silent fallback to legacy display-name restore
+   - if no Firebase-owned backup exists, offer explicit legacy restore
+5. Backup ownership UI:
+   - show whether backup is Google-owned, legacy, or unknown
+   - avoid implying display name is the owner
+6. Legacy restore compatibility:
+   - keep legacy restore as a deliberate compatibility path
+   - do not auto-link legacy backups to Firebase accounts by matching display name
+7. Regression and docs:
+   - test account A cannot list/restore account B backups
+   - test duplicate display names across Firebase accounts
+   - test realtime, offline pending, backup, restore, stale-vault guard, mobile, and named-domain smoke
+
+### Roadmap Phase 3: Vault Recovery And Password Safety
+
+Goal:
+
+- improve recovery options without weakening E2EE
+- make it clear that Google login cannot reset the vault password by itself
+
+Recommended checkpoints:
+
+1. Recovery model design:
+   - distinguish Google account recovery from vault password recovery
+   - document that the server cannot recover E2EE keys without a client-held recovery mechanism
+2. Change vault password:
+   - only allow when the vault is already unlocked
+   - re-encrypt local vault data with the new vault password
+3. Recovery key design:
+   - generate a client-side recovery key or recovery phrase
+   - require the user to save it
+4. Create vault with recovery key:
+   - encrypt recovery material client-side
+   - never send raw recovery key material to the server
+5. Forgot vault password:
+   - allow password reset only with a valid recovery key or an already-unlocked device
+6. Reset encrypted identity:
+   - if vault password and recovery key are both lost, allow creating a new identity with clear warning that old encrypted data may be unreadable
+
+### Roadmap Phase 4: Device Switching And Backup Discipline
+
+Goal:
+
+- make switching devices safer without claiming full automatic multi-device Double Ratchet sync
+
+Recommended checkpoints:
+
+1. Device label:
+   - store a user-editable label such as browser/device name
+2. Backup metadata improvements:
+   - include device label, server save time, identity id, schema version, and local freshness hints
+3. Stale device banner:
+   - warn when a device may be using older encrypted state
+4. Active device policy:
+   - keep the current one-active-session-per-account behavior clear
+   - explain that restoring on a new device makes the old local copy potentially stale
+5. Docs:
+   - state that the project supports safe device switching through encrypted backup/restore
+   - state that it does not yet implement full automatic multi-device state synchronization
+
+### Roadmap Phase 5: Firebase Admin / Auth Hardening
+
+Goal:
+
+- harden token verification behind a stable auth adapter
+- optionally move from public-cert verification to Firebase Admin SDK later
+
+Recommended checkpoints:
+
+1. Auth adapter interface:
+   - all backend code should call a single `verifyAuthToken(idToken)`-style boundary
+2. Public-cert verifier hardening:
+   - reject tampered, expired, wrong audience, wrong issuer, wrong algorithm, and unknown-key tokens
+   - fail closed on certificate fetch failures
+3. Optional Firebase Admin SDK verifier:
+   - add only when credential strategy is clear
+   - do not commit service-account credentials
+   - keep the same adapter return shape
+4. Revocation and disabled-user behavior:
+   - document or implement revoked-token and disabled-user handling when production readiness requires it
+
+### Roadmap Phase 6: Security Hardening
+
+Goal:
+
+- reduce risk before public/demo use expands
+
+Recommended checkpoints:
+
+1. Secret audit:
+   - verify `.env`, tunnel credentials, service-account files, Mongo URI, tokens, passwords, and backup plaintext are not committed or logged
+2. API hardening:
+   - validate input shapes
+   - limit backup and message sizes
+   - reject malformed payloads consistently
+3. Rate limiting:
+   - protect auth verify, backup, restore, and WebSocket register paths
+4. Security headers:
+   - add headers suitable for a Node-served frontend while keeping Firebase/Google auth compatible
+5. Dependency audit:
+   - review package audit output and update dependencies carefully
+6. Abuse tests:
+   - test fake tokens, oversized backup payloads, wrong-password restore, account-boundary restore attempts, WebSocket spam, and malformed messages
