@@ -192,33 +192,47 @@ Expected result:
 - for normal use, save a fresh backup from the newest working device before
   restoring elsewhere
 
-### H. Firebase Auth Foundation Smoke
+### H. Auth UX / Vault Clarity Smoke
 
-Current safe demo mode can run without Firebase being configured.
+Current safe demo mode can run with Firebase configured, optional, or disabled.
+The important rule is that Google account login and E2EE vault unlock are two
+different layers.
 
 1. Open the app on `https://chat.securechat.id.vn`.
-2. Check the `Account auth` panel.
-3. If Firebase is not configured, it should say `Firebase not configured` or
-   `Legacy account mode`.
-4. Run the auth verify smoke test if needed:
+2. If Firebase is configured, click `Sign in with Google`.
+3. Confirm that signing in does not auto-start chat, auto-unlock the vault, or
+   auto-restore a cloud backup.
+4. Confirm that the topbar asks for `Vault password`, not a Google password.
+5. If the display-name field is empty, confirm it is suggested from the Google
+   profile; if it already contains a demo name such as `AliceDemo`, confirm the
+   app does not overwrite it.
+6. Enter the correct vault password and click `Unlock vault`.
+7. Chat normally, then click `Sign out`.
+8. Confirm that `Sign out` closes the local chat session and signs out Google,
+   but does not delete local vault data or cloud backups.
+9. Run the auth verify smoke test if needed:
 
 ```powershell
 Invoke-RestMethod -Method POST https://chat.securechat.id.vn/api/auth/firebase/verify
 ```
 
-Expected result in current legacy demo mode:
+Expected result:
 
-- the endpoint returns a safe legacy/disabled response
-- Google sign-in is not required for local demo chat
-- local vault Start/Restore still controls E2EE state
-- signing in with Firebase later must not auto-open the vault
+- Google/Firebase identifies the account, but does not unlock E2EE state
+- `Vault password` still controls the encrypted browser-local identity
+- `Sign out` is the only visible signed-in exit action in the main UI
+- local vault data remains available if browser site data was not deleted
+- if Firebase server auth is still in legacy mode, the verify endpoint returns a
+  safe legacy/disabled response
 
 ## 5. Important Terms
 
 `Display name`
 
 The human-readable name typed by the user. In the current transitional version,
-this is still the main visible account label.
+this is still the main visible chat label and legacy vault lookup key. After
+Google sign-in, the app may suggest a display name from the Google profile, but
+display name is not the security boundary.
 
 `accountId`
 
@@ -239,6 +253,12 @@ The encrypted browser-local storage area that holds identity state, ratchet
 state, local conversation history, and metadata. If browser site data is deleted,
 the local vault is deleted too, so the user must restore from cloud backup.
 
+`Vault password`
+
+The password used to unlock the encrypted local vault and decrypt encrypted
+backup payloads. It is not the Google account password, and it is not sent to the
+server as plaintext.
+
 `Backup to Cloud`
 
 Creates an encrypted identity backup and stores it on the server. The server does
@@ -255,12 +275,26 @@ A real account authentication layer for proving account ownership when it is
 configured. It does not decrypt messages, does not unlock the vault, and does not
 replace Backup to Cloud / Restore from Cloud.
 
+`Sign out`
+
+The visible signed-in exit action. It signs out the Google/Firebase account and
+closes the local encrypted chat session first. It does not delete local vault
+data and does not delete cloud backups.
+
+`Unlock vault`
+
+The action that opens the encrypted local identity on this browser after the
+correct vault password is entered. In legacy mode the older `Start` wording may
+still appear.
+
 ## 6. Current Limitations
 
 - Firebase Auth foundation is present, but the safe demo configuration may still
   run in legacy or optional mode.
-- Google sign-in is not required for the current local-vault demo unless Firebase
-  environment variables and server verification are configured.
+- Google sign-in is available only when Firebase environment variables are
+  configured correctly.
+- Google sign-in does not replace the vault password and does not recover lost
+  E2EE keys.
 - Legacy `accountId` is still transitional and derived from display name.
 - The project still works best with one active browser/device per account at a
   time.
@@ -282,6 +316,8 @@ Before demo:
 - run `cloudflared tunnel run realtime-secure-chat`
 - open `https://chat.securechat.id.vn`
 - use clean demo users that have not already desynchronized
+- if using Google sign-in, verify that the display name matches the intended
+  local vault before unlocking
 - backup before switching devices
 - restore before chatting on a new device
 - after important test messages, save a fresh backup from the newest working

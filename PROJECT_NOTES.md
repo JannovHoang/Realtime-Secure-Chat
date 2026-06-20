@@ -8287,6 +8287,68 @@ Checkpoint 5 test expectation:
 - backup status changes from `Local only` to `Backed up` after a successful Backup to Cloud
 - realtime chat, offline pending, Restore from Cloud, and legacy mode remain unchanged
 
+### Auth UX / Vault Clarity - Checkpoint 6: Documentation And Regression Checklist
+
+Completed in:
+
+- `DEMO_SCRIPT.md`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- close the Auth UX / Vault Clarity phase with a clear explanation of the current user model
+- document the safe demo flow after Google Sign-In was introduced
+- preserve the boundary between account authentication and E2EE vault state
+- provide a regression checklist for the next Firebase ownership phase
+
+Documented model:
+
+- Google/Firebase account:
+  - identifies the account when Firebase is configured
+  - should become the ownership boundary in the next phase
+  - does not contain plaintext messages, private keys, Double Ratchet state, or the vault password
+- display name:
+  - remains a visible chat label and legacy vault lookup key in this transitional phase
+  - can be suggested from the Google profile after sign-in
+  - is not a security boundary once Firebase ownership enforcement is implemented
+- vault password:
+  - unlocks the encrypted local vault
+  - decrypts encrypted backup payloads during restore
+  - is not the Google password and is not sent to the server as plaintext
+- local vault:
+  - stores encrypted browser-local identity, ratchet state, local history, and metadata
+  - is removed if browser site data is deleted
+  - must be restored from a cloud backup when moving to a browser without the correct local state
+- visible sign-out UX:
+  - signed-in UI exposes one main `Sign out` action
+  - sign-out closes the local encrypted chat session before signing out Firebase
+  - sign-out does not delete local vault data or cloud backups
+
+Important safety note:
+
+- Google Sign-In does not make the app a full multi-device Double Ratchet system
+- the newest working device should still save a fresh backup before another device restores
+- stale backup and stale local vault warnings reduce accidental ratchet rollback, but they do not replace a real multi-device sync protocol
+
+Checkpoint 6 regression checklist:
+
+- Google Sign-In, when configured, does not auto-start chat
+- Google Sign-In does not auto-unlock the vault
+- Google Sign-In does not auto-restore a cloud backup
+- display name is only suggested when safe and can still be set to the intended demo vault label
+- `Vault password` wording is visible for the E2EE vault password
+- `Unlock vault` opens the local vault only after the correct vault password
+- `Sign out` closes the local chat session and signs out Google without deleting local vault data
+- legacy Start/Logout behavior still works when not signed in with Google
+- Backup to Cloud and Restore from Cloud remain explicit user actions
+- stale backup warnings are treated as safety warnings before restore/unlock
+- realtime chat, offline pending delivery, mobile layout, and named-domain access remain regression-tested before the next phase
+
+Scope boundary:
+
+- this checkpoint is documentation only
+- it does not change runtime behavior, encryption, Firebase ownership enforcement, WebSocket routing, MongoDB schema, backup payload format, or vault storage format
+
 ### Roadmap Phase 2: Firebase Account Ownership Enforcement
 
 Goal:
