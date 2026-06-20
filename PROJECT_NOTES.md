@@ -7865,3 +7865,74 @@ Recommended scope boundary:
 - pause for strong regression after Checkpoint 5
 - keep Checkpoint 6 optional
 - use Checkpoint 7 and Checkpoint 8 to make the phase demo-safe
+
+### Firebase Auth Activation - Checkpoint 0: Firebase Project And Config Baseline
+
+Completed in:
+
+- `.env.example`
+- `.gitignore`
+- `client/auth/firebaseClient.js`
+- `server/auth/firebaseVerifier.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- confirm the project is ready to receive real Firebase Web config without committing secrets
+- keep the activation phase scoped to public-cert verification, not Firebase Admin SDK
+- document the required Firebase Console setup before enabling Google Sign-In runtime behavior
+- preserve the current legacy/named-domain demo behavior before moving to real auth smoke tests
+
+Confirmed baseline:
+
+- current branch is `feature/firebase-auth-activation`
+- working tree was clean before checkpoint 0 documentation changes
+- `.env.example` contains the expected client-side Firebase Web config placeholders:
+  - `VITE_AUTH_MODE`
+  - `VITE_FIREBASE_API_KEY`
+  - `VITE_FIREBASE_AUTH_DOMAIN`
+  - `VITE_FIREBASE_PROJECT_ID`
+  - `VITE_FIREBASE_APP_ID`
+  - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+  - `VITE_FIREBASE_STORAGE_BUCKET`
+  - `VITE_FIREBASE_MEASUREMENT_ID`
+- `.env.example` contains the expected server-side verification placeholders:
+  - `SERVER_AUTH_MODE`
+  - `FIREBASE_PROJECT_ID`
+- `.gitignore` ignores local `.env` and `.env.*` files while keeping `.env.example` tracked
+- the frontend Firebase adapter reads only Vite `VITE_...` config and stays disabled if required client config is incomplete
+- the backend Firebase verifier uses Firebase Secure Token public certs and does not require Firebase Admin SDK or service-account credentials
+
+Required Firebase Console setup before Checkpoint 1:
+
+- create or select the Firebase project
+- enable Firebase Authentication
+- enable Google provider in Authentication -> Sign-in method
+- add authorized domains:
+  - `chat.securechat.id.vn`
+  - `localhost` if local auth testing is needed
+- create or reuse a Firebase Web app
+- copy Web app config values into local `.env`
+- set local frontend mode:
+  - `VITE_AUTH_MODE=firebase_optional`
+- keep server mode legacy until Checkpoint 2 unless explicitly testing server verification:
+  - `SERVER_AUTH_MODE=legacy`
+- do not add Firebase Admin SDK
+- do not create or commit service-account/private-key credentials for this phase
+
+Important behavior:
+
+- this checkpoint does not enable Google Sign-In yet
+- this checkpoint does not change runtime chat behavior
+- this checkpoint does not change WebSocket auth behavior
+- this checkpoint does not change backup/restore ownership behavior
+- this checkpoint does not change MongoDB schema
+- legacy Start, realtime chat, offline pending, Backup to Cloud, and Restore from Cloud should continue to work
+
+Checkpoint 0 test expectation:
+
+- app builds successfully
+- named-domain smoke still loads
+- auth panel remains safe when Firebase config is absent or incomplete
+- after local `.env` is filled with Firebase Web config, auth panel should detect configured client auth without requiring Google sign-in yet
+- no `.env`, Firebase API key values, service-account secrets, tunnel credentials, passwords, or backup payloads are committed
