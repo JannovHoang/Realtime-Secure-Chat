@@ -8168,6 +8168,46 @@ Checkpoint 2 test expectation:
 - wrong vault password errors still block Start/Unlock and Backup
 - successful Start/Unlock, realtime chat, offline pending, Backup to Cloud, and Restore from Cloud remain unchanged
 
+### Auth UX / Vault Clarity - Checkpoint 3: Signed-In Google Display Name Prefill
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- reduce the feeling that display name is still a second login username after Google sign-in
+- prefill display name from the signed-in Google profile when it is safe to do so
+- keep display name in the flow for legacy vault lookup and chat labeling until Firebase-owned identity mapping is implemented
+
+Implemented behavior:
+
+- when Firebase auth state becomes signed-in, React suggests a display name from the Google profile display name
+- if the Google profile display name is unavailable, React falls back to the email local-part as a display-name suggestion
+- the suggestion is applied only when the display name field is empty
+- existing manually entered display names are not overwritten
+- signed-in topbar placeholder now says `Display name for this vault`
+- signed-in topbar shows a short note: Google identifies the account, while display name labels the chat identity
+- Google sign-in success toast now tells the user to check the display name and unlock or restore the vault
+
+Important scope boundary:
+
+- this checkpoint does not remove the display-name field
+- this checkpoint does not create a Firebase-owned local identity mapping yet
+- this checkpoint does not auto-start, auto-unlock, auto-restore, or auto-create an identity after Google sign-in
+- this checkpoint does not change backup ownership, restore scoping, WebSocket auth, MongoDB schema, Double Ratchet behavior, or vault encryption
+
+Checkpoint 3 test expectation:
+
+- if the display-name field is empty, Google sign-in fills it from the Google profile or email local-part
+- if the display-name field already contains a value such as `AliceDemo`, Google sign-in does not overwrite it
+- after Google sign-in, the UI still requires vault password and explicit Unlock/Restore before chat
+- legacy unsigned-in Start remains unchanged
+- existing backup/restore, realtime chat, and offline pending behavior remain unchanged
+
 ### Roadmap Phase 2: Firebase Account Ownership Enforcement
 
 Goal:

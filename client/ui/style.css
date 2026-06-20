@@ -118,6 +118,14 @@ body {
   flex-wrap: wrap;
 }
 
+.auth-context-note {
+  max-width: 240px;
+  padding: 0 2px 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .topbar-actions {
   flex-wrap: wrap;
 }

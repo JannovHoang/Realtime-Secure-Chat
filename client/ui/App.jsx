@@ -335,7 +335,11 @@ export default function App() {
           <div className="auth-fields">
             <Field
               label="Display name"
-              placeholder="Enter your display name"
+              placeholder={
+                signedInWithGoogle
+                  ? "Display name for this vault"
+                  : "Enter your display name"
+              }
               value={state.username}
               onChange={(value) => actions.setField("username", value)}
               disabled={busy}
@@ -361,6 +365,11 @@ export default function App() {
                   </button>
                 }
               />
+            ) : null}
+            {signedInWithGoogle ? (
+              <div className="auth-context-note">
+                Google identifies your account. Display name labels this chat identity.
+              </div>
             ) : null}
           </div>
 

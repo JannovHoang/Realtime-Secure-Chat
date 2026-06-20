@@ -302,6 +302,15 @@ function normalizeFirebaseUser(user) {
   };
 }
 
+function getFirebaseDisplayNameSuggestion(user) {
+  const normalizedUser = normalizeFirebaseUser(user);
+  if (!normalizedUser?.uid) return "";
+  const profileName = normalizePeer(normalizedUser.displayName);
+  if (profileName) return profileName;
+  const emailLocalPart = String(normalizedUser.email || "").split("@")[0];
+  return normalizePeer(emailLocalPart);
+}
+
 function findConversationByPeer(conversations, peer) {
   const normalizedPeer = normalizePeer(peer);
   if (!normalizedPeer || !Array.isArray(conversations)) return null;
@@ -689,14 +698,20 @@ function reducer(state, action) {
       return { ...state, pendingLegacyRestore: action.value };
     case "set_pending_start_warning":
       return { ...state, pendingStartWarning: action.value };
-    case "auth_state":
+    case "auth_state": {
+      const authUser = normalizeFirebaseUser(action.user);
+      const suggestedDisplayName = getFirebaseDisplayNameSuggestion(action.user);
+      const shouldPrefillDisplayName =
+        !!authUser?.uid && !normalizePeer(state.username) && !!suggestedDisplayName;
       return {
         ...state,
         authReady: true,
         authBusy: false,
         authError: "",
-        authUser: normalizeFirebaseUser(action.user),
+        authUser,
+        username: shouldPrefillDisplayName ? suggestedDisplayName : state.username,
       };
+    }
     case "auth_begin":
       return {
         ...state,
@@ -1147,7 +1162,10 @@ export function useChatApp() {
     dispatch({ type: "auth_begin" });
     try {
       await signInWithGoogle();
-      pushToast("Signed in with Google. Start or restore your local vault to chat.", "success");
+      pushToast(
+        "Signed in with Google. Check the display name, then unlock or restore your vault.",
+        "success"
+      );
     } catch (err) {
       const message = String(err?.message || err || "Google sign-in failed");
       dispatch({ type: "auth_error", message });
