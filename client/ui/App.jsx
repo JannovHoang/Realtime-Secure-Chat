@@ -131,19 +131,37 @@ function AccountIdentityPanel({ info, helpers }) {
   );
 }
 
+function maskEmailAddress(email) {
+  const value = typeof email === "string" ? email.trim() : "";
+  const [local, domain] = value.split("@");
+  if (!local || !domain) return "";
+  const visible = local.slice(0, Math.min(2, local.length));
+  return `${visible}${"*".repeat(Math.max(3, local.length - visible.length))}@${domain}`;
+}
+
+function formatFirebaseAccountLabel(user) {
+  if (!user?.uid) return "Google account";
+  const displayName = typeof user.displayName === "string" ? user.displayName.trim() : "";
+  const maskedEmail = maskEmailAddress(user.email);
+  return displayName || maskedEmail || "Google account";
+}
+
 function FirebaseAuthPanel({ state, actions }) {
   const availability = state.authAvailability || {};
   const enabled = !!availability.enabled;
   const signedIn = !!state.authUser?.uid;
+  const maskedEmail = maskEmailAddress(state.authUser?.email);
   const label = signedIn
-    ? state.authUser.email || state.authUser.displayName || "Google account"
+    ? formatFirebaseAccountLabel(state.authUser)
     : enabled
-      ? "Google sign-in available"
+      ? state.authReady
+        ? "Google sign-in available"
+        : "Checking Google sign-in"
       : availability.authMode === "legacy"
         ? "Legacy account mode"
         : "Firebase not configured";
   const detail = signedIn
-    ? "Account signed in. Start or restore your local vault to chat."
+    ? `Signed in${maskedEmail ? ` as ${maskedEmail}` : ""}. Password still unlocks your encrypted local vault.`
     : enabled
       ? "Sign-in proves account ownership only; it does not unlock E2EE keys."
       : "Current local display-name flow remains active.";
@@ -168,7 +186,7 @@ function FirebaseAuthPanel({ state, actions }) {
               void actions.handleFirebaseSignOut();
             }}
           >
-            Sign out
+            {state.authBusy ? "Signing out..." : "Sign out"}
           </button>
         ) : (
           <button
@@ -179,7 +197,7 @@ function FirebaseAuthPanel({ state, actions }) {
               void actions.handleGoogleSignIn();
             }}
           >
-            Sign in with Google
+            {state.authBusy ? "Signing in..." : "Sign in with Google"}
           </button>
         )}
       </div>

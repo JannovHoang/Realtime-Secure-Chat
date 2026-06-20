@@ -1064,7 +1064,7 @@ wss.on("connection", (ws) => {
             : "";
       let verifiedFirebase = null;
 
-      if (firebaseIdToken) {
+      if (firebaseIdToken && serverAuthStatus.enabled) {
         try {
           verifiedFirebase = await verifyFirebaseIdToken(firebaseIdToken);
         } catch (err) {

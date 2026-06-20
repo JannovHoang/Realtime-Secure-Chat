@@ -7,6 +7,9 @@ const cryptoShim = path.resolve(__dirname, "client", "shims", "crypto.js");
 module.exports = defineConfig({
   // UI entry lives here
   root: path.resolve(__dirname, "client", "ui"),
+  // Keep runtime configuration in the project root .env even though the UI root
+  // is client/ui. Vite only exposes VITE_* values to the browser bundle.
+  envDir: __dirname,
 
   server: {
     port: 5173,

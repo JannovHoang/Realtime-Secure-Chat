@@ -7936,3 +7936,58 @@ Checkpoint 0 test expectation:
 - auth panel remains safe when Firebase config is absent or incomplete
 - after local `.env` is filled with Firebase Web config, auth panel should detect configured client auth without requiring Google sign-in yet
 - no `.env`, Firebase API key values, service-account secrets, tunnel credentials, passwords, or backup payloads are committed
+
+### Firebase Auth Activation - Checkpoint 1: Client Google Sign-In Real Smoke
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/auth/firebaseClient.js`
+- `client/ui/hooks/useChatApp.js`
+- `server/server.js`
+- `vite.config.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- activate the existing Firebase Web client path with the real Firebase project config stored only in local `.env`
+- allow Google Sign-In and Sign out from the React UI on the named domain
+- keep backend auth in legacy mode for this checkpoint
+- keep Google auth separate from the E2EE local vault, password, and chat session
+
+Implemented behavior:
+
+- Vite now uses the project root as `envDir`, so `.env` at the repository root is loaded even though the UI root is `client/ui`
+- Firebase client availability is read from `VITE_AUTH_MODE` and the `VITE_FIREBASE_...` Web config values
+- when Firebase client config is present and `VITE_AUTH_MODE=firebase_optional`, the Account Auth panel enables `Sign in with Google`
+- Google Sign-In uses Firebase Auth popup flow
+- Sign out signs out the Firebase user and closes any active local chat session
+- signing in does not auto-start chat
+- signing in does not auto-open the local vault
+- signing in does not auto-restore cloud backup
+- signed-in UI text explicitly says the vault password is still required for encrypted local state
+- the UI masks the signed-in email for demo safety instead of showing the full personal email
+- WebSocket registration now ignores a client-sent Firebase token while `SERVER_AUTH_MODE=legacy`, so signing in with Google does not break the legacy Start/chat path before server verification is intentionally enabled
+
+Important scope boundary:
+
+- `SERVER_AUTH_MODE` should remain `legacy` for this checkpoint
+- in legacy server mode, Firebase tokens may be present from the signed-in browser but are not trusted and are not used for routing or backup ownership
+- this checkpoint does not bind WebSocket sessions to verified Firebase uid yet
+- this checkpoint does not make backups Firebase-owned yet
+- this checkpoint does not scope restore by Firebase uid yet
+- this checkpoint does not change MongoDB schema
+- this checkpoint does not add Firebase Admin SDK or service-account credentials
+
+Checkpoint 1 test expectation:
+
+- Google Sign-In works on `https://chat.securechat.id.vn`
+- after sign-in, the Account Auth panel shows a signed-in state with a masked email or display name
+- refreshing the page preserves Firebase auth state if browser persistence is active
+- Start still requires display name and vault password
+- Restore from Cloud still requires display name and vault password
+- Backup to Cloud still works through the legacy path
+- realtime chat and offline pending still work when signed out and when signed in
+- Sign out returns the Account Auth panel to the signed-out state
+- Sign out does not delete local vault data
+- no `.env` or Firebase config values are committed
