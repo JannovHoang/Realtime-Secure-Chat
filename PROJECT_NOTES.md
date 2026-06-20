@@ -8032,32 +8032,36 @@ Recommended checkpoints:
 
 1. Regression baseline:
    - verify Google Sign-In smoke, legacy Start, realtime chat, offline pending, legacy Backup/Restore, named-domain access, and quick tunnel fallback
-2. Rename actions:
-   - `Logout` -> `Lock vault`
-   - `Sign out` -> `Sign out Google`
+2. Unify visible sign-out UX:
+   - avoid showing `Logout` and `Sign out` as competing primary actions in the same signed-in UI
+   - keep vault/session locking as an internal safety step before Firebase sign-out
+   - when signed in with Google, expose one main `Sign out` action that closes the local chat session, closes the WebSocket, locks in-memory E2EE state, signs out Firebase, and does not delete local vault or backup data
+   - in legacy mode, keep the existing local logout behavior until the legacy flow is renamed in a later checkpoint
+3. Rename vault/start language:
    - `Password` -> `Vault password`
    - use `Unlock vault` instead of `Start` when a Google account is signed in and a local vault is being opened
-3. Signed-in Google UX:
+   - keep `Start` for the unsigned-in legacy path
+4. Signed-in Google UX:
    - prefill display name from Google profile when useful
    - reduce display name to a chat label / legacy vault selector
    - do not silently remove display-name lookup until `firebaseUid -> local identity` mapping is fully implemented
-4. Dynamic primary action labels:
+5. Dynamic primary action labels:
    - legacy unsigned-in flow: `Start`
    - Google signed-in with locked local vault: `Unlock vault`
-   - active local chat session: `Lock vault`
+   - active Google-backed local chat session: `Sign out` as the visible action, with internal vault/session locking before Firebase sign-out
    - no local vault: recommend `Restore from Cloud` or `Create new identity`
-5. Vault freshness guard before unlock:
+6. Vault freshness guard before unlock:
    - before opening a local vault in signed-in mode, compare local backup receipt metadata with cloud backup metadata when available
    - if cloud backup appears newer, warn that this device may have stale Double Ratchet state
    - offer `Restore latest backup`, `Unlock local vault anyway`, and `Cancel`
    - do not auto-restore or silently overwrite local vault data
-6. Account Auth panel polish:
+7. Account Auth panel polish:
    - show account and vault state in user-facing language
    - hide long ids by default
    - expose technical details only behind an explicit debug/details toggle
-7. Docs and regression:
+8. Docs and regression:
    - update project notes and demo script
-   - retest Google sign-in, Lock vault, Unlock vault, Sign out Google, freshness warning, legacy Start, realtime chat, offline pending, legacy Backup/Restore, mobile layout, and named-domain smoke
+   - retest Google sign-in, visible Sign out, internal vault/session close, Unlock vault, freshness warning, legacy Start/logout, realtime chat, offline pending, legacy Backup/Restore, mobile layout, and named-domain smoke
 
 Important boundary:
 
@@ -8065,6 +8069,61 @@ Important boundary:
 - this phase should not remove legacy restore
 - this phase should not change cryptographic primitives or MongoDB schema
 - this phase should primarily clarify UX and add stale-vault safety before deeper auth enforcement
+
+### Auth UX / Vault Clarity - Checkpoint 0: Regression Baseline
+
+Completed as a testing checkpoint before changing the UX.
+
+Baseline confirmed by manual testing before Checkpoint 1:
+
+- Google Sign-In smoke still works on the named domain
+- legacy Start remains available
+- realtime Alice/Bob chat remains usable
+- offline pending delivery remains usable
+- existing Backup/Restore compatibility remains available
+- named domain `https://chat.securechat.id.vn` remains the primary demo path
+
+Checkpoint result:
+
+- no code was changed in this checkpoint
+- the branch is ready for the first UX change checkpoint
+
+### Auth UX / Vault Clarity - Checkpoint 1: Unified Visible Sign-Out UX
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- remove the confusing signed-in UI state where the topbar shows `Logout` while the Account Auth panel also shows `Sign out`
+- keep the internal security behavior where signing out closes any active local chat session before Firebase sign-out
+- avoid exposing `Lock vault` as a second primary action before the vault UX has been simplified
+
+Implemented behavior:
+
+- when signed in with Google, the topbar no longer renders the legacy `Logout` button
+- the Account Auth panel remains the single visible signed-in `Sign out` action
+- the existing `handleFirebaseSignOut()` path still closes any active local chat session before signing out Firebase
+- local vault and cloud backup data are not deleted by sign-out
+- when not signed in with Google, the legacy topbar `Logout` button remains available for the existing local display-name flow
+- signed-in copy now clarifies that sign-out closes the encrypted chat session but keeps local vault data
+
+Important scope boundary:
+
+- this checkpoint does not rename `Password` to `Vault password`
+- this checkpoint does not rename `Start` to `Unlock vault`
+- this checkpoint does not change backup ownership, restore scoping, WebSocket auth, MongoDB schema, Double Ratchet behavior, or vault encryption
+- this checkpoint does not add a separate lock-only UI action
+
+Checkpoint 1 test expectation:
+
+- signed-in Google UI shows only one visible sign-out action, not both `Logout` and `Sign out`
+- clicking `Sign out` while chat is active closes the local chat session and signs out Google
+- after sign-out, local vault data remains available for later Start/Restore tests
+- unsigned-in legacy flow still shows the topbar `Logout` action after Start
+- realtime chat, offline pending, Backup to Cloud, and Restore from Cloud behavior remain unchanged
 
 ### Roadmap Phase 2: Firebase Account Ownership Enforcement
 

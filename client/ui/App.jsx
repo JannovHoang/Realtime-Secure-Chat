@@ -161,7 +161,7 @@ function FirebaseAuthPanel({ state, actions }) {
         ? "Legacy account mode"
         : "Firebase not configured";
   const detail = signedIn
-    ? `Signed in${maskedEmail ? ` as ${maskedEmail}` : ""}. Password still unlocks your encrypted local vault.`
+    ? `Signed in${maskedEmail ? ` as ${maskedEmail}` : ""}. Sign out closes the encrypted chat session but keeps local vault data.`
     : enabled
       ? "Sign-in proves account ownership only; it does not unlock E2EE keys."
       : "Current local display-name flow remains active.";
@@ -241,6 +241,7 @@ export default function App() {
   const [showBackupPassword, setShowBackupPassword] = React.useState(false);
   const showPasswordField = !state.started || state.disconnected;
   const startLabel = state.disconnected ? "Reconnect" : "Start";
+  const signedInWithGoogle = !!state.authUser?.uid;
   const busy = state.starting || state.restoring || state.backingUp || state.sending;
   const chatSyncing = state.messageLoading || state.recentLoading;
   const activeConversation = Array.isArray(state.conversations)
@@ -390,16 +391,18 @@ export default function App() {
             >
               Backup to Cloud
             </button>
-            <button
-              className="secondary"
-              type="button"
-              disabled={logoutDisabled}
-              onClick={() => {
-                void actions.handleLogout();
-              }}
-            >
-              Logout
-            </button>
+            {!signedInWithGoogle ? (
+              <button
+                className="secondary"
+                type="button"
+                disabled={logoutDisabled}
+                onClick={() => {
+                  void actions.handleLogout();
+                }}
+              >
+                Logout
+              </button>
+            ) : null}
           </div>
 
           <div className="topbar-status">
