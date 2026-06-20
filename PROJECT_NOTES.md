@@ -8208,6 +8208,44 @@ Checkpoint 3 test expectation:
 - legacy unsigned-in Start remains unchanged
 - existing backup/restore, realtime chat, and offline pending behavior remain unchanged
 
+### Auth UX / Vault Clarity - Checkpoint 4: Vault Freshness Guard Before Restore/Unlock
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/hooks/useChatApp.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- reduce accidental Double Ratchet desynchronization when a user restores or unlocks from an older encrypted state
+- make stale restore warnings appear before the generic replace-local-identity confirmation when the selected cloud backup targets the same local identity
+- keep restore and unlock explicit instead of automatic
+
+Implemented behavior:
+
+- restore now checks for stale selected backups before showing the generic `Replace Local Identity?` confirmation
+- if this browser appears to have newer local encrypted chat state than the selected cloud backup, the UI warns before allowing the restore to overwrite the local vault
+- stale restore wording now states that restoring an older backup can roll back Double Ratchet state and make later messages fail to decrypt
+- the existing pre-unlock cloud freshness warning remains active:
+  - if cloud backup metadata appears newer than the local backup record, the user is warned before opening chat
+  - if this browser was kicked by another active device, the user is warned before continuing from the potentially stale local session
+
+Important scope boundary:
+
+- this checkpoint does not implement automatic multi-device Double Ratchet synchronization
+- this checkpoint does not auto-restore, auto-overwrite, or auto-unlock a vault
+- this checkpoint does not change encryption, backup payload format, MongoDB schema, WebSocket routing, Firebase ownership enforcement, or vault storage format
+
+Checkpoint 4 test expectation:
+
+- restoring a selected cloud backup that appears older than the local vault shows `Selected Backup May Be Older` before overwrite
+- cancelling that warning preserves the current local vault
+- choosing `Restore Anyway` is an explicit user decision and continues the restore
+- unlocking a local vault still warns if cloud backup metadata appears newer or if the local session was marked stale by active-device switching
+- normal restore of a current backup and normal Unlock/Start remain unchanged
+- realtime chat, offline pending, Backup to Cloud, Restore from Cloud, and legacy mode remain unchanged
+
 ### Roadmap Phase 2: Firebase Account Ownership Enforcement
 
 Goal:

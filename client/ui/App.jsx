@@ -808,8 +808,8 @@ export default function App() {
 
       {state.modal?.type === "restore_stale_confirm" ? (
         <ModalFrame
-          title="Cloud Backup May Be Older"
-          subtitle={`This browser has local chat state for ${state.modal.username} that appears newer than the selected cloud backup.`}
+          title="Selected Backup May Be Older"
+          subtitle={`This browser appears to have newer local encrypted chat state for ${state.modal.username} than the selected cloud backup.`}
           eyebrow="Restore safety"
           actions={
             <>
@@ -831,9 +831,9 @@ export default function App() {
           }
         >
           <ModalNote tone="warning">
-            Restoring an older backup can roll back secure chat state and make
-            later messages fail to decrypt. Cancel if this browser was used for
-            newer chats; save a fresh backup from the newest working device
+            Restoring an older backup can roll back Double Ratchet state and
+            make later messages fail to decrypt. Cancel if this browser was used
+            for newer chats; save a fresh backup from the newest working device
             instead.
           </ModalNote>
         </ModalFrame>

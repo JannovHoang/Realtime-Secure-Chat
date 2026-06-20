@@ -1439,39 +1439,6 @@ export function useChatApp() {
         localIdentityMeta = await inspectPersistedLocalIdentity(username, password);
         localBackupMeta = await loadBackupMetadata().catch(() => null);
       }
-      if (hasLocalVault && !options.skipOverwriteConfirm) {
-        dispatch({
-          type: "set_pending_restore_overwrite",
-          value: {
-            username,
-            password,
-            identityId,
-            includeAuth: options.includeAuth !== false,
-            legacyRestore: !!options.legacyRestore,
-            localIdentityShort: formatIdentityShort(localIdentityMeta?.identityId),
-            targetIdentityShort: formatIdentityShort(payload.identityId),
-            sameIdentity:
-              !!localIdentityMeta?.identityId &&
-              localIdentityMeta.identityId === payload.identityId,
-          },
-        });
-        dispatch({ type: "restore_end" });
-        dispatch({ type: "close_modal" });
-        dispatch({
-          type: "open_modal",
-          modal: {
-            type: "restore_overwrite_confirm",
-            username,
-            localIdentityShort: formatIdentityShort(localIdentityMeta?.identityId),
-            targetIdentityShort: formatIdentityShort(payload.identityId),
-            sameIdentity:
-              !!localIdentityMeta?.identityId &&
-              localIdentityMeta.identityId === payload.identityId,
-          },
-        });
-        return;
-      }
-
       if (hasLocalVault && !options.skipStaleRestoreConfirm) {
         const staleWarning = getStaleRestoreWarning(
           localVaultMeta,
@@ -1504,6 +1471,39 @@ export function useChatApp() {
           });
           return;
         }
+      }
+
+      if (hasLocalVault && !options.skipOverwriteConfirm) {
+        dispatch({
+          type: "set_pending_restore_overwrite",
+          value: {
+            username,
+            password,
+            identityId,
+            includeAuth: options.includeAuth !== false,
+            legacyRestore: !!options.legacyRestore,
+            localIdentityShort: formatIdentityShort(localIdentityMeta?.identityId),
+            targetIdentityShort: formatIdentityShort(payload.identityId),
+            sameIdentity:
+              !!localIdentityMeta?.identityId &&
+              localIdentityMeta.identityId === payload.identityId,
+          },
+        });
+        dispatch({ type: "restore_end" });
+        dispatch({ type: "close_modal" });
+        dispatch({
+          type: "open_modal",
+          modal: {
+            type: "restore_overwrite_confirm",
+            username,
+            localIdentityShort: formatIdentityShort(localIdentityMeta?.identityId),
+            targetIdentityShort: formatIdentityShort(payload.identityId),
+            sameIdentity:
+              !!localIdentityMeta?.identityId &&
+              localIdentityMeta.identityId === payload.identityId,
+          },
+        });
+        return;
       }
 
       await importIdentityPayload(payload, username, identityId, account.accountId);
