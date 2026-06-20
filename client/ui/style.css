@@ -461,12 +461,21 @@ button.compact {
 .account-panel-chip {
   flex: 0 0 auto;
   padding: 4px 8px;
-  border: 1px solid rgba(22, 101, 52, 0.14);
   border-radius: 999px;
-  background: rgba(220, 252, 231, 0.72);
-  color: var(--success);
   font-size: 10px;
   font-weight: 800;
+}
+
+.account-panel-chip.is-saved {
+  border: 1px solid rgba(22, 101, 52, 0.14);
+  background: rgba(220, 252, 231, 0.72);
+  color: var(--success);
+}
+
+.account-panel-chip.is-local {
+  border: 1px solid rgba(146, 64, 14, 0.16);
+  background: rgba(254, 243, 199, 0.74);
+  color: #92400e;
 }
 
 .account-panel-grid {
@@ -492,6 +501,51 @@ button.compact {
   margin: 4px 0 0;
   color: var(--text);
   font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-technical-details {
+  margin-top: 12px;
+  border-top: 1px solid rgba(43, 89, 217, 0.1);
+  padding-top: 10px;
+}
+
+.account-technical-details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  outline: none;
+}
+
+.account-technical-details summary:focus-visible {
+  border-radius: 8px;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.13);
+}
+
+.account-technical-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.account-technical-grid dt {
+  color: var(--text-soft);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.account-technical-grid dd {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: 11px;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;

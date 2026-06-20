@@ -8246,6 +8246,47 @@ Checkpoint 4 test expectation:
 - normal restore of a current backup and normal Unlock/Start remain unchanged
 - realtime chat, offline pending, Backup to Cloud, Restore from Cloud, and legacy mode remain unchanged
 
+### Auth UX / Vault Clarity - Checkpoint 5: Account Identity Panel Polish
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make the sidebar identity panel read like product UI instead of a debug panel
+- keep technical account/identity information available without showing long identifiers by default
+- make backup/vault status clearer for demos and mobile use
+
+Implemented behavior:
+
+- sidebar panel title changed from `Account identity` to `Encrypted identity`
+- default panel now shows user-facing fields:
+  - display name
+  - vault status
+  - short identity id
+  - backup status
+- backup chip now distinguishes `Backed up` from `Local only`
+- long technical values are hidden behind a `Show technical details` disclosure
+- technical details include short account id, short identity id, backup time, and account scheme
+- panel styling was updated for clearer visual hierarchy and mobile-friendly spacing
+
+Important scope boundary:
+
+- this checkpoint does not change account id derivation
+- this checkpoint does not change Firebase ownership enforcement
+- this checkpoint does not change backup/restore behavior, WebSocket routing, MongoDB schema, Double Ratchet behavior, or vault encryption
+
+Checkpoint 5 test expectation:
+
+- after Unlock/Start, the sidebar shows an `Encrypted identity` panel
+- default view does not expose long raw ids
+- `Show technical details` expands/collapses without affecting chat state
+- backup status changes from `Local only` to `Backed up` after a successful Backup to Cloud
+- realtime chat, offline pending, Restore from Cloud, and legacy mode remain unchanged
+
 ### Roadmap Phase 2: Firebase Account Ownership Enforcement
 
 Goal:

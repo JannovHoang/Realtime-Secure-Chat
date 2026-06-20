@@ -100,12 +100,14 @@ function AccountIdentityPanel({ info, helpers }) {
   const accountShort = helpers.formatIdentityShort(info.accountId);
   const identityShort = helpers.formatIdentityShort(info.identityId);
   const backupTime = helpers.formatDateTimeShort(info.backupServerSavedAt);
+  const backupLabel = info.backupServerSavedAt ? "Backup saved" : "Not backed up";
+  const backupChipClass = info.backupServerSavedAt ? "is-saved" : "is-local";
 
   return (
     <div className="account-panel">
       <div className="account-panel-head">
-        <span>Account identity</span>
-        <span className="account-panel-chip">
+        <span>Encrypted identity</span>
+        <span className={`account-panel-chip ${backupChipClass}`}>
           {info.backupServerSavedAt ? "Backed up" : "Local only"}
         </span>
       </div>
@@ -115,18 +117,39 @@ function AccountIdentityPanel({ info, helpers }) {
           <dd>{info.displayName || "unknown"}</dd>
         </div>
         <div>
-          <dt>Account ID</dt>
-          <dd title={info.accountId || ""}>{accountShort}</dd>
+          <dt>Vault</dt>
+          <dd>Unlocked</dd>
         </div>
         <div>
-          <dt>Identity ID</dt>
+          <dt>Identity</dt>
           <dd title={info.identityId || ""}>{identityShort}</dd>
         </div>
         <div>
           <dt>Backup</dt>
-          <dd>{backupTime || "not saved yet"}</dd>
+          <dd>{backupLabel}</dd>
         </div>
       </dl>
+      <details className="account-technical-details">
+        <summary>Show technical details</summary>
+        <dl className="account-technical-grid">
+          <div>
+            <dt>Account ID</dt>
+            <dd title={info.accountId || ""}>{accountShort}</dd>
+          </div>
+          <div>
+            <dt>Identity ID</dt>
+            <dd title={info.identityId || ""}>{identityShort}</dd>
+          </div>
+          <div>
+            <dt>Backup time</dt>
+            <dd>{backupTime || "not saved yet"}</dd>
+          </div>
+          <div>
+            <dt>Account scheme</dt>
+            <dd>{info.accountIdScheme || "legacy/local"}</dd>
+          </div>
+        </dl>
+      </details>
     </div>
   );
 }
