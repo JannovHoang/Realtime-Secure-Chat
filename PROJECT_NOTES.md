@@ -8125,6 +8125,49 @@ Checkpoint 1 test expectation:
 - unsigned-in legacy flow still shows the topbar `Logout` action after Start
 - realtime chat, offline pending, Backup to Cloud, and Restore from Cloud behavior remain unchanged
 
+### Auth UX / Vault Clarity - Checkpoint 2: Vault Password And Unlock Wording
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/hooks/useChatApp.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make it clear that the password field is for the encrypted E2EE vault, not the Google account
+- make the primary action less confusing after Google sign-in by using `Unlock vault` instead of `Start`
+- keep the existing legacy Start behavior unchanged when the browser is not signed in with Google
+
+Implemented behavior:
+
+- topbar password field is now labeled `Vault password`
+- topbar password placeholder now says `Enter your vault password`
+- password visibility button labels now refer to the vault password
+- when signed in with Google and the local chat session is not open, the primary button says `Unlock vault`
+- when not signed in with Google, the primary button still says `Start`
+- reconnect state still says `Reconnect`
+- backup modal now asks for `Vault password`
+- backup/start/restore error messages now refer to `vault password` where the distinction matters
+- stale-backup warning action says `Unlock anyway` when signed in with Google, and keeps `Start anyway` in legacy mode
+
+Important scope boundary:
+
+- this checkpoint does not remove the display-name input yet
+- this checkpoint does not prefill display name from Google yet
+- this checkpoint does not add create-identity UX
+- this checkpoint does not change how vault passwords are checked
+- this checkpoint does not change backup encryption, restore scoping, WebSocket auth, MongoDB schema, or Double Ratchet behavior
+
+Checkpoint 2 test expectation:
+
+- unsigned-in legacy mode still shows `Start`
+- signed-in Google mode shows `Unlock vault` instead of `Start`
+- the password field says `Vault password`
+- Backup to Cloud modal asks for `Vault password`
+- wrong vault password errors still block Start/Unlock and Backup
+- successful Start/Unlock, realtime chat, offline pending, Backup to Cloud, and Restore from Cloud remain unchanged
+
 ### Roadmap Phase 2: Firebase Account Ownership Enforcement
 
 Goal:

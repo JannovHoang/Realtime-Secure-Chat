@@ -240,8 +240,12 @@ export default function App() {
   const [showTopbarPassword, setShowTopbarPassword] = React.useState(false);
   const [showBackupPassword, setShowBackupPassword] = React.useState(false);
   const showPasswordField = !state.started || state.disconnected;
-  const startLabel = state.disconnected ? "Reconnect" : "Start";
   const signedInWithGoogle = !!state.authUser?.uid;
+  const startLabel = state.disconnected
+    ? "Reconnect"
+    : signedInWithGoogle
+      ? "Unlock vault"
+      : "Start";
   const busy = state.starting || state.restoring || state.backingUp || state.sending;
   const chatSyncing = state.messageLoading || state.recentLoading;
   const activeConversation = Array.isArray(state.conversations)
@@ -338,8 +342,8 @@ export default function App() {
             />
             {showPasswordField ? (
               <Field
-                label="Password"
-                placeholder="Enter your password"
+                label="Vault password"
+                placeholder="Enter your vault password"
                 type={showTopbarPassword ? "text" : "password"}
                 value={state.password}
                 onChange={(value) => actions.setField("password", value)}
@@ -348,7 +352,7 @@ export default function App() {
                   <button
                     className="password-toggle"
                     type="button"
-                    aria-label={showTopbarPassword ? "Hide password" : "Show password"}
+                    aria-label={showTopbarPassword ? "Hide vault password" : "Show vault password"}
                     aria-pressed={showTopbarPassword}
                     disabled={busy}
                     onClick={() => setShowTopbarPassword((value) => !value)}
@@ -599,7 +603,7 @@ export default function App() {
       {state.modal?.type === "backup_password" ? (
         <ModalFrame
           title="Backup to Cloud"
-          subtitle="Enter your password to encrypt and save this account label's current local identity."
+          subtitle="Enter your vault password to encrypt and save this account label's current local identity."
           eyebrow="Encrypted backup"
           actions={
             <>
@@ -613,17 +617,17 @@ export default function App() {
           }
         >
           <label className="modal-field">
-            <span>Password</span>
+            <span>Vault password</span>
             <input
               type={showBackupPassword ? "text" : "password"}
-              placeholder="Enter your password"
+              placeholder="Enter your vault password"
               value={state.backupPasswordInput}
               onChange={(e) => actions.setBackupPasswordInput(e.target.value)}
             />
             <button
               className="password-toggle modal-password-toggle"
               type="button"
-              aria-label={showBackupPassword ? "Hide backup password" : "Show backup password"}
+              aria-label={showBackupPassword ? "Hide backup vault password" : "Show backup vault password"}
               aria-pressed={showBackupPassword}
               onClick={() => setShowBackupPassword((value) => !value)}
             >
@@ -698,7 +702,7 @@ export default function App() {
                 type="button"
                 onClick={() => actions.handleBackupFreshnessWarning("continue")}
               >
-                Start anyway
+                {signedInWithGoogle ? "Unlock anyway" : "Start anyway"}
               </button>
               <button
                 className="primary"
@@ -786,9 +790,9 @@ export default function App() {
         >
           <ModalNote tone="warning">
             Legacy restore searches encrypted backups by display name. Continue
-            only if this is your old backup. After restoring, Start and save a
-            new cloud backup to associate the identity with your signed-in
-            account.
+            only if this is your old backup. After restoring, unlock the vault
+            and save a new cloud backup to associate the identity with your
+            signed-in account.
           </ModalNote>
         </ModalFrame>
       ) : null}

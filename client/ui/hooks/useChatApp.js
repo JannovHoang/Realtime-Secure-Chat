@@ -1013,7 +1013,7 @@ export function useChatApp() {
     if (!username || !password) {
       dispatch({
         type: "start_failure",
-        message: "Display name and password are required",
+        message: "Display name and vault password are required",
       });
       return;
     }
@@ -1029,10 +1029,10 @@ export function useChatApp() {
         dispatch({
           type: "start_failure",
           message:
-            "The password did not unlock the local identity currently stored in this browser. Restore from Cloud first if this is a different identity.",
+            "The vault password did not unlock the local identity currently stored in this browser. Restore from Cloud first if this is a different identity.",
         });
         pushToast(
-          "Start failed: incorrect password for this browser's local identity.",
+          "Start failed: incorrect vault password for this browser's local identity.",
           "error"
         );
         return;
@@ -1260,7 +1260,7 @@ export function useChatApp() {
     const username = String(state.username || "").trim();
     const password = String(state.backupPasswordInput || "");
     if (!username || !password) {
-      pushToast("Backup failed: password is required.", "error");
+      pushToast("Backup failed: vault password is required.", "error");
       return;
     }
     if (state.messageLoading || state.recentLoading || state.sending) {
@@ -1327,7 +1327,7 @@ export function useChatApp() {
       dispatch({ type: "set_status", message: "Backup failed", tone: "error" });
       pushToast(
         String(err?.message || "").toLowerCase().includes("incorrect password")
-          ? "Backup failed: incorrect password."
+          ? "Backup failed: incorrect vault password."
           : "Backup failed.",
         "error"
       );
@@ -1340,7 +1340,7 @@ export function useChatApp() {
     const username = String(state.username || "").trim();
     const password = String(state.password || "");
     if (!username || !password) {
-      pushToast("Please enter display name and password.", "error");
+      pushToast("Please enter display name and vault password.", "error");
       return;
     }
 
@@ -1519,7 +1519,7 @@ export function useChatApp() {
       pushToast(
         options.legacyRestore
           ? "Legacy backup restored. Start, then save a new cloud backup to associate it with your signed-in account."
-          : "Backup restored. Enter password and press Start.",
+          : "Backup restored. Enter vault password and press Start or Unlock vault.",
         "success"
       );
     } catch (err) {
@@ -1530,7 +1530,7 @@ export function useChatApp() {
       dispatch({ type: "set_pending_restore_overwrite", value: null });
       dispatch({ type: "set_pending_restore_stale", value: null });
       pushToast(
-        String(err?.message || "Restore failed. Check your display name, password, or backup availability."),
+        String(err?.message || "Restore failed. Check your display name, vault password, or backup availability."),
         "error"
       );
     }
