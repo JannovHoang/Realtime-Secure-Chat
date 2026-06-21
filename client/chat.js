@@ -260,6 +260,33 @@ async function getFirebaseRegisterToken() {
   }
 }
 
+function getClientDeviceLabel() {
+  const nav =
+    typeof navigator !== "undefined"
+      ? navigator
+      : null;
+  if (!nav) return "Unknown browser";
+
+  const ua = String(nav.userAgent || "");
+  const uaData = nav.userAgentData || null;
+  const platform = String(uaData?.platform || nav.platform || "").trim();
+
+  let browser = "Browser";
+  if (/Edg\//.test(ua)) browser = "Edge";
+  else if (/Firefox\//.test(ua)) browser = "Firefox";
+  else if (/Chrome\//.test(ua) || /CriOS\//.test(ua)) browser = "Chrome";
+  else if (/Safari\//.test(ua)) browser = "Safari";
+
+  let os = platform || "unknown device";
+  if (/Android/i.test(ua)) os = "Android";
+  else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Win/i.test(platform)) os = "Windows";
+  else if (/Mac/i.test(platform)) os = "macOS";
+  else if (/Linux/i.test(platform)) os = "Linux";
+
+  return `${browser} on ${os}`.slice(0, 80);
+}
+
 async function buildOptionalFirebaseAuthHeaders() {
   const token = await getFirebaseIdToken(true).catch((err) => {
     console.warn("[chat] Firebase ID token unavailable for API request:", err);
@@ -1114,6 +1141,7 @@ export async function initChat(username, password, accountProfile = null) {
   await initVault(password, myUser);
 
   const firebaseIdToken = await getFirebaseRegisterToken();
+  const deviceLabel = getClientDeviceLabel();
 
   socket = new WebSocket(getServerWsUrl());
 
@@ -1140,6 +1168,7 @@ export async function initChat(username, password, accountProfile = null) {
       displayName: myDisplayName,
       accountIdScheme: normalizedAccount.accountIdScheme,
       firebaseIdToken: firebaseIdToken || null,
+      deviceLabel,
     });
     flushPending();
   };
@@ -1296,6 +1325,7 @@ export async function initChat(username, password, accountProfile = null) {
       identityId,
       accountId: myAccountId,
       displayName: myDisplayName,
+      deviceLabel,
     });
     cert.identityId = identityId;
     wsSend({ type: "cert_submit", certificate: cert });
@@ -1309,6 +1339,7 @@ export async function initChat(username, password, accountProfile = null) {
       identityId,
       accountId: myAccountId,
       displayName: myDisplayName,
+      deviceLabel,
     });
     const cert = {
       username: myUser,

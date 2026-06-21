@@ -1017,7 +1017,15 @@ export function useChatApp() {
       };
     } catch (err) {
       console.warn("[backup] pre-start freshness check skipped:", err);
-      return null;
+      return {
+        username,
+        status: "Cloud backup check unavailable",
+        toast:
+          "Could not check cloud backup freshness. Restore may be temporarily rate limited or unavailable.",
+        modalTitle: "Could Not Check Cloud Backup",
+        modalSubtitle:
+          "The app could not verify whether this browser has the latest encrypted state. If you recently used this account on another device, wait a few minutes and restore before chatting.",
+      };
     }
   }
 

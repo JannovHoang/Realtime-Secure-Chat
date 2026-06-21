@@ -257,6 +257,28 @@ async function saveAccountActiveDevice(username, activeIdentityId, accountMeta =
     typeof accountMeta.displayName === "string" && accountMeta.displayName.trim()
       ? accountMeta.displayName.trim()
       : username;
+  const authMode =
+    typeof accountMeta.authMode === "string" && accountMeta.authMode.trim()
+      ? accountMeta.authMode.trim()
+      : "legacy";
+  const firebaseUid =
+    typeof accountMeta.firebaseUid === "string" && accountMeta.firebaseUid.trim()
+      ? accountMeta.firebaseUid.trim()
+      : null;
+  const accountIdSource =
+    typeof accountMeta.accountIdSource === "string" && accountMeta.accountIdSource.trim()
+      ? accountMeta.accountIdSource.trim()
+      : accountId
+        ? "client_legacy"
+        : "none";
+  const deviceLabel =
+    typeof accountMeta.deviceLabel === "string" && accountMeta.deviceLabel.trim()
+      ? accountMeta.deviceLabel.trim().slice(0, 80)
+      : "Unknown browser";
+  const connectedAt =
+    typeof accountMeta.connectedAt === "string" && accountMeta.connectedAt.trim()
+      ? accountMeta.connectedAt.trim()
+      : null;
   await currentDb.collection("account_active_devices").updateOne(
     { username },
     {
@@ -265,6 +287,11 @@ async function saveAccountActiveDevice(username, activeIdentityId, accountMeta =
         accountId,
         displayName,
         activeIdentityId,
+        authMode,
+        firebaseUid,
+        accountIdSource,
+        deviceLabel,
+        connectedAt,
         updatedAt: now,
       },
       $setOnInsert: {

@@ -168,6 +168,11 @@ function normalizeDisplayName(v) {
   return String(v || "").trim();
 }
 
+function normalizeDeviceLabel(v) {
+  const label = String(v || "").trim().replace(/\s+/g, " ");
+  return label ? label.slice(0, 80) : "Unknown browser";
+}
+
 function makeLegacyAccountKey(username) {
   return `username:${normalizeUsername(username)}`;
 }
@@ -240,6 +245,12 @@ async function activateAccountSession(
 ) {
   const normalizedAccountId = normalizeAccountId(accountId);
   const normalizedDisplayName = normalizeDisplayName(displayName) || user;
+  const session = getSession(ws);
+  const authMode = session?.authMode || "legacy";
+  const firebaseUid = session?.firebaseUid || null;
+  const accountIdSource = session?.accountIdSource || "none";
+  const deviceLabel = normalizeDeviceLabel(session?.deviceLabel);
+  const connectedAt = session?.connectedAt || new Date().toISOString();
   const accountKey = makeAccountSessionKey(user, normalizedAccountId);
   const active = getActiveAccountSession(user, normalizedAccountId);
   if (active?.ws && active.ws !== ws) {
@@ -250,6 +261,8 @@ async function activateAccountSession(
         accountId: normalizedAccountId || null,
         previousIdentityId: active.activeIdentityId || null,
         nextIdentityId: identityId || null,
+        previousDeviceLabel: active.deviceLabel || null,
+        nextDeviceLabel: deviceLabel,
       })
     );
     sendJson(active.ws, {
@@ -257,6 +270,7 @@ async function activateAccountSession(
       reason: "logged_in_elsewhere",
       previousIdentityId: active.activeIdentityId || null,
       replacedByIdentityId: identityId || null,
+      replacedByDeviceLabel: deviceLabel,
     });
     try {
       active.ws.close(4001, "Logged in elsewhere");
@@ -273,6 +287,11 @@ async function activateAccountSession(
     displayName: normalizedDisplayName,
     activeIdentityId: identityId,
     ws,
+    authMode,
+    firebaseUid,
+    accountIdSource,
+    deviceLabel,
+    connectedAt,
   });
   usernameSessions.set(user, accountKey);
 
@@ -280,6 +299,11 @@ async function activateAccountSession(
     await saveAccountActiveDevice(user, identityId, {
       accountId: normalizedAccountId || null,
       displayName: normalizedDisplayName,
+      authMode,
+      firebaseUid,
+      accountIdSource,
+      deviceLabel,
+      connectedAt,
     });
   } catch (e) {
     console.warn("[account_active_devices] mongo save failed:", e);
@@ -1097,6 +1121,8 @@ wss.on("connection", (ws) => {
         : accountId
           ? "client_legacy"
           : "none";
+      const deviceLabel = normalizeDeviceLabel(data.deviceLabel);
+      const connectedAt = new Date().toISOString();
 
       wsToSession.set(ws, {
         user,
@@ -1106,6 +1132,8 @@ wss.on("connection", (ws) => {
         authMode,
         firebaseUid: verifiedFirebase?.firebaseUid || null,
         accountIdSource,
+        deviceLabel,
+        connectedAt,
       });
 
       sendJson(ws, {
@@ -1117,6 +1145,8 @@ wss.on("connection", (ws) => {
         authMode,
         firebaseUid: verifiedFirebase?.firebaseUid || null,
         accountIdSource,
+        deviceLabel,
+        connectedAt,
       });
 
       if (identityId) {
@@ -1134,6 +1164,8 @@ wss.on("connection", (ws) => {
       const displayName =
         normalizeDisplayName(data.displayName || session?.displayName) ||
         session?.user;
+      const deviceLabel = normalizeDeviceLabel(data.deviceLabel || session?.deviceLabel);
+      const connectedAt = session?.connectedAt || new Date().toISOString();
       if (!session?.user || !identityId) {
         return sendJson(ws, { type: "error", error: "Invalid identity binding" });
       }
@@ -1162,6 +1194,8 @@ wss.on("connection", (ws) => {
           : accountId
             ? "client_legacy"
             : "none",
+        deviceLabel,
+        connectedAt,
       });
       await activateAccountSession(
         ws,
@@ -1183,6 +1217,8 @@ wss.on("connection", (ws) => {
           : accountId
             ? "client_legacy"
             : "none",
+        deviceLabel,
+        connectedAt,
       });
     }
 

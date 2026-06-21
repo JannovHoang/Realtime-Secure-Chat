@@ -8503,6 +8503,85 @@ Checkpoint 1 test expectation:
   - WebSocket `registered` frame remains `authMode: "legacy"`
 - realtime chat, active-device kick, offline pending, Backup to Cloud, and Restore from Cloud remain unchanged
 
+### Firebase Account Ownership Enforcement - Checkpoint 2: Session Metadata Shape
+
+Completed in:
+
+- `client/chat.js`
+- `server/server.js`
+- `server/mongo.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make account/session metadata explicit and consistent before enforcing Firebase-owned backup and restore behavior
+- keep a clear distinction between Firebase-authenticated sessions and legacy local/display-name sessions
+- record enough non-secret device/session metadata to debug active-device routing without exposing vault secrets or message plaintext
+
+Implemented behavior:
+
+- the browser now sends a best-effort `deviceLabel` during WebSocket `register` and `identity_bind`
+  - examples: `Chrome on Windows`, `Safari on iOS`, `Chrome on Android`
+  - this is only descriptive metadata, not a trusted security value
+- the server now assigns and preserves `connectedAt` for each WebSocket session
+- WebSocket `registered` and `identity_bound` responses now include:
+  - `authMode`
+  - `firebaseUid` when verified by the server
+  - `accountId`
+  - `accountIdSource`
+  - `displayName`
+  - `identityId`
+  - `deviceLabel`
+  - `connectedAt`
+- active in-memory account sessions now retain:
+  - `authMode`
+  - `firebaseUid`
+  - `accountIdSource`
+  - `deviceLabel`
+  - `connectedAt`
+- `account_active_devices` records now persist the same session metadata alongside `username`, `accountId`, `displayName`, and `activeIdentityId`
+
+Security boundary:
+
+- `deviceLabel` is not trusted for ownership or authorization
+- Firebase ownership still comes only from verified Firebase ID token claims
+- legacy sessions remain explicitly marked as `authMode: "legacy"`
+- this checkpoint does not change message encryption, Double Ratchet state, backup encryption, restore password handling, or MongoDB collection ownership rules
+
+Important scope boundary:
+
+- this checkpoint does not make backups Firebase-owned yet
+- this checkpoint does not scope restore/list by Firebase uid yet
+- this checkpoint does not add multi-device sync
+- this checkpoint does not remove display-name/legacy compatibility
+
+Checkpoint 2 test expectation:
+
+- signed-in Google + valid Firebase server config:
+  - Unlock vault succeeds
+  - WebSocket `registered` frame includes `authMode: "firebase"`
+  - WebSocket `registered` frame includes `accountIdSource: "firebase_verified"`
+  - WebSocket `registered` frame includes `deviceLabel` and `connectedAt`
+  - WebSocket `identity_bound` frame preserves the same `authMode`, `accountId`, `deviceLabel`, and `connectedAt`
+- unsigned-in legacy mode:
+  - Start/Unlock still works for existing local demo users
+  - WebSocket frames show `authMode: "legacy"`
+  - WebSocket frames still include `deviceLabel` and `connectedAt`
+- active device routing:
+  - starting the same display/account on another browser or phone still kicks the older session
+  - `account_active_devices` stores the active identity plus metadata for the latest active session
+- realtime chat, offline pending, Backup to Cloud, and Restore from Cloud remain behaviorally unchanged
+- pre-start cloud backup safety:
+  - if the app cannot check cloud backup freshness before Start/Unlock because the restore metadata API is temporarily unavailable or rate limited, it now shows the existing backup safety modal instead of silently opening the chat session
+  - the user can still intentionally choose `Start anyway` / `Unlock anyway`
+  - this avoids treating a failed freshness check as proof that the local vault is current
+
+Observed during Checkpoint 2 testing:
+
+- legacy/display-name users can still hit restore rate limiting during repeated device-switch tests
+- rate limiting is expected server behavior, but Start should not silently bypass freshness safety when the metadata check fails
+- this checkpoint therefore changes the pre-start check to fail safe from a UX perspective while preserving the user's explicit override path
+
 ### Roadmap Phase 3: Vault Recovery And Password Safety
 
 Goal:
