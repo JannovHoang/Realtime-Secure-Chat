@@ -8384,6 +8384,70 @@ Recommended checkpoints:
    - test duplicate display names across Firebase accounts
    - test realtime, offline pending, backup, restore, stale-vault guard, mobile, and named-domain smoke
 
+### Firebase Account Ownership Enforcement - Checkpoint 0: Phase Baseline
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- start the Firebase Account Ownership Enforcement phase from the completed Auth UX / Vault Clarity branch
+- record the intended ownership boundary before changing runtime behavior
+- keep the current demo path stable before tightening WebSocket, backup, and restore authorization
+
+Current baseline:
+
+- branch is `feature/firebase-ownership-enforcement`
+- previous Auth UX / Vault Clarity checkpoints are already present
+- Google Sign-In is available when Firebase client config is present
+- Google Sign-In still does not auto-unlock the vault, auto-restore a backup, or auto-start chat
+- display name remains a visible chat label and legacy vault lookup key
+- vault password remains the E2EE vault unlock/decrypt password
+- Backup to Cloud and Restore from Cloud remain explicit user actions
+- legacy mode remains supported for existing demo users and non-Firebase fallback
+
+Ownership rule for this phase:
+
+- if a browser is signed in with Firebase, the server must derive account ownership from a verified Firebase ID token
+- client-supplied `firebaseUid`, authenticated `accountId`, or owner metadata must not be trusted as proof of ownership
+- canonical signed-in account id should be derived as `firebase:<verified uid>`
+- display name may still be stored as a human label, but it must not be the signed-in ownership boundary
+
+Planned enforcement order:
+
+1. WebSocket registration ownership:
+   - signed-in client sends Firebase ID token
+   - server verifies token
+   - server binds socket/session to verified `firebase:<uid>`
+   - invalid token rejects signed-in registration without breaking legacy mode
+2. Backup save ownership:
+   - signed-in backup save uses verified Firebase ownership
+   - server ignores or rejects conflicting client-supplied owner fields
+3. Restore/list ownership:
+   - signed-in restore only lists/fetches backups owned by the verified Firebase uid
+   - legacy restore remains an explicit compatibility path, not a silent fallback
+4. UI/docs cleanup:
+   - backup ownership wording should say Google account / legacy / unknown where relevant
+   - regression tests should cover duplicate display names across different Firebase accounts
+
+Non-goals for this checkpoint:
+
+- no WebSocket behavior change yet
+- no backup/restore behavior change yet
+- no MongoDB schema migration yet
+- no Firebase Admin SDK introduction yet
+- no crypto, Double Ratchet, vault payload, or message format change
+
+Checkpoint 0 test expectation:
+
+- current named-domain smoke still works
+- Google Sign-In still works if Firebase config is present
+- legacy Start/Unlock still works for existing demo users
+- realtime chat and offline pending still work
+- Backup to Cloud and Restore from Cloud still behave as they did at the end of Auth UX / Vault Clarity
+- no source code behavior changed in this checkpoint
+
 ### Roadmap Phase 3: Vault Recovery And Password Safety
 
 Goal:
