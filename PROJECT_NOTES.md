@@ -8448,6 +8448,61 @@ Checkpoint 0 test expectation:
 - Backup to Cloud and Restore from Cloud still behave as they did at the end of Auth UX / Vault Clarity
 - no source code behavior changed in this checkpoint
 
+### Firebase Account Ownership Enforcement - Checkpoint 1: Verified WebSocket Registration
+
+Completed in:
+
+- `client/chat.js`
+- `server/server.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make WebSocket registration use Firebase ID tokens as the source of truth when a Firebase user is signed in
+- prevent a signed-in browser from silently falling back to legacy registration if Firebase token retrieval fails
+- make the server-owned account id explicit in the WebSocket registration response
+- keep unsigned-in legacy registration working for current demo/fallback users
+
+Implemented behavior:
+
+- signed-in clients now require a fresh Firebase ID token before opening the chat WebSocket session
+- if a Firebase user is signed in but the browser cannot obtain an ID token, `initChat()` fails before registering as legacy
+- when server auth is enabled and a token is provided, the server verifies the token and derives:
+  - `authMode: "firebase"`
+  - `firebaseUid` from verified claims
+  - `accountId: "firebase:<verified uid>"`
+  - `accountIdSource: "firebase_verified"`
+- when server auth is legacy/disabled, existing legacy registration remains available and the server reports `accountIdSource: "client_legacy"` when a client legacy account id is present
+- `identity_bind` keeps using the server session account id for Firebase sessions instead of trusting a client-supplied account id
+- the server stores `accountIdSource` in the WebSocket session metadata for easier debugging
+
+Security boundary:
+
+- client-supplied `accountId` is not trusted for Firebase-authenticated ownership
+- server-side Firebase verification is the only source of `firebase:<uid>` ownership in WebSocket registration
+- this checkpoint only establishes the WebSocket/session ownership boundary; backup save and restore scoping are still enforced in later checkpoints
+
+Important scope boundary:
+
+- this checkpoint does not make backups Firebase-owned yet
+- this checkpoint does not scope restore/list by Firebase uid yet
+- this checkpoint does not remove legacy registration
+- this checkpoint does not change MongoDB schema, Double Ratchet behavior, message encryption, vault storage, or backup payload format
+
+Checkpoint 1 test expectation:
+
+- signed-in Google + valid Firebase server config:
+  - Unlock vault succeeds
+  - WebSocket `registered` frame shows `authMode: "firebase"`
+  - WebSocket `registered` frame shows `accountId` beginning with `firebase:`
+  - WebSocket `registered` frame shows `accountIdSource: "firebase_verified"`
+- signed-in Google with token retrieval failure:
+  - app should fail to unlock/register instead of silently becoming a legacy session
+- unsigned-in legacy mode:
+  - Start/Unlock still works for existing local demo users
+  - WebSocket `registered` frame remains `authMode: "legacy"`
+- realtime chat, active-device kick, offline pending, Backup to Cloud, and Restore from Cloud remain unchanged
+
 ### Roadmap Phase 3: Vault Recovery And Password Safety
 
 Goal:

@@ -26,7 +26,10 @@ import {
   normalizeAccountId,
   normalizeDisplayName,
 } from "./account.js";
-import { getIdToken as getFirebaseIdToken } from "./auth/firebaseClient.js";
+import {
+  getCurrentUser as getCurrentFirebaseUser,
+  getIdToken as getFirebaseIdToken,
+} from "./auth/firebaseClient.js";
 import { MessengerClient } from "../crypto/dr/messenger.browser.js";
 
 const LOCAL_DEV_UI_PORT = "5173";
@@ -236,6 +239,25 @@ function getServerHttpBase() {
 
 function buildApiUrl(pathname) {
   return new URL(pathname, `${getServerHttpBase()}/`);
+}
+
+async function getFirebaseRegisterToken() {
+  const currentUser = getCurrentFirebaseUser();
+  if (!currentUser) return null;
+
+  try {
+    const token = await getFirebaseIdToken(true);
+    if (!token) {
+      throw new Error("Firebase user is signed in but no ID token was returned");
+    }
+    return token;
+  } catch (err) {
+    throw new Error(
+      `Firebase auth token unavailable. Sign out and sign in again. ${String(
+        err?.message || err || ""
+      ).trim()}`
+    );
+  }
 }
 
 async function buildOptionalFirebaseAuthHeaders() {
@@ -1091,10 +1113,7 @@ export async function initChat(username, password, accountProfile = null) {
 
   await initVault(password, myUser);
 
-  const firebaseIdToken = await getFirebaseIdToken(true).catch((err) => {
-    console.warn("[chat] Firebase ID token unavailable:", err);
-    return null;
-  });
+  const firebaseIdToken = await getFirebaseRegisterToken();
 
   socket = new WebSocket(getServerWsUrl());
 
@@ -1223,7 +1242,14 @@ export async function initChat(username, password, accountProfile = null) {
   };
 
   const cfg = await configPromise;
-  await registeredPromise;
+  const registered = await registeredPromise;
+
+  if (registered?.accountId) {
+    myAccountId = normalizeAccountId(registered.accountId);
+  }
+  if (registered?.displayName) {
+    myDisplayName = normalizeDisplayName(registered.displayName) || myDisplayName;
+  }
 
   caPubKey = await crypto.subtle.importKey(
     "jwk",

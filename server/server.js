@@ -1092,6 +1092,11 @@ wss.on("connection", (ws) => {
         ? makeFirebaseAccountId(verifiedFirebase.firebaseUid)
         : normalizeAccountId(data.accountId);
       const authMode = verifiedFirebase ? "firebase" : "legacy";
+      const accountIdSource = verifiedFirebase
+        ? "firebase_verified"
+        : accountId
+          ? "client_legacy"
+          : "none";
 
       wsToSession.set(ws, {
         user,
@@ -1100,6 +1105,7 @@ wss.on("connection", (ws) => {
         identityId: identityId || null,
         authMode,
         firebaseUid: verifiedFirebase?.firebaseUid || null,
+        accountIdSource,
       });
 
       sendJson(ws, {
@@ -1110,6 +1116,7 @@ wss.on("connection", (ws) => {
         identityId: identityId || null,
         authMode,
         firebaseUid: verifiedFirebase?.firebaseUid || null,
+        accountIdSource,
       });
 
       if (identityId) {
@@ -1150,6 +1157,11 @@ wss.on("connection", (ws) => {
         identityId,
         authMode: session.authMode || "legacy",
         firebaseUid: session.firebaseUid || null,
+        accountIdSource: session.firebaseUid
+          ? "firebase_verified"
+          : accountId
+            ? "client_legacy"
+            : "none",
       });
       await activateAccountSession(
         ws,
@@ -1166,6 +1178,11 @@ wss.on("connection", (ws) => {
         identityId,
         authMode: session.authMode || "legacy",
         firebaseUid: session.firebaseUid || null,
+        accountIdSource: session.firebaseUid
+          ? "firebase_verified"
+          : accountId
+            ? "client_legacy"
+            : "none",
       });
     }
 
