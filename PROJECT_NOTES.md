@@ -8582,6 +8582,64 @@ Observed during Checkpoint 2 testing:
 - rate limiting is expected server behavior, but Start should not silently bypass freshness safety when the metadata check fails
 - this checkpoint therefore changes the pre-start check to fail safe from a UX perspective while preserving the user's explicit override path
 
+### Firebase Account Ownership Enforcement - Checkpoint 3: Firebase-Owned Backup Save
+
+Completed in:
+
+- `client/chat.js`
+- `server/server.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make new cloud backups owned by the verified Firebase account when the active chat session is Firebase-authenticated
+- stop trusting client-supplied backup owner metadata for Firebase sessions
+- keep the legacy backup save path working when Firebase is not signed in or server auth remains optional
+
+Implemented behavior:
+
+- `Backup to Cloud` still uses the existing encrypted WebSocket `backup_save` path
+- the client now sends the encrypted backup payload first and then appends the current runtime session metadata
+  - this prevents a backup payload field from overriding the active `username`, `accountId`, or `displayName` sent by the runtime
+- for Firebase-authenticated WebSocket sessions, the server derives backup ownership from the verified session:
+  - `accountId = firebase:<verified Firebase uid>`
+  - `authMode = "firebase"`
+  - `firebaseUid = <verified Firebase uid>`
+  - `accountIdScheme = "firebase"`
+- if a Firebase session's registered account id does not match the verified Firebase uid, backup save fails safely
+- if a client tries to submit a different `accountId` or `firebaseUid` during backup save, backup save fails safely
+- backup display name metadata now prefers the registered session display name over payload-supplied display name
+- legacy sessions continue to save backups with legacy account metadata
+
+Security boundary:
+
+- encrypted backup payload format is unchanged
+- the server still stores only encrypted backup ciphertext and metadata
+- the server still cannot decrypt the vault, private keys, ratchet state, or message plaintext
+- Firebase backup ownership is derived from the already verified WebSocket session, not from client-provided JSON fields
+
+Important scope boundary:
+
+- this checkpoint only enforces ownership when saving a new backup
+- this checkpoint does not yet scope backup list/fetch/restore by Firebase uid
+- this checkpoint does not auto-link old legacy backups to a Firebase account
+- this checkpoint does not rewrite existing MongoDB backup records
+- this checkpoint does not change Double Ratchet behavior, vault encryption, or restore password handling
+
+Checkpoint 3 test expectation:
+
+- signed-in Google + valid Firebase server config:
+  - Unlock vault succeeds
+  - Backup to Cloud succeeds
+  - latest Mongo `identity_backups` document for that identity stores `authMode: "firebase"`
+  - latest Mongo `identity_backups` document stores `accountId` beginning with `firebase:`
+  - latest Mongo `identity_backups` document stores `firebaseUid`
+- unsigned-in legacy mode:
+  - Start/Unlock still works for existing local demo users
+  - Backup to Cloud still succeeds
+  - legacy backup documents remain `authMode: "legacy"` or have no Firebase owner
+- normal realtime chat, offline pending, restore flow, stale backup warnings, and named-domain smoke should remain unchanged
+
 ### Roadmap Phase 3: Vault Recovery And Password Safety
 
 Goal:

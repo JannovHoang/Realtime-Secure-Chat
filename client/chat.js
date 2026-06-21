@@ -1508,10 +1508,10 @@ export async function saveCloudBackup(blobDoc) {
     wsSend({
       type: "backup_save",
       requestId,
+      ...blobDoc,
       username: myUser,
       accountId: myAccountId,
       displayName: myDisplayName,
-      ...blobDoc,
     });
   });
 }

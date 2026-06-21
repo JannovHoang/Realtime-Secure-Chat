@@ -1422,6 +1422,12 @@ wss.on("connection", (ws) => {
       const registeredDisplayName = getSessionDisplayName(ws);
       const registeredIdentityId = getSessionIdentityId(ws);
       const session = getSession(ws);
+      const verifiedFirebaseAccountId = session?.firebaseUid
+        ? makeFirebaseAccountId(session.firebaseUid)
+        : "";
+      const effectiveAccountId = verifiedFirebaseAccountId || registeredAccountId;
+      const effectiveAuthMode = session?.firebaseUid ? "firebase" : "legacy";
+      const effectiveAccountIdScheme = session?.firebaseUid ? "firebase" : null;
       const username = normalizeUsername(data.username);
       const identityId = normalizeIdentityId(data.identityId);
       const backupAccountId = normalizeAccountId(data.accountId);
@@ -1431,6 +1437,18 @@ wss.on("connection", (ws) => {
           : "";
 
       if (!registeredUser || !username || username !== registeredUser) {
+        return sendJson(ws, {
+          type: "backup_saved",
+          ok: false,
+          requestId,
+          error: "Backup save failed",
+        });
+      }
+
+      if (
+        session?.firebaseUid &&
+        (!registeredAccountId || registeredAccountId !== verifiedFirebaseAccountId)
+      ) {
         return sendJson(ws, {
           type: "backup_saved",
           ok: false,
@@ -1506,15 +1524,16 @@ wss.on("connection", (ws) => {
 
       try {
         const savedBackup = await saveIdentityBackup(username, {
-          accountId: registeredAccountId || backupAccountId || null,
+          accountId: effectiveAccountId || backupAccountId || null,
           displayName:
-            normalizeDisplayName(data.displayName || registeredDisplayName) ||
+            normalizeDisplayName(registeredDisplayName || data.displayName) ||
             username,
           accountIdScheme:
-            typeof data.accountIdScheme === "string" && data.accountIdScheme.trim()
+            effectiveAccountIdScheme ||
+            (typeof data.accountIdScheme === "string" && data.accountIdScheme.trim()
               ? data.accountIdScheme.trim()
-              : null,
-          authMode: session?.firebaseUid ? "firebase" : "legacy",
+              : null),
+          authMode: effectiveAuthMode,
           firebaseUid: session?.firebaseUid || null,
           identityId,
           version: Number(data.version || 2),
