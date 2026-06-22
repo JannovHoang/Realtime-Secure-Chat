@@ -988,8 +988,9 @@ export function useChatApp() {
   function buildIdentityPanelFromRestore(account, payload, blob) {
     return {
       displayName: account?.displayName || payload?.displayName || payload?.username || "",
-      accountId: account?.accountId || payload?.accountId || "",
-      accountIdScheme: account?.accountIdScheme || payload?.accountIdScheme || "",
+      accountId: blob?.accountId || account?.accountId || payload?.accountId || "",
+      accountIdScheme:
+        blob?.accountIdScheme || account?.accountIdScheme || payload?.accountIdScheme || "",
       identityId: payload?.identityId || "",
       backupServerSavedAt: blob?.serverSavedAt || "",
       backupClientSavedAt: blob?.clientSavedAt || payload?.clientSavedAt || "",
@@ -1421,10 +1422,11 @@ export function useChatApp() {
 
     try {
       const account = await buildLocalAccountProfile(username);
+      const isFirebaseRestore = !!state.authUser?.uid && options.includeAuth !== false;
       const selectedAccountId = state.pendingRestore?.items?.find(
         (item) => item?.identityId === identityId
       )?.accountId;
-      if (selectedAccountId && selectedAccountId !== account.accountId) {
+      if (!isFirebaseRestore && selectedAccountId && selectedAccountId !== account.accountId) {
         throw new Error("Backup account mismatch");
       }
       const blob = await fetchCloudBackup(username, identityId, {
@@ -1435,7 +1437,7 @@ export function useChatApp() {
         password,
         username,
         identityId,
-        account.accountId
+        isFirebaseRestore ? null : account.accountId
       );
       const hasLocalVault = await hasPersistedVault(username);
       const localVaultMeta = hasLocalVault
@@ -1514,15 +1516,20 @@ export function useChatApp() {
         return;
       }
 
-      await importIdentityPayload(payload, username, identityId, account.accountId);
+      await importIdentityPayload(
+        payload,
+        username,
+        identityId,
+        isFirebaseRestore ? null : account.accountId
+      );
       clearLocalSessionStale(username);
       try {
         await initVault(password, username);
         await saveBackupMetadata({
           username,
-          accountId: account.accountId,
+          accountId: blob.accountId || account.accountId,
           displayName: account.displayName,
-          accountIdScheme: account.accountIdScheme,
+          accountIdScheme: blob.accountIdScheme || account.accountIdScheme,
           identityId: payload.identityId,
           backupVersion: blob.version || payload.version || 2,
           clientSavedAt: blob.clientSavedAt || payload.clientSavedAt || null,

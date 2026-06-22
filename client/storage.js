@@ -746,6 +746,7 @@ export async function decryptIdentityPayload(
 
   const expectedAccount = normalizeAccountId(expectedAccountId || "");
   const blobAccount = normalizeAccountId(blob.accountId);
+  const blobAuthMode = String(blob.authMode || "").trim();
   if (expectedAccount && blobAccount && blobAccount !== expectedAccount) {
     throw new Error("Backup account mismatch");
   }
@@ -777,7 +778,7 @@ export async function decryptIdentityPayload(
     payload,
     expectedUsername || blob.username || null,
     expectedIdentityId || blob.identityId || null,
-    expectedAccountId || blob.accountId || null
+    expectedAccountId || (blobAuthMode === "firebase" ? null : blob.accountId) || null
   );
   return payload;
 }

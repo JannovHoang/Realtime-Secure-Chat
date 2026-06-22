@@ -288,10 +288,16 @@ function getClientDeviceLabel() {
 }
 
 async function buildOptionalFirebaseAuthHeaders() {
+  const currentUser = getCurrentFirebaseUser();
+  if (!currentUser) return {};
+
   const token = await getFirebaseIdToken(true).catch((err) => {
     console.warn("[chat] Firebase ID token unavailable for API request:", err);
-    return null;
+    throw new Error("Firebase auth token unavailable. Sign out and sign in again.");
   });
+  if (!token) {
+    throw new Error("Firebase auth token unavailable. Sign out and sign in again.");
+  }
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 

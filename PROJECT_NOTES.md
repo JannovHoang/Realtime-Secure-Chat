@@ -7050,6 +7050,7 @@ Completed in:
 
 - `client/ui/hooks/useChatApp.js`
 - `client/chat.js`
+- `client/storage.js`
 - `server/server.js`
 - `PROJECT_NOTES.md`
 
@@ -8639,6 +8640,66 @@ Checkpoint 3 test expectation:
   - Backup to Cloud still succeeds
   - legacy backup documents remain `authMode: "legacy"` or have no Firebase owner
 - normal realtime chat, offline pending, restore flow, stale backup warnings, and named-domain smoke should remain unchanged
+
+### Firebase Account Ownership Enforcement - Checkpoint 4: Firebase-Scoped Restore/List
+
+Completed in:
+
+- `client/chat.js`
+- `server/server.js`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make signed-in restore/list requests use verified Firebase ownership
+- prevent signed-in restore/list from silently falling back to display-name legacy lookup when Firebase auth is expected
+- keep legacy restore available only as an explicit compatibility action
+
+Implemented behavior:
+
+- signed-in restore/list requests still send `Authorization: Bearer <Firebase ID token>` through the existing backup HTTP APIs
+- if the browser is signed in but cannot obtain a Firebase ID token, restore/list fails with a clear token-unavailable error
+- if a restore/list request includes a Bearer token but the server cannot verify Firebase auth, the server fails the request instead of treating it as legacy
+- when Firebase auth verifies successfully, the server filters backup list/fetch by the verified `firebaseUid`
+- if no Firebase-owned backup exists for the entered display name, the UI keeps the existing explicit `Try Legacy Restore` confirmation path
+- `Try Legacy Restore` intentionally calls backup list/fetch without Firebase auth headers
+- Firebase-owned restore no longer compares server-owned `firebase:<uid>` backup metadata against the browser's transitional local `local:*` account id
+  - the server has already scoped the backup by verified Firebase token
+  - the encrypted payload is still validated by display name, identity id, and vault password
+  - `decryptIdentityPayload` no longer uses Firebase-owned `blob.accountId` as the expected encrypted payload account id fallback
+  - legacy restore keeps the existing local account mismatch guard
+
+Security boundary:
+
+- the server derives Firebase restore ownership from the verified ID token, not from display name, account id, or client JSON
+- invalid or unverifiable Firebase auth does not return legacy backup data
+- legacy restore remains a compatibility path, not proof of Firebase account ownership
+- this does not make Google able to decrypt backups; the vault password is still required to decrypt the encrypted payload
+
+Important scope boundary:
+
+- this checkpoint does not rewrite or migrate old legacy backup records
+- this checkpoint does not auto-link legacy backups to a Firebase account
+- this checkpoint does not change backup encryption, vault encryption, Double Ratchet state, or MongoDB schema
+- this checkpoint does not remove legacy restore
+
+Checkpoint 4 test expectation:
+
+- signed-in Google account with Firebase-owned backup:
+  - Restore from Cloud lists/fetches that account's backup
+  - restore succeeds with the correct vault password
+- signed-in Google account without Firebase-owned backup:
+  - Restore from Cloud does not silently fetch legacy backups
+  - UI shows `Try Legacy Restore`
+  - choosing Cancel leaves local vault unchanged
+  - choosing Try Legacy Restore searches old display-name backups explicitly
+- wrong Google account:
+  - should not list/fetch another Firebase account's backup
+- unsigned-in legacy mode:
+  - Restore from Cloud still uses the legacy display-name path
+- token/server auth failure:
+  - signed-in restore/list fails closed instead of returning legacy backup data
+- realtime chat, offline pending, backup save, stale restore warnings, and named-domain smoke remain unchanged
 
 ### Roadmap Phase 3: Vault Recovery And Password Safety
 

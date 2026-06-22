@@ -432,7 +432,7 @@ async function resolveOptionalFirebaseHttpAuth(req) {
 
   const status = getFirebaseAuthServerStatus();
   if (!status.enabled) {
-    return null;
+    throw new Error(status.reason || "Firebase auth is not enabled");
   }
 
   const decoded = await verifyFirebaseIdToken(token);
