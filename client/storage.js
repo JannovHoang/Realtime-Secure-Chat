@@ -586,6 +586,14 @@ export async function saveBackupMetadata(meta = {}) {
         typeof meta.accountIdScheme === "string" && meta.accountIdScheme.trim()
           ? meta.accountIdScheme.trim()
           : null,
+      authMode:
+        typeof meta.authMode === "string" && meta.authMode.trim()
+          ? meta.authMode.trim()
+          : null,
+      firebaseUid:
+        typeof meta.firebaseUid === "string" && meta.firebaseUid.trim()
+          ? meta.firebaseUid.trim()
+          : null,
       identityId,
       identityShortId: identityId.slice(0, 8),
       backupVersion: Number(meta.backupVersion || meta.version || 2),
@@ -621,6 +629,14 @@ export async function loadBackupMetadata() {
     accountIdScheme:
       typeof parsed?.accountIdScheme === "string" && parsed.accountIdScheme.trim()
         ? parsed.accountIdScheme.trim()
+        : null,
+    authMode:
+      typeof parsed?.authMode === "string" && parsed.authMode.trim()
+        ? parsed.authMode.trim()
+        : null,
+    firebaseUid:
+      typeof parsed?.firebaseUid === "string" && parsed.firebaseUid.trim()
+        ? parsed.firebaseUid.trim()
         : null,
     identityId,
     identityShortId: String(parsed?.identityShortId || identityId.slice(0, 8)),

@@ -100,15 +100,17 @@ function AccountIdentityPanel({ info, helpers }) {
   const accountShort = helpers.formatIdentityShort(info.accountId);
   const identityShort = helpers.formatIdentityShort(info.identityId);
   const backupTime = helpers.formatDateTimeShort(info.backupServerSavedAt);
-  const backupLabel = info.backupServerSavedAt ? "Backup saved" : "Not backed up";
-  const backupChipClass = info.backupServerSavedAt ? "is-saved" : "is-local";
+  const backupOwnership = helpers.formatBackupOwnership(info);
+  const backupChipClass = info.backupServerSavedAt
+    ? backupOwnership.chipClass
+    : "is-local";
 
   return (
     <div className="account-panel">
       <div className="account-panel-head">
         <span>Encrypted identity</span>
         <span className={`account-panel-chip ${backupChipClass}`}>
-          {info.backupServerSavedAt ? "Backed up" : "Local only"}
+          {info.backupServerSavedAt ? backupOwnership.chipText : "Local only"}
         </span>
       </div>
       <dl className="account-panel-grid">
@@ -126,7 +128,7 @@ function AccountIdentityPanel({ info, helpers }) {
         </div>
         <div>
           <dt>Backup</dt>
-          <dd>{backupLabel}</dd>
+          <dd>{info.backupServerSavedAt ? backupOwnership.label : "Not backed up"}</dd>
         </div>
       </dl>
       <details className="account-technical-details">
@@ -147,6 +149,14 @@ function AccountIdentityPanel({ info, helpers }) {
           <div>
             <dt>Account scheme</dt>
             <dd>{info.accountIdScheme || "legacy/local"}</dd>
+          </div>
+          <div>
+            <dt>Backup owner</dt>
+            <dd>{backupOwnership.detail}</dd>
+          </div>
+          <div>
+            <dt>Auth mode</dt>
+            <dd>{info.authMode || "legacy/local"}</dd>
           </div>
         </dl>
       </details>

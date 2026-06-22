@@ -198,6 +198,37 @@ function formatDateTimeShort(value) {
   });
 }
 
+function formatBackupOwnership(info = {}) {
+  const authMode = String(info.authMode || "").trim();
+  const accountIdScheme = String(info.accountIdScheme || "").trim();
+  const accountId = String(info.accountId || "").trim();
+
+  if (authMode === "firebase" || accountIdScheme === "firebase" || accountId.startsWith("firebase:")) {
+    return {
+      label: "Google account backup",
+      chipText: "Google backup",
+      chipClass: "is-google",
+      detail: "Owned by signed-in Google account",
+    };
+  }
+
+  if (authMode === "legacy" || accountIdScheme || accountId.startsWith("local:")) {
+    return {
+      label: "Legacy display-name backup",
+      chipText: "Legacy backup",
+      chipClass: "is-legacy",
+      detail: "Legacy backup scoped by display name",
+    };
+  }
+
+  return {
+    label: "Backup owner unknown",
+    chipText: "Unknown backup",
+    chipClass: "is-unknown",
+    detail: "Backup ownership metadata unavailable",
+  };
+}
+
 function formatRestoreUpdatedAt(value) {
   if (!value) return "unknown time";
   const dt = new Date(value);
@@ -974,6 +1005,8 @@ export function useChatApp() {
             "",
           accountId: account?.accountId || identityMeta?.accountId || "",
           accountIdScheme: account?.accountIdScheme || "",
+          authMode: backupMeta?.authMode || account?.authMode || "",
+          firebaseUid: backupMeta?.firebaseUid || "",
           identityId: identityMeta?.identityId || "",
           backupServerSavedAt:
             backupMeta?.localLastBackupServerSavedAt || backupMeta?.serverSavedAt || "",
@@ -991,6 +1024,8 @@ export function useChatApp() {
       accountId: blob?.accountId || account?.accountId || payload?.accountId || "",
       accountIdScheme:
         blob?.accountIdScheme || account?.accountIdScheme || payload?.accountIdScheme || "",
+      authMode: blob?.authMode || account?.authMode || "",
+      firebaseUid: blob?.firebaseUid || "",
       identityId: payload?.identityId || "",
       backupServerSavedAt: blob?.serverSavedAt || "",
       backupClientSavedAt: blob?.clientSavedAt || payload?.clientSavedAt || "",
@@ -1325,9 +1360,11 @@ export function useChatApp() {
       try {
         await saveBackupMetadata({
           username,
-          accountId: account.accountId,
+          accountId: backupReceipt?.accountId || account.accountId,
           displayName: account.displayName,
-          accountIdScheme: account.accountIdScheme,
+          accountIdScheme: backupReceipt?.accountIdScheme || account.accountIdScheme,
+          authMode: backupReceipt?.authMode || account.authMode,
+          firebaseUid: backupReceipt?.firebaseUid || null,
           identityId: payload.identityId,
           backupVersion: blob.version,
           clientSavedAt,
@@ -1341,8 +1378,10 @@ export function useChatApp() {
         type: "identity_panel_set",
         value: {
           displayName: account.displayName,
-          accountId: account.accountId,
-          accountIdScheme: account.accountIdScheme,
+          accountId: backupReceipt?.accountId || account.accountId,
+          accountIdScheme: backupReceipt?.accountIdScheme || account.accountIdScheme,
+          authMode: backupReceipt?.authMode || account.authMode,
+          firebaseUid: backupReceipt?.firebaseUid || "",
           identityId: payload.identityId,
           backupServerSavedAt: backupReceipt?.serverSavedAt || blob.serverSavedAt || "",
           backupClientSavedAt: clientSavedAt,
@@ -1530,6 +1569,8 @@ export function useChatApp() {
           accountId: blob.accountId || account.accountId,
           displayName: account.displayName,
           accountIdScheme: blob.accountIdScheme || account.accountIdScheme,
+          authMode: blob.authMode || account.authMode,
+          firebaseUid: blob.firebaseUid || null,
           identityId: payload.identityId,
           backupVersion: blob.version || payload.version || 2,
           clientSavedAt: blob.clientSavedAt || payload.clientSavedAt || null,
@@ -1731,6 +1772,7 @@ export function useChatApp() {
       formatIdentityShort,
       formatRestoreUpdatedAt,
       formatDateTimeShort,
+      formatBackupOwnership,
     },
     actions: {
       setField,

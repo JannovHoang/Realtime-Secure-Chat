@@ -8701,6 +8701,75 @@ Checkpoint 4 test expectation:
   - signed-in restore/list fails closed instead of returning legacy backup data
 - realtime chat, offline pending, backup save, stale restore warnings, and named-domain smoke remain unchanged
 
+### Firebase Account Ownership Enforcement - Checkpoint 5: Backup Ownership UI
+
+Completed in:
+
+- `client/storage.js`
+- `client/ui/App.jsx`
+- `client/ui/hooks/useChatApp.js`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- make backup ownership visible in the normal account identity panel
+- avoid implying that display name is the owner of a signed-in backup
+- keep raw Firebase uid/account ids out of the default UI while retaining technical details for debugging
+
+Implemented behavior:
+
+- local backup receipt metadata now stores non-secret ownership fields:
+  - `authMode`
+  - `firebaseUid`
+  - `accountId`
+  - `accountIdScheme`
+- after Firebase-owned `Backup to Cloud`, the local backup receipt and identity panel prefer the server receipt owner metadata instead of the local transitional account id
+- after restore, the identity panel uses backup blob ownership metadata when available
+- the account identity panel now labels backup ownership as:
+  - `Google account backup`
+  - `Legacy display-name backup`
+  - `Backup owner unknown`
+  - `Not backed up`
+- the panel chip now uses `Google backup`, `Legacy backup`, `Unknown backup`, or `Local only`
+- technical details still hide full ids behind the expandable section
+
+Security boundary:
+
+- this checkpoint only changes local metadata display and receipt persistence
+- Firebase ownership is still enforced by server-side token verification from previous checkpoints
+- no vault secrets, Firebase ID tokens, private keys, ratchet state, or plaintext messages are displayed
+- display name remains a label, not the signed-in owner
+
+Important scope boundary:
+
+- this checkpoint does not remove legacy restore
+- this checkpoint does not migrate old legacy backups
+- this checkpoint does not auto-link legacy backups to Firebase accounts
+- this checkpoint does not change backup encryption, restore password handling, message encryption, or Double Ratchet state
+
+Checkpoint 5 test expectation:
+
+- signed-in Google + Firebase-owned backup:
+  - Backup to Cloud succeeds
+  - Account identity panel shows `Google backup`
+  - Backup row says `Google account backup`
+  - technical details show `Auth mode: firebase`
+- unsigned-in legacy backup:
+  - Backup to Cloud still succeeds
+  - Account identity panel shows `Legacy backup`
+  - Backup row says `Legacy display-name backup`
+- local identity with no backup:
+  - panel shows `Local only`
+  - Backup row says `Not backed up`
+- restore Firebase-owned backup:
+  - restore still succeeds
+  - panel shows Google-owned backup metadata after restore
+- restore legacy backup through explicit legacy path:
+  - restore still succeeds when password is correct
+  - panel shows legacy backup metadata
+- realtime chat, offline pending, stale backup warnings, and named-domain smoke remain unchanged
+
 ### Roadmap Phase 3: Vault Recovery And Password Safety
 
 Goal:

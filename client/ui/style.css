@@ -472,6 +472,24 @@ button.compact {
   color: var(--success);
 }
 
+.account-panel-chip.is-google {
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  background: rgba(219, 234, 254, 0.82);
+  color: #1d4ed8;
+}
+
+.account-panel-chip.is-legacy {
+  border: 1px solid rgba(146, 64, 14, 0.16);
+  background: rgba(254, 243, 199, 0.78);
+  color: #92400e;
+}
+
+.account-panel-chip.is-unknown {
+  border: 1px solid rgba(100, 116, 139, 0.16);
+  background: rgba(241, 245, 249, 0.82);
+  color: #475569;
+}
+
 .account-panel-chip.is-local {
   border: 1px solid rgba(146, 64, 14, 0.16);
   background: rgba(254, 243, 199, 0.74);
