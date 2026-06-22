@@ -1213,6 +1213,33 @@ button.compact {
   word-break: break-all;
 }
 
+.restore-choice-owner {
+  align-self: flex-start;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 4px 8px;
+}
+
+.restore-choice-owner.is-google {
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  background: rgba(219, 234, 254, 0.82);
+  color: #1d4ed8;
+}
+
+.restore-choice-owner.is-legacy {
+  border: 1px solid rgba(146, 64, 14, 0.16);
+  background: rgba(254, 243, 199, 0.78);
+  color: #92400e;
+}
+
+.restore-choice-owner.is-unknown {
+  border: 1px solid rgba(100, 116, 139, 0.16);
+  background: rgba(241, 245, 249, 0.82);
+  color: #475569;
+}
+
 .restore-choice-time {
   font-size: 12px;
   color: var(--text-muted);

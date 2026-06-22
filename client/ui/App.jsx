@@ -887,28 +887,42 @@ export default function App() {
             </button>
           }
         >
+          {state.modal.legacyRestore ? (
+            <ModalNote tone="warning">
+              Legacy restore is a compatibility path for older backups. It does not prove
+              ownership of the signed-in Google account. Restore only backups you recognize,
+              then unlock the vault and save a new cloud backup to move this identity to
+              Google account ownership.
+            </ModalNote>
+          ) : null}
           <div className="restore-choice-list">
-            {state.modal.items.map((item) => (
-              <button
-                key={item.identityId}
-                type="button"
-                className="restore-choice-item"
-                onClick={() => void actions.confirmRestoreChoice(item.identityId)}
-              >
-                <span className="restore-choice-label">Identity</span>
-                <span className="restore-choice-id">
-                  {helpers.formatIdentityShort(item.identityId)}
-                </span>
-                {item.displayName ? (
-                  <span className="restore-choice-time">
-                    display name {item.displayName}
+            {state.modal.items.map((item) => {
+              const ownership = helpers.formatBackupOwnership(item);
+              return (
+                <button
+                  key={item.identityId}
+                  type="button"
+                  className="restore-choice-item"
+                  onClick={() => void actions.confirmRestoreChoice(item.identityId)}
+                >
+                  <span className="restore-choice-label">Identity</span>
+                  <span className="restore-choice-id">
+                    {helpers.formatIdentityShort(item.identityId)}
                   </span>
-                ) : null}
-                <span className="restore-choice-time">
-                  updated {helpers.formatRestoreUpdatedAt(item.updatedAt)}
-                </span>
-              </button>
-            ))}
+                  <span className={`restore-choice-owner ${ownership.chipClass}`}>
+                    {ownership.chipText}
+                  </span>
+                  {item.displayName ? (
+                    <span className="restore-choice-time">
+                      display name {item.displayName}
+                    </span>
+                  ) : null}
+                  <span className="restore-choice-time">
+                    updated {helpers.formatRestoreUpdatedAt(item.updatedAt)}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </ModalFrame>
       ) : null}

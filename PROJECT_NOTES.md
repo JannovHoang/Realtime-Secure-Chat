@@ -8770,6 +8770,63 @@ Checkpoint 5 test expectation:
   - panel shows legacy backup metadata
 - realtime chat, offline pending, stale backup warnings, and named-domain smoke remain unchanged
 
+### Firebase Account Ownership Enforcement - Checkpoint 6: Explicit Legacy Restore Compatibility
+
+Completed in:
+
+- `client/ui/App.jsx`
+- `client/ui/style.css`
+- `PROJECT_NOTES.md`
+
+Goal:
+
+- keep legacy restore available for old backups without making it look like the normal signed-in restore path
+- make it clear that legacy restore is a compatibility path based on display-name backup lookup
+- avoid auto-linking legacy backups to the signed-in Google account just because the display name matches
+
+Implemented behavior:
+
+- the `Try Legacy Restore` modal remains the only signed-in path into old display-name backup lookup
+- the modal text now states that legacy restore does not prove ownership of the signed-in Google account
+- when legacy restore finds multiple backup identities, the backup picker shows a warning before the list
+- restore choice rows now show ownership chips:
+  - `Google backup`
+  - `Legacy backup`
+  - `Unknown backup`
+- legacy restore still uses the existing identity selection flow and existing overwrite/stale-restore guards
+- after a successful legacy restore, the user is still guided to unlock the vault and save a new cloud backup to move the identity toward Google account ownership
+
+Security boundary:
+
+- this checkpoint does not make legacy restore a Firebase-owned restore
+- this checkpoint does not auto-link legacy backups to Firebase accounts
+- this checkpoint does not trust display name as proof of Google account ownership
+- this checkpoint does not change backup encryption, vault encryption, restore password handling, message encryption, or Double Ratchet state
+
+Important scope boundary:
+
+- legacy restore is still intentionally available during migration because old demo/user backups may not have Firebase ownership metadata
+- removing or fully migrating legacy restore is a later migration/hardening phase
+- this checkpoint only changes UI wording and ownership labeling around the explicit compatibility path
+
+Checkpoint 6 test expectation:
+
+- signed-in Google account without Firebase-owned backup:
+  - Restore from Cloud does not silently search legacy backups
+  - UI shows `Try Legacy Restore`
+  - Cancel leaves local vault unchanged
+  - Try Legacy Restore searches older display-name backups explicitly
+- multiple legacy backups:
+  - the restore choice modal is labeled `Legacy restore`
+  - the modal includes a legacy compatibility warning
+  - each row shows `Legacy backup`
+- Firebase-owned backup restore:
+  - normal Restore from Cloud still works for the correct Google account
+  - restore choice rows show `Google backup` when multiple Firebase-owned identities exist
+- unsigned-in legacy mode:
+  - Restore from Cloud still uses the legacy display-name path directly
+- realtime chat, offline pending, backup save, stale restore warnings, and named-domain smoke remain unchanged
+
 ### Roadmap Phase 3: Vault Recovery And Password Safety
 
 Goal:
