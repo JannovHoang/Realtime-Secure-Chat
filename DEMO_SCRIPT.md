@@ -225,6 +225,35 @@ Expected result:
 - if Firebase server auth is still in legacy mode, the verify endpoint returns a
   safe legacy/disabled response
 
+### I. Firebase Account Ownership Enforcement Smoke
+
+Use this after Firebase server auth is enabled and at least one signed-in account
+has saved a new Firebase-owned backup.
+
+1. Open `https://chat.securechat.id.vn`.
+2. Sign in with Google account A.
+3. Enter the intended display name and vault password.
+4. Click `Unlock vault`.
+5. Click `Backup to Cloud`.
+6. Confirm in MongoDB, if needed, that the latest `identity_backups` record for
+   that identity has `authMode: "firebase"` and a non-empty `firebaseUid`.
+7. Sign out.
+8. Sign in with Google account B.
+9. Enter the same display name and the same vault password.
+10. Click `Restore from Cloud`.
+
+Expected result:
+
+- account B must not directly restore account A's Firebase-owned backup
+- the app should show the explicit `Try Legacy Restore` compatibility path if
+  no Firebase-owned backup exists for account B
+- cancelling `Try Legacy Restore` must leave the local vault unchanged
+- choosing `Try Legacy Restore` is a deliberate legacy compatibility action,
+  not proof that account B owns account A's Firebase-owned backup
+- unsigned-in legacy Restore from Cloud still works through the legacy path
+- realtime chat and offline pending still work after restoring the correct
+  account-owned backup
+
 ## 5. Important Terms
 
 `Display name`

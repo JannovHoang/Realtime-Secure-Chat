@@ -8827,6 +8827,64 @@ Checkpoint 6 test expectation:
   - Restore from Cloud still uses the legacy display-name path directly
 - realtime chat, offline pending, backup save, stale restore warnings, and named-domain smoke remain unchanged
 
+### Firebase Account Ownership Enforcement - Checkpoint 7: Regression And Docs
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+- `DEMO_SCRIPT.md`
+
+Goal:
+
+- close the Firebase Account Ownership Enforcement phase with a clear regression checklist
+- document the signed-in ownership boundary in plain language for future checkpoints and demo explanation
+- keep runtime behavior unchanged after Checkpoints 1-6 have already enforced WebSocket, backup, restore, UI, and legacy compatibility behavior
+
+Phase result:
+
+- Firebase-signed-in WebSocket sessions use a Firebase ID token and the server derives `accountId = firebase:<verified uid>`
+- Firebase-owned Backup to Cloud writes owner metadata from the verified token, not from client-supplied account fields
+- Firebase-scoped Restore from Cloud lists/fetches backups only for the verified Firebase uid
+- display name remains a user-facing label and legacy lookup key, not proof of signed-in ownership
+- vault password remains the client-side password for decrypting the local vault and encrypted backup payloads
+- legacy restore remains available only through an explicit compatibility path
+- encrypted backup payload format, message encryption, Double Ratchet state, and Mongo message schema remain unchanged
+
+Security boundary after this phase:
+
+- Google/Firebase proves account ownership
+- vault password proves the user can decrypt the E2EE identity backup
+- the server can route, store encrypted blobs, and scope backup access, but still cannot read plaintext messages or vault contents
+- a signed-in browser cannot restore another Google account's Firebase-owned backup just by typing the same display name
+- old legacy backups can still be restored only when the user explicitly chooses `Try Legacy Restore` and knows the correct vault password
+
+Regression checklist for phase completion:
+
+- signed-in Google account A can Backup to Cloud and create a Firebase-owned backup
+- signed-in Google account A can Restore from Cloud for its own Firebase-owned backup with the correct vault password
+- signed-in Google account B using the same display name does not directly list/fetch account A's Firebase-owned backup
+- when account B has no Firebase-owned backup for that display name, the UI shows the explicit `Try Legacy Restore` compatibility path instead of silently falling back
+- unsigned-in legacy users can still unlock, chat, Backup to Cloud, and Restore from Cloud through the legacy path
+- realtime chat still works after Firebase-owned backup/restore
+- offline pending delivery still works after Firebase-owned backup/restore
+- active-device routing still kicks the older session for the same account/identity
+- stale-vault and older-cloud-backup guards still appear where expected
+- mobile and named-domain smoke still work on `https://chat.securechat.id.vn`
+
+Known remaining limitations:
+
+- this phase does not implement vault password recovery
+- this phase does not implement full automatic multi-device Double Ratchet synchronization
+- this phase does not remove legacy restore or migrate every legacy backup into Firebase ownership
+- this phase does not add Firebase Admin SDK verification; the verifier remains behind the current adapter path
+- this phase does not add full security hardening such as final rate-limit tuning, stricter headers, or abuse testing
+
+Recommended next phase:
+
+- `Vault Recovery And Password Safety`
+- reason: after Firebase account ownership is enforced, the largest remaining user-facing gap is what happens when the user forgets the vault password
+- key point: Google account recovery and vault password recovery must stay separate because Google cannot decrypt E2EE vault contents by itself
+
 ### Roadmap Phase 3: Vault Recovery And Password Safety
 
 Goal:
