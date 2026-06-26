@@ -8911,6 +8911,99 @@ Recommended checkpoints:
 6. Reset encrypted identity:
    - if vault password and recovery key are both lost, allow creating a new identity with clear warning that old encrypted data may be unreadable
 
+### Vault Recovery And Password Safety - Checkpoint 0: Recovery Model Baseline
+
+Completed in:
+
+- `PROJECT_NOTES.md`
+- `DEMO_SCRIPT.md`
+
+Goal:
+
+- start the Vault Recovery And Password Safety phase from the completed Firebase Account Ownership Enforcement branch
+- document the recovery model before changing vault encryption or backup payload behavior
+- keep current demo behavior stable while clarifying what Google account recovery can and cannot do
+
+Current baseline:
+
+- branch is `feature/vault-recovery`
+- Google/Firebase account ownership is enforced for signed-in WebSocket, backup, and restore paths
+- Google Sign-In proves account ownership, but does not decrypt messages, unlock the vault, reset the vault password, or restore keys automatically
+- display name remains a human label and legacy lookup key
+- vault password remains the client-side password used to unlock the local encrypted vault and decrypt encrypted cloud backup payloads
+- Backup to Cloud and Restore from Cloud remain explicit actions
+- legacy restore remains available only through the explicit compatibility path
+
+Recovery model:
+
+- Google account recovery:
+  - can recover access to the Firebase account
+  - can prove which Firebase account owns a backup
+  - cannot decrypt the E2EE vault by itself
+  - cannot reset the vault password by itself
+- vault password:
+  - unlocks the local encrypted vault
+  - decrypts encrypted backup payloads client-side
+  - is not sent to the server as plaintext
+  - cannot be recovered by the server
+- future recovery key or recovery phrase:
+  - must be generated and held on the client side
+  - must allow recovery without giving the server plaintext keys
+  - must not be stored in plaintext in MongoDB
+  - must be shown to the user with clear save instructions
+- already-unlocked device:
+  - can be used to change vault password because decrypted vault material is already available in memory
+  - should still require explicit confirmation before re-encrypting and saving a new backup
+- total loss case:
+  - if the user loses the vault password, recovery key, and all unlocked/local/restorable devices, old encrypted data cannot be decrypted
+  - the safe fallback is creating a new encrypted identity with a clear warning that old backups/messages may be unreadable
+
+Security boundary:
+
+- this phase must not make Firebase, MongoDB, or the server capable of decrypting E2EE contents
+- password recovery must be client-side recovery, not server-side password reset
+- any recovery material must be protected at least as carefully as the vault password
+- changing the Google account password must not unlock or re-encrypt the E2EE vault
+
+Planned checkpoints:
+
+1. Recovery model design:
+   - keep this checkpoint as the baseline and terminology checkpoint
+2. Change vault password:
+   - only allow when vault is already unlocked
+   - re-encrypt local vault data with the new vault password
+   - do not silently update cloud backup without clear user action
+3. Recovery key design:
+   - design a recovery key/phrase format and UI wording
+   - define how recovery material is wrapped client-side
+4. Create vault with recovery key:
+   - generate recovery material during new identity creation
+   - store only encrypted recovery wrapper data
+5. Forgot vault password:
+   - use recovery key or an already-unlocked device to set a new vault password
+6. Reset encrypted identity:
+   - create a new identity when no recovery path exists
+   - warn that old encrypted data may remain unreadable
+
+Non-goals for this checkpoint:
+
+- no vault encryption change yet
+- no backup payload schema change yet
+- no recovery key generation yet
+- no password change UI yet
+- no Firebase/Admin/Auth hardening change
+- no Double Ratchet, message encryption, WebSocket routing, or Mongo message schema change
+
+Checkpoint 0 test expectation:
+
+- current named-domain smoke still works on `https://chat.securechat.id.vn`
+- Google Sign-In still works if Firebase config is present
+- existing users can still unlock the vault with display name and vault password
+- realtime chat still works
+- offline pending still works
+- Backup to Cloud and Restore from Cloud still behave as they did at the end of Firebase Account Ownership Enforcement
+- no source code behavior changed in this checkpoint
+
 ### Roadmap Phase 4: Device Switching And Backup Discipline
 
 Goal:

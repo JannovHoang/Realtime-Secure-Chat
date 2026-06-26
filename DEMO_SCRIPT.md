@@ -254,6 +254,33 @@ Expected result:
 - realtime chat and offline pending still work after restoring the correct
   account-owned backup
 
+### J. Vault Recovery Model Baseline
+
+Use this before implementing vault password change or recovery key features.
+The goal is to verify that current behavior is unchanged and that the recovery
+story remains accurate.
+
+1. Open `https://chat.securechat.id.vn`.
+2. Sign in with Google if Firebase is configured.
+3. Confirm that Google sign-in does not unlock the vault by itself.
+4. Enter the intended display name and vault password.
+5. Click `Unlock vault`.
+6. Send a realtime message to another demo user.
+7. Test one offline pending message if time allows.
+8. Click `Backup to Cloud`.
+9. Sign out.
+10. Restore with the correct vault password.
+
+Expected result:
+
+- Google account identifies backup ownership only
+- vault password is still required to unlock/decrypt E2EE state
+- server and MongoDB still do not receive plaintext vault contents
+- Backup to Cloud and Restore from Cloud behavior is unchanged
+- there is not yet a `Forgot vault password` recovery flow
+- if vault password is lost today, the user still needs an existing unlocked
+  device or a valid encrypted backup plus the correct vault password
+
 ## 5. Important Terms
 
 `Display name`
@@ -287,6 +314,12 @@ the local vault is deleted too, so the user must restore from cloud backup.
 The password used to unlock the encrypted local vault and decrypt encrypted
 backup payloads. It is not the Google account password, and it is not sent to the
 server as plaintext.
+
+`Recovery key`
+
+A future client-held recovery secret for recovering or rotating the vault
+password without giving the server plaintext E2EE keys. This feature is not
+implemented yet in the current checkpoint.
 
 `Backup to Cloud`
 
