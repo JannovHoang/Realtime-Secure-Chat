@@ -272,6 +272,9 @@ export default function App() {
   const lastActivePeerRef = React.useRef("");
   const [showTopbarPassword, setShowTopbarPassword] = React.useState(false);
   const [showBackupPassword, setShowBackupPassword] = React.useState(false);
+  const [showChangeCurrentPassword, setShowChangeCurrentPassword] = React.useState(false);
+  const [showChangeNextPassword, setShowChangeNextPassword] = React.useState(false);
+  const [showChangeConfirmPassword, setShowChangeConfirmPassword] = React.useState(false);
   const showPasswordField = !state.started || state.disconnected;
   const signedInWithGoogle = !!state.authUser?.uid;
   const startLabel = state.disconnected
@@ -279,7 +282,12 @@ export default function App() {
     : signedInWithGoogle
       ? "Unlock vault"
       : "Start";
-  const busy = state.starting || state.restoring || state.backingUp || state.sending;
+  const busy =
+    state.starting ||
+    state.restoring ||
+    state.backingUp ||
+    state.changingVaultPassword ||
+    state.sending;
   const chatSyncing = state.messageLoading || state.recentLoading;
   const activeConversation = Array.isArray(state.conversations)
     ? state.conversations.find((item) => item.peer === state.activePeer)
@@ -324,6 +332,14 @@ export default function App() {
   React.useEffect(() => {
     if (state.modal?.type !== "backup_password") {
       setShowBackupPassword(false);
+    }
+  }, [state.modal?.type]);
+
+  React.useEffect(() => {
+    if (state.modal?.type !== "change_vault_password") {
+      setShowChangeCurrentPassword(false);
+      setShowChangeNextPassword(false);
+      setShowChangeConfirmPassword(false);
     }
   }, [state.modal?.type]);
 
@@ -436,6 +452,16 @@ export default function App() {
               }}
             >
               Backup to Cloud
+            </button>
+            <button
+              className="secondary"
+              type="button"
+              disabled={busy || !state.started || state.disconnected}
+              onClick={() => {
+                actions.openChangeVaultPasswordModal();
+              }}
+            >
+              Change vault password
             </button>
             {!signedInWithGoogle ? (
               <button
@@ -680,6 +706,105 @@ export default function App() {
             Save a backup after important chats and before switching devices. The
             server stores an encrypted backup only; it cannot read your messages
             or keys.
+          </ModalNote>
+        </ModalFrame>
+      ) : null}
+
+      {state.modal?.type === "change_vault_password" ? (
+        <ModalFrame
+          title="Change Vault Password"
+          subtitle="Re-encrypt this browser's local vault with a new password. This does not save a cloud backup automatically."
+          eyebrow="Vault recovery"
+          actions={
+            <>
+              <button className="secondary" type="button" onClick={actions.closeModal}>
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                disabled={state.changingVaultPassword}
+                onClick={() => void actions.confirmChangeVaultPassword()}
+              >
+                Change Password
+              </button>
+            </>
+          }
+        >
+          <label className="modal-field">
+            <span>Current vault password</span>
+            <input
+              type={showChangeCurrentPassword ? "text" : "password"}
+              placeholder="Enter current vault password"
+              value={state.changeVaultPasswordInput.current}
+              onChange={(e) =>
+                actions.setChangeVaultPasswordInput("current", e.target.value)
+              }
+            />
+            <button
+              className="password-toggle modal-password-toggle"
+              type="button"
+              aria-label={
+                showChangeCurrentPassword
+                  ? "Hide current vault password"
+                  : "Show current vault password"
+              }
+              aria-pressed={showChangeCurrentPassword}
+              onClick={() => setShowChangeCurrentPassword((value) => !value)}
+            >
+              <PasswordVisibilityIcon visible={showChangeCurrentPassword} />
+            </button>
+          </label>
+          <label className="modal-field">
+            <span>New vault password</span>
+            <input
+              type={showChangeNextPassword ? "text" : "password"}
+              placeholder="Enter new vault password"
+              value={state.changeVaultPasswordInput.next}
+              onChange={(e) =>
+                actions.setChangeVaultPasswordInput("next", e.target.value)
+              }
+            />
+            <button
+              className="password-toggle modal-password-toggle"
+              type="button"
+              aria-label={
+                showChangeNextPassword ? "Hide new vault password" : "Show new vault password"
+              }
+              aria-pressed={showChangeNextPassword}
+              onClick={() => setShowChangeNextPassword((value) => !value)}
+            >
+              <PasswordVisibilityIcon visible={showChangeNextPassword} />
+            </button>
+          </label>
+          <label className="modal-field">
+            <span>Confirm new vault password</span>
+            <input
+              type={showChangeConfirmPassword ? "text" : "password"}
+              placeholder="Re-enter new vault password"
+              value={state.changeVaultPasswordInput.confirm}
+              onChange={(e) =>
+                actions.setChangeVaultPasswordInput("confirm", e.target.value)
+              }
+            />
+            <button
+              className="password-toggle modal-password-toggle"
+              type="button"
+              aria-label={
+                showChangeConfirmPassword
+                  ? "Hide confirmed vault password"
+                  : "Show confirmed vault password"
+              }
+              aria-pressed={showChangeConfirmPassword}
+              onClick={() => setShowChangeConfirmPassword((value) => !value)}
+            >
+              <PasswordVisibilityIcon visible={showChangeConfirmPassword} />
+            </button>
+          </label>
+          <ModalNote>
+            Existing cloud backups keep their previous password until you manually
+            save a new backup. After changing the local vault password, use Backup
+            to Cloud before switching devices.
           </ModalNote>
         </ModalFrame>
       ) : null}

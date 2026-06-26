@@ -281,6 +281,47 @@ Expected result:
 - if vault password is lost today, the user still needs an existing unlocked
   device or a valid encrypted backup plus the correct vault password
 
+### K. Change Vault Password Smoke
+
+Use this after Vault Recovery checkpoint 1. Test with a disposable demo user if
+possible.
+
+1. Open `https://chat.securechat.id.vn`.
+2. Enter the demo display name and current vault password.
+3. Click `Unlock vault`.
+4. Confirm chat still opens and the conversation list loads.
+5. Confirm `Change vault password` is now enabled.
+6. Click `Change vault password`.
+7. Try a wrong current password.
+8. Expected: the modal stays safe, the change fails, and the active chat session
+   still works.
+9. Open the modal again.
+10. Enter the correct current vault password.
+11. Enter a new vault password and a different confirmation.
+12. Expected: the change is rejected because the confirmation does not match.
+13. Enter the correct current vault password.
+14. Enter the same new vault password twice.
+15. Click `Change Password`.
+16. Expected: status/toast says the vault password changed locally.
+17. Send one realtime message to another demo user.
+18. Expected: chat still works after the local re-encryption.
+19. Click `Sign out`.
+20. Try to unlock the same display name with the old vault password.
+21. Expected: unlock fails.
+22. Unlock the same display name with the new vault password.
+23. Expected: the same local identity, conversation list, and local history load.
+24. Click `Backup to Cloud` and use the new vault password.
+
+Expected result:
+
+- the vault password can be rotated without changing the server schema
+- the old local vault password stops working after sign out/reload
+- the new vault password unlocks the same local identity
+- existing cloud backups are not rewritten automatically
+- save a new cloud backup with the new password before switching devices
+- if restoring an older cloud backup made before the password change, that older
+  backup may still require the old password
+
 ## 5. Important Terms
 
 `Display name`

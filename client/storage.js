@@ -318,14 +318,19 @@ async function setValueChunked(name, value) {
 
 async function getValueChunked(name) {
   if (!keychain) throw new Error("Vault not initialized");
+  return await getValueChunkedFrom(keychain, name);
+}
+
+async function getValueChunkedFrom(sourceKeychain, name) {
+  if (!sourceKeychain) throw new Error("Vault not initialized");
   const key = normalizeKeyName(name);
   if (!key) return null;
 
-  const direct = await keychain.get(key);
+  const direct = await sourceKeychain.get(key);
   if (direct != null) return direct;
 
   const metaKey = `${key}${CHUNK_META_SUFFIX}`;
-  const metaRaw = await keychain.get(metaKey);
+  const metaRaw = await sourceKeychain.get(metaKey);
   if (!metaRaw) return null;
 
   try {
@@ -335,7 +340,7 @@ async function getValueChunked(name) {
 
     let out = "";
     for (let i = 0; i < n; i++) {
-      const part = await keychain.get(`${key}${CHUNK_PART_PREFIX}${i}`);
+      const part = await sourceKeychain.get(`${key}${CHUNK_PART_PREFIX}${i}`);
       if (part == null) return null;
       out += part;
     }
@@ -501,6 +506,69 @@ export async function removeRecord(name) {
 export async function dumpVault() {
   if (!keychain) throw new Error("Vault not initialized");
   return await keychain.dump(); // [repr, digest]
+}
+
+async function loadPersistedVaultCandidate(userId, password) {
+  const persisted = await readPersistedForUser(userId);
+  if (!persisted?.repr || !persisted?.digest) {
+    throw new Error("No persisted vault for user");
+  }
+  return await Keychain.load(password, persisted.repr, persisted.digest);
+}
+
+export async function changeVaultPassword(
+  userId = "default",
+  currentPassword,
+  newPassword
+) {
+  const username = normalizeKeyName(userId);
+  const current = String(currentPassword || "");
+  const next = String(newPassword || "");
+  if (!username) throw new Error("Display name is required");
+  if (!keychain) throw new Error("Vault not initialized");
+  if (!current || !next) throw new Error("Vault password is required");
+  if (current === next) throw new Error("New vault password must be different");
+
+  vaultStorageKey = await makeVaultStorageKey(username);
+  const candidate = await loadPersistedVaultCandidate(username, current);
+
+  const indexedNames = await readIndex();
+  const systemNames = [
+    CONV_INDEX_KEY,
+    CONV_META_KEY,
+    IDENTITY_META_KEY,
+    BACKUP_META_KEY,
+  ];
+  const recordNames = Array.from(
+    new Set([...indexedNames, ...systemNames].map(normalizeKeyName).filter(Boolean))
+  ).filter((name) => name !== INDEX_KEY);
+
+  const snapshot = new Map();
+  for (const name of recordNames) {
+    const value = await getValueChunked(name);
+    if (value != null) snapshot.set(name, value);
+  }
+  if (snapshot.size === 0) {
+    throw new Error("No vault records available to migrate");
+  }
+
+  const [verificationName, verificationValue] = snapshot.entries().next().value;
+  const candidateValue = await getValueChunkedFrom(candidate, verificationName);
+  if (candidateValue !== verificationValue) {
+    throw new Error("Incorrect current vault password");
+  }
+
+  keychain = await Keychain.init(next);
+  await setValueChunked(INDEX_KEY, JSON.stringify(Array.from(snapshot.keys())));
+  for (const [name, value] of snapshot.entries()) {
+    await setValueChunked(name, value);
+  }
+  await persistNow();
+
+  return {
+    recordCount: snapshot.size,
+    savedAt: Date.now(),
+  };
 }
 
 export async function deriveIdentityIdFromPublicJwk(pubJwk) {

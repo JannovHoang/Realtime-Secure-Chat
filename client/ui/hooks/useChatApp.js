@@ -7,6 +7,7 @@ import {
   signOut as signOutFirebase,
 } from "../../auth/firebaseClient.js";
 import {
+  changeLocalVaultPassword,
   destroyChat,
   fetchCloudBackup,
   fetchCloudBackupIdentities,
@@ -48,6 +49,7 @@ const initialState = {
   starting: false,
   restoring: false,
   backingUp: false,
+  changingVaultPassword: false,
   restoredThisSession: false,
   restoredUsername: "",
   continueWithoutRestoreFor: {},
@@ -74,6 +76,11 @@ const initialState = {
   statusTone: "info",
   modal: null,
   backupPasswordInput: "",
+  changeVaultPasswordInput: {
+    current: "",
+    next: "",
+    confirm: "",
+  },
   pendingRestore: null,
   pendingRestoreOverwrite: null,
   pendingRestoreStale: null,
@@ -639,6 +646,15 @@ function reducer(state, action) {
       };
     case "backup_end":
       return { ...state, backingUp: false };
+    case "change_vault_password_begin":
+      return {
+        ...state,
+        changingVaultPassword: true,
+        statusText: "Changing vault password...",
+        statusTone: "info",
+      };
+    case "change_vault_password_end":
+      return { ...state, changingVaultPassword: false };
     case "bridge_status":
       return {
         ...state,
@@ -716,9 +732,26 @@ function reducer(state, action) {
     case "open_modal":
       return { ...state, modal: action.modal };
     case "close_modal":
-      return { ...state, modal: null, backupPasswordInput: "" };
+      return {
+        ...state,
+        modal: null,
+        backupPasswordInput: "",
+        changeVaultPasswordInput: {
+          current: "",
+          next: "",
+          confirm: "",
+        },
+      };
     case "set_backup_password_input":
       return { ...state, backupPasswordInput: action.value };
+    case "set_change_vault_password_input":
+      return {
+        ...state,
+        changeVaultPasswordInput: {
+          ...state.changeVaultPasswordInput,
+          [action.field]: action.value,
+        },
+      };
     case "set_pending_restore":
       return { ...state, pendingRestore: action.value };
     case "set_pending_restore_overwrite":
@@ -1402,6 +1435,76 @@ export function useChatApp() {
     }
   }
 
+  function openChangeVaultPasswordModal() {
+    if (!state.started || state.disconnected) {
+      pushToast("Unlock the vault before changing its password.", "warning");
+      return;
+    }
+    if (state.messageLoading || state.recentLoading || state.sending) {
+      pushToast("Wait for chat sync to finish before changing the vault password.", "warning");
+      return;
+    }
+    if (isActiveConversationDisplaySuspicious()) {
+      pushToast(
+        "Password change blocked because the active conversation did not load correctly.",
+        "warning"
+      );
+      return;
+    }
+    dispatch({ type: "open_modal", modal: { type: "change_vault_password" } });
+  }
+
+  async function confirmChangeVaultPassword() {
+    const current = String(state.changeVaultPasswordInput.current || "");
+    const next = String(state.changeVaultPasswordInput.next || "");
+    const confirm = String(state.changeVaultPasswordInput.confirm || "");
+
+    if (!state.started || state.disconnected) {
+      pushToast("Unlock the vault before changing its password.", "warning");
+      return;
+    }
+    if (!current || !next || !confirm) {
+      pushToast("Fill in the current and new vault passwords.", "warning");
+      return;
+    }
+    if (next !== confirm) {
+      pushToast("New vault password confirmation does not match.", "error");
+      return;
+    }
+    if (current === next) {
+      pushToast("New vault password must be different.", "warning");
+      return;
+    }
+    if (state.messageLoading || state.recentLoading || state.sending) {
+      pushToast("Wait for chat sync to finish before changing the vault password.", "warning");
+      return;
+    }
+
+    dispatch({ type: "change_vault_password_begin" });
+    try {
+      await changeLocalVaultPassword(current, next);
+      dispatch({ type: "close_modal" });
+      dispatch({
+        type: "set_status",
+        message: "Vault password changed",
+        tone: "success",
+      });
+      pushToast(
+        "Vault password changed locally. Save a new cloud backup before switching devices.",
+        "success"
+      );
+    } catch (err) {
+      dispatch({
+        type: "set_status",
+        message: "Password change failed",
+        tone: "error",
+      });
+      pushToast(String(err?.message || err || "Password change failed"), "error");
+    } finally {
+      dispatch({ type: "change_vault_password_end" });
+    }
+  }
+
   async function handleRestoreRequest() {
     const username = String(state.username || "").trim();
     const password = String(state.password || "");
@@ -1779,6 +1882,8 @@ export function useChatApp() {
       setMessageDraft: (value) => dispatch({ type: "message_draft", value }),
       setBackupPasswordInput: (value) =>
         dispatch({ type: "set_backup_password_input", value }),
+      setChangeVaultPasswordInput: (field, value) =>
+        dispatch({ type: "set_change_vault_password_input", field, value }),
       setPeerDraft,
       closeModal: () => dispatch({ type: "close_modal" }),
       selectPeer,
@@ -1790,6 +1895,8 @@ export function useChatApp() {
       handleSend,
       openBackupModal,
       confirmBackup,
+      openChangeVaultPasswordModal,
+      confirmChangeVaultPassword,
       handleRestoreRequest,
       confirmRestoreChoice,
       cancelRestoreChoice,

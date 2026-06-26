@@ -9004,6 +9004,69 @@ Checkpoint 0 test expectation:
 - Backup to Cloud and Restore from Cloud still behave as they did at the end of Firebase Account Ownership Enforcement
 - no source code behavior changed in this checkpoint
 
+### Vault Recovery And Password Safety - Checkpoint 1: Change Vault Password
+
+Goal:
+
+- let a user rotate the local vault password while the vault is already unlocked
+- re-encrypt the browser-local vault with the new password
+- keep the server, MongoDB schema, WebSocket routing, Double Ratchet protocol, and backup ciphertext format unchanged
+
+Implementation:
+
+- added `changeVaultPassword(...)` in `client/storage.js`
+  - verifies the current vault password against persisted local vault records
+  - verification uses an actual record from the currently unlocked vault snapshot, not only the internal vault index, so older/legacy vaults do not falsely reject the correct password
+  - snapshots the local vault records currently indexed in the vault
+  - creates a new keychain with the new vault password
+  - writes the local records back into the same browser-local vault storage key
+  - persists the new encrypted vault representation to localStorage
+- added `changeLocalVaultPassword(...)` in `client/chat.js`
+  - flushes current Double Ratchet state into the vault before re-encryption
+  - re-indexes known conversation history records before password rotation, covering older local vaults whose `dmh:<hash>` history records predate the explicit vault index
+  - uses a vault-stored stable history-key seed for local conversation history keys, so future vault password rotations do not change the storage key used for the same conversation
+  - keeps a legacy fallback reader for older password-derived conversation history keys and migrates readable legacy history into the stable key path when opening/sending/receiving messages
+  - scans indexed `dmh:*` history records as a recovery path for history written under older password-derived keys; if a record is identifiable as belonging to the selected peer, it is merged into the stable history key
+  - delegates the vault re-encryption to storage
+- added a React modal action in `client/ui/App.jsx` and `client/ui/hooks/useChatApp.js`
+  - visible as `Change vault password`
+  - enabled only after the vault/chat session is unlocked
+  - asks for current password, new password, and confirmation
+  - blocks the change while chat sync/send work is in progress
+  - warns the user to save a new cloud backup after changing the local password
+
+Important behavior:
+
+- changing the vault password is local-only
+- existing cloud backups are not rewritten automatically
+- if the newest cloud backup was created before the password change, that older backup may still require the old vault password
+- after changing the local vault password, the user should run `Backup to Cloud` with the new password before switching devices
+- local conversation history and Double Ratchet state remain in the vault because they are migrated into the new keychain
+- local conversation history keys are now intended to remain stable across repeated vault password changes; already-lost history from an earlier faulty rotation cannot be reconstructed unless it still exists in a readable local record or backup
+- legacy history recovery from indexed `dmh:*` records is best-effort; outgoing-only records with no peer-identifying inbound item may not be attributable after an older faulty rotation
+
+Non-goals for this checkpoint:
+
+- no recovery key generation yet
+- no forgot-password flow yet
+- no reset-identity flow yet
+- no automatic cloud backup after password change
+- no Firebase/Admin/Auth hardening change
+- no MongoDB schema change
+- no Double Ratchet, message encryption, WebSocket routing, or backup payload format change
+
+Checkpoint 1 test expectation:
+
+- `Change vault password` is disabled before the vault is unlocked
+- after unlock, the modal opens and requires current/new/confirm passwords
+- wrong current password fails without damaging the active chat session
+- mismatched confirmation fails without changing the vault
+- successful change keeps the current chat usable
+- after sign out/reload, the old vault password no longer unlocks the local vault
+- after sign out/reload, the new vault password unlocks the same local identity and conversations
+- messages sent after one successful password change remain visible after a second password change
+- a new `Backup to Cloud` should be saved with the new password before device switching
+
 ### Roadmap Phase 4: Device Switching And Backup Discipline
 
 Goal:

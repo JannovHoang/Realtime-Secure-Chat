@@ -15,11 +15,13 @@ import {
   loadRecord,
   addConversationPeer,
   listConversationPeers as listConversationPeersFromVault,
+  listRecordNames,
   upsertConversationMetadata,
   getConversationMetadata,
   hmacRecordKey,
   deriveIdentityIdFromPublicJwk,
   saveIdentityMetadata,
+  changeVaultPassword as changeStoredVaultPassword,
 } from "./storage.js";
 import {
   buildLocalAccountProfile,
@@ -40,6 +42,7 @@ const HISTORY_REQUEST_TIMEOUT_MS = 10000;
 const SEND_REQUEST_TIMEOUT_MS = 10000;
 const HISTORY_RECENT_DEFAULT_LIMIT = 50;
 const HISTORY_RECENT_MAX_LIMIT = 100;
+const HISTORY_KEY_SEED_RECORD = "__securechat_history_key_seed_v1__";
 
 // ===== runtime state =====
 let socket = null;
@@ -363,10 +366,64 @@ function b64ToAb(b64) {
   return bytes.buffer;
 }
 
-async function threadKey(peer) {
+function randomB64(byteLength = 32) {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  return abToB64(bytes.buffer);
+}
+
+function threadLabel(peer) {
   const label = myUser < peer ? `dm:${myUser}<->${peer}` : `dm:${peer}<->${myUser}`;
-  const h = await hmacRecordKey(label);
+  return label;
+}
+
+async function getOrCreateHistoryKeySeed() {
+  const existing = await loadRecord(HISTORY_KEY_SEED_RECORD);
+  if (typeof existing === "string" && existing.trim()) return existing.trim();
+
+  const seed = randomB64(32);
+  await storeRecord(HISTORY_KEY_SEED_RECORD, seed);
+  return seed;
+}
+
+async function hmacSha256B64(rawKeyB64, label) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    b64ToAb(rawKeyB64),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(label)
+  );
+  return abToB64(sig);
+}
+
+async function threadKey(peer) {
+  const seed = await getOrCreateHistoryKeySeed();
+  const h = await hmacSha256B64(seed, threadLabel(peer));
   return `dmh:${h}`;
+}
+
+async function legacyThreadKey(peer) {
+  const h = await hmacRecordKey(threadLabel(peer));
+  return `dmh:${h}`;
+}
+
+async function threadKeysForRead(peer) {
+  const keys = [];
+  const primary = await threadKey(peer);
+  keys.push(primary);
+
+  try {
+    const legacy = await legacyThreadKey(peer);
+    if (legacy && !keys.includes(legacy)) keys.push(legacy);
+  } catch {}
+
+  return keys;
 }
 
 function normalizeRecentLimit(value) {
@@ -454,6 +511,67 @@ function hasLocalHistoryDuplicate(items, nextItem) {
   );
 }
 
+function parseLocalHistory(raw) {
+  try {
+    const arr = JSON.parse(raw || "[]");
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function sortLocalHistory(items) {
+  items.sort((a, b) => {
+    const at = Number(a?.ts) || 0;
+    const bt = Number(b?.ts) || 0;
+    return at - bt;
+  });
+  return items;
+}
+
+function mergeLocalHistoryArrays(arrays) {
+  const merged = [];
+  for (const arr of arrays) {
+    for (const item of arr) {
+      if (!item || typeof item.text !== "string" || !item.from) continue;
+      if (hasLocalHistoryDuplicate(merged, item)) continue;
+      merged.push(item);
+    }
+  }
+  return sortLocalHistory(merged);
+}
+
+async function loadLocalHistoryFromAllThreadKeys(peer) {
+  const p = normalizeUsername(peer);
+  const keys = await threadKeysForRead(p);
+  const histories = [];
+
+  for (const key of keys) {
+    const raw = await loadRecord(key);
+    histories.push(parseLocalHistory(raw));
+  }
+
+  try {
+    const indexedHistoryKeys = await listRecordNames("dmh:");
+    for (const key of indexedHistoryKeys) {
+      if (keys.includes(key)) continue;
+      const arr = parseLocalHistory(await loadRecord(key));
+      const belongsToPeer = arr.some(
+        (item) => item?.from === p || item?.to === p
+      );
+      if (!belongsToPeer) continue;
+      keys.push(key);
+      histories.push(arr);
+    }
+  } catch {}
+
+  return {
+    primaryKey: keys[0],
+    keys,
+    messages: mergeLocalHistoryArrays(histories),
+  };
+}
+
 async function cloneMessengerForCatchUp() {
   if (!messenger || !caPubKey || !govPubKey) {
     throw new Error("Call initChat() first");
@@ -505,14 +623,8 @@ async function loadLocalConversationHistory(peer) {
   const p = normalizeUsername(peer);
   if (!p) return [];
 
-  const key = await threadKey(p);
-  const history = (await loadRecord(key)) || "[]";
-  try {
-    const arr = JSON.parse(history);
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
-  }
+  const { messages } = await loadLocalHistoryFromAllThreadKeys(p);
+  return messages;
 }
 
 async function mergeDisplayMessagesIntoLocalHistory(peer, displayMessages) {
@@ -522,15 +634,8 @@ async function mergeDisplayMessagesIntoLocalHistory(peer, displayMessages) {
     return loadLocalConversationHistory(p);
   }
 
-  const key = await threadKey(p);
-  const history = (await loadRecord(key)) || "[]";
-  let arr;
-  try {
-    arr = JSON.parse(history);
-    if (!Array.isArray(arr)) arr = [];
-  } catch {
-    arr = [];
-  }
+  const { primaryKey, messages } = await loadLocalHistoryFromAllThreadKeys(p);
+  let arr = messages;
 
   const seen = new Set();
   for (const existing of arr) {
@@ -552,13 +657,9 @@ async function mergeDisplayMessagesIntoLocalHistory(peer, displayMessages) {
     arr.push(next);
   }
 
-  arr.sort((a, b) => {
-    const at = Number(a?.ts) || 0;
-    const bt = Number(b?.ts) || 0;
-    return at - bt;
-  });
+  sortLocalHistory(arr);
 
-  await storeRecord(key, JSON.stringify(arr));
+  await storeRecord(primaryKey, JSON.stringify(arr));
   await rememberConversationPeer(p);
   const latest = latestDisplayMessageForPeer(p, arr);
   if (latest) {
@@ -782,6 +883,57 @@ export async function flushChatState() {
   await saveStateNow();
 }
 
+async function ensureConversationHistoryRecordsIndexed() {
+  if (!myUser) return;
+
+  const peers = new Set();
+  try {
+    for (const peer of await listConversationPeersFromVault()) {
+      const p = normalizeUsername(peer);
+      if (p && p !== myUser) peers.add(p);
+    }
+  } catch {}
+
+  const pCurrent = normalizeUsername(currentPeer);
+  if (pCurrent && pCurrent !== myUser) peers.add(pCurrent);
+
+  for (const peer of readyPeers) {
+    const p = normalizeUsername(peer);
+    if (p && p !== myUser) peers.add(p);
+  }
+
+  for (const peer of Object.keys(messenger?.conns || {})) {
+    const p = normalizeUsername(peer);
+    if (p && p !== myUser) peers.add(p);
+  }
+
+  for (const peer of peers) {
+    const { primaryKey, keys, messages } =
+      await loadLocalHistoryFromAllThreadKeys(peer);
+
+    if (messages.length > 0) {
+      await storeRecord(primaryKey, JSON.stringify(messages));
+    }
+
+    for (const key of keys) {
+      const history = await loadRecord(key);
+      if (history != null) {
+        // Older vaults may contain history records that predate the explicit
+        // vault index. Re-storing the same plaintext indexes the record before
+        // password rotation, so changeVaultPassword can migrate it.
+        await storeRecord(key, history);
+      }
+    }
+  }
+}
+
+export async function changeLocalVaultPassword(currentPassword, newPassword) {
+  if (!myUser || !messenger) throw new Error("Call initChat() first");
+  await saveStateNow();
+  await ensureConversationHistoryRecordsIndexed();
+  return await changeStoredVaultPassword(myUser, currentPassword, newPassword);
+}
+
 function emitPeerReady(peer) {
   for (const fn of peerReadyListeners) {
     try {
@@ -949,23 +1101,16 @@ async function processCipherPacket(from, header, ciphertextB64, ts) {
     plaintext = await messenger.receiveMessage(from, [header, ciphertext]);
   }
 
-  const key = await threadKey(from);
-  const history = (await loadRecord(key)) || "[]";
-
-  let arr;
-  try {
-    arr = JSON.parse(history);
-    if (!Array.isArray(arr)) arr = [];
-  } catch {
-    arr = [];
-  }
+  const { primaryKey, messages } = await loadLocalHistoryFromAllThreadKeys(from);
+  let arr = messages;
 
   const messageTs = messageTimestamp(ts);
   const nextItem = { from, text: plaintext, ts: messageTs };
   if (!hasLocalHistoryDuplicate(arr, nextItem)) {
     arr.push(nextItem);
   }
-  await storeRecord(key, JSON.stringify(arr));
+  sortLocalHistory(arr);
+  await storeRecord(primaryKey, JSON.stringify(arr));
   const discoveredPeer = await rememberConversationPeer(from);
   if (discoveredPeer) {
     await updateConversationMetadataFromMessage(discoveredPeer, plaintext, messageTs);
@@ -1420,16 +1565,12 @@ export async function openConversation(peer) {
     await drainInbound(p);
   } catch {}
 
-  const key = await threadKey(p);
-  const history = (await loadRecord(key)) || "[]";
-  try {
-    const arr = JSON.parse(history);
-    if (!Array.isArray(arr)) return [];
-    await backfillConversationMetadataFromHistory(p, arr);
-    return arr;
-  } catch {
-    return [];
+  const { primaryKey, messages } = await loadLocalHistoryFromAllThreadKeys(p);
+  if (messages.length > 0) {
+    await storeRecord(primaryKey, JSON.stringify(messages));
   }
+  await backfillConversationMetadataFromHistory(p, messages);
+  return messages;
 }
 
 export async function sendMessage(peer, text) {
@@ -1477,21 +1618,15 @@ export async function sendMessage(peer, text) {
     throw err;
   }
 
-  const key = await threadKey(p);
-  const history = (await loadRecord(key)) || "[]";
-  let arr;
-  try {
-    arr = JSON.parse(history);
-    if (!Array.isArray(arr)) arr = [];
-  } catch {
-    arr = [];
-  }
+  const { primaryKey, messages } = await loadLocalHistoryFromAllThreadKeys(p);
+  let arr = messages;
   const ts = Date.now();
   const nextItem = { from: myUser, text: msg, ts };
   if (!hasLocalHistoryDuplicate(arr, nextItem)) {
     arr.push(nextItem);
   }
-  await storeRecord(key, JSON.stringify(arr));
+  sortLocalHistory(arr);
+  await storeRecord(primaryKey, JSON.stringify(arr));
   await rememberConversationPeer(p);
   await updateConversationMetadataFromMessage(p, msg, ts);
 
