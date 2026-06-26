@@ -9067,6 +9067,91 @@ Checkpoint 1 test expectation:
 - messages sent after one successful password change remain visible after a second password change
 - a new `Backup to Cloud` should be saved with the new password before device switching
 
+### Vault Recovery And Password Safety - Checkpoint 2: Recovery Key Design
+
+Goal:
+
+- define the recovery-key model before implementing generation or reset flows
+- make vault recovery possible later without giving Firebase, MongoDB, or the Node server plaintext E2EE keys
+- keep current runtime behavior unchanged in this checkpoint
+
+Design decision:
+
+- recovery key is a client-held secret, not a server password reset code
+- Google account recovery can restore access to the account, but cannot decrypt the E2EE vault
+- vault password recovery requires either:
+  - an already-unlocked device, or
+  - a valid client-held recovery key created earlier
+- if the user loses vault password, recovery key, and all unlocked/restorable devices, old encrypted data cannot be recovered safely
+
+Recovery key format:
+
+- use a user-copyable recovery code format, for example:
+
+```text
+RSC-RECOVERY-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX
+```
+
+- prefix `RSC-RECOVERY` makes the key recognizable as belonging to this project
+- grouped blocks reduce copy mistakes during manual entry
+- the displayed recovery key must be generated client-side from high-entropy random bytes
+- the raw recovery key must be shown only once during creation/reset setup
+
+Client-side wrapping model for the next checkpoint:
+
+- generate or use a vault master recovery material on the client
+- encrypt/wrap the vault secret with the vault password as today
+- add a second encrypted wrapper protected by the recovery key
+- store only encrypted recovery wrapper data in the local vault and encrypted cloud backup
+- never store raw recovery key text in localStorage, MongoDB, logs, or Firebase
+- never send raw recovery key text to the server
+
+Future recovery flow:
+
+1. User chooses `Forgot vault password`.
+2. App asks for the recovery key.
+3. Client derives a recovery wrapping key from the recovery key.
+4. Client decrypts the encrypted recovery wrapper locally.
+5. If valid, user sets a new vault password.
+6. Client re-encrypts the vault locally with the new vault password.
+7. User is prompted to save a new `Backup to Cloud`.
+
+UI wording to use later:
+
+- title: `Save your recovery key`
+- warning: `This recovery key can unlock your encrypted vault if you forget the vault password. Store it somewhere safe. We cannot recover it for you.`
+- confirmation: `I have saved this recovery key`
+- forgot-password entry point: `Use recovery key`
+- failure text: `Recovery key did not unlock this vault`
+
+Security requirements:
+
+- recovery key must not weaken E2EE
+- recovery key must not be recoverable by the server
+- recovery key must not be logged
+- recovery key must not be included in screenshots or demo recordings unless it is a disposable test identity
+- recovery key must be treated like a second way to unlock the vault
+
+Non-goals for this checkpoint:
+
+- no recovery key generation yet
+- no recovery wrapper stored yet
+- no backup payload schema change yet
+- no forgot-password flow yet
+- no reset encrypted identity flow yet
+- no Firebase/Admin/Auth hardening change
+- no Double Ratchet, message encryption, WebSocket routing, or Mongo message schema change
+
+Checkpoint 2 test expectation:
+
+- source behavior is unchanged from Checkpoint 1
+- users can still unlock existing vaults with the vault password
+- change-vault-password flow still works
+- realtime chat still works
+- offline pending still works
+- Backup to Cloud and Restore from Cloud still work as before
+- docs clearly state that recovery key is future client-held recovery material, not a server-side reset mechanism
+
 ### Roadmap Phase 4: Device Switching And Backup Discipline
 
 Goal:

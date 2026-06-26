@@ -322,6 +322,33 @@ Expected result:
 - if restoring an older cloud backup made before the password change, that older
   backup may still require the old password
 
+### L. Recovery Key Design Review
+
+Use this after Vault Recovery checkpoint 2. This checkpoint is intentionally a
+design/documentation checkpoint; it does not generate a recovery key yet.
+
+1. Open `PROJECT_NOTES.md`.
+2. Find `Vault Recovery And Password Safety - Checkpoint 2: Recovery Key Design`.
+3. Confirm the model says Google account recovery cannot decrypt the E2EE vault.
+4. Confirm the recovery key is described as a client-held secret.
+5. Confirm the raw recovery key must not be stored in MongoDB, Firebase,
+   localStorage, logs, or server plaintext.
+6. Confirm the future format is recognizable, for example:
+   `RSC-RECOVERY-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`.
+7. Run the normal smoke test:
+   - unlock an existing vault
+   - send one realtime message
+   - test one offline pending message if time allows
+   - run Backup to Cloud / Restore from Cloud with a disposable identity if needed
+
+Expected result:
+
+- runtime behavior is unchanged from Checkpoint 1
+- there is still no `Forgot vault password` flow yet
+- there is still no recovery key shown in the UI yet
+- the design clearly explains that recovery key support must remain client-side
+  and must not give the server plaintext E2EE keys
+
 ## 5. Important Terms
 
 `Display name`
