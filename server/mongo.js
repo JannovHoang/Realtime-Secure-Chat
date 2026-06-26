@@ -174,6 +174,10 @@ async function saveIdentityBackup(username, backupDoc) {
         ivB64: backupDoc.ivB64,
         saltB64: backupDoc.saltB64,
         kdf: backupDoc.kdf,
+        recoveryWrapper:
+          backupDoc.recoveryWrapper && typeof backupDoc.recoveryWrapper === "object"
+            ? backupDoc.recoveryWrapper
+            : null,
         updatedAt: now,
       },
       $setOnInsert: {
@@ -194,6 +198,7 @@ async function saveIdentityBackup(username, backupDoc) {
     backupVersion: backupDoc.version,
     clientSavedAt: backupDoc.clientSavedAt || null,
     serverSavedAt,
+    hasRecoveryKey: !!backupDoc.recoveryWrapper,
   };
 }
 
@@ -239,6 +244,7 @@ async function listIdentityBackups(username, owner = null) {
       version: 1,
       clientSavedAt: 1,
       serverSavedAt: 1,
+      recoveryWrapper: 1,
       createdAt: 1,
       updatedAt: 1,
     })

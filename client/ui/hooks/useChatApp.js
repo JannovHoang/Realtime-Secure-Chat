@@ -20,6 +20,7 @@ import {
   openConversation,
   saveCloudBackup,
   sendMessage,
+  setupLocalRecoveryKey,
 } from "../../chat.js";
 import {
   initVault,
@@ -50,6 +51,7 @@ const initialState = {
   restoring: false,
   backingUp: false,
   changingVaultPassword: false,
+  settingUpRecoveryKey: false,
   restoredThisSession: false,
   restoredUsername: "",
   continueWithoutRestoreFor: {},
@@ -655,6 +657,15 @@ function reducer(state, action) {
       };
     case "change_vault_password_end":
       return { ...state, changingVaultPassword: false };
+    case "setup_recovery_key_begin":
+      return {
+        ...state,
+        settingUpRecoveryKey: true,
+        statusText: "Creating recovery key...",
+        statusTone: "info",
+      };
+    case "setup_recovery_key_end":
+      return { ...state, settingUpRecoveryKey: false };
     case "bridge_status":
       return {
         ...state,
@@ -1505,6 +1516,64 @@ export function useChatApp() {
     }
   }
 
+  function openRecoveryKeyModal() {
+    if (!state.started || state.disconnected) {
+      pushToast("Unlock the vault before creating a recovery key.", "warning");
+      return;
+    }
+    if (state.messageLoading || state.recentLoading || state.sending) {
+      pushToast("Wait for chat sync to finish before creating a recovery key.", "warning");
+      return;
+    }
+    if (isActiveConversationDisplaySuspicious()) {
+      pushToast(
+        "Recovery setup blocked because the active conversation did not load correctly.",
+        "warning"
+      );
+      return;
+    }
+    dispatch({ type: "open_modal", modal: { type: "recovery_key_setup" } });
+  }
+
+  async function confirmSetupRecoveryKey() {
+    if (!state.started || state.disconnected) {
+      pushToast("Unlock the vault before creating a recovery key.", "warning");
+      return;
+    }
+
+    dispatch({ type: "setup_recovery_key_begin" });
+    try {
+      const result = await setupLocalRecoveryKey();
+      dispatch({
+        type: "open_modal",
+        modal: {
+          type: "recovery_key_created",
+          recoveryKey: result.recoveryKey,
+          createdAt: result.createdAt,
+          identityId: result.identityId,
+        },
+      });
+      dispatch({
+        type: "set_status",
+        message: "Recovery key created",
+        tone: "success",
+      });
+      pushToast(
+        "Recovery key created. Save it now, then save a fresh cloud backup before switching devices.",
+        "success"
+      );
+    } catch (err) {
+      dispatch({
+        type: "set_status",
+        message: "Recovery setup failed",
+        tone: "error",
+      });
+      pushToast(String(err?.message || err || "Recovery setup failed"), "error");
+    } finally {
+      dispatch({ type: "setup_recovery_key_end" });
+    }
+  }
+
   async function handleRestoreRequest() {
     const username = String(state.username || "").trim();
     const password = String(state.password || "");
@@ -1639,6 +1708,7 @@ export function useChatApp() {
             sameIdentity:
               !!localIdentityMeta?.identityId &&
               localIdentityMeta.identityId === payload.identityId,
+            localIdentityUnknown: !localIdentityMeta?.identityId,
           },
         });
         dispatch({ type: "restore_end" });
@@ -1653,6 +1723,7 @@ export function useChatApp() {
             sameIdentity:
               !!localIdentityMeta?.identityId &&
               localIdentityMeta.identityId === payload.identityId,
+            localIdentityUnknown: !localIdentityMeta?.identityId,
           },
         });
         return;
@@ -1897,6 +1968,8 @@ export function useChatApp() {
       confirmBackup,
       openChangeVaultPasswordModal,
       confirmChangeVaultPassword,
+      openRecoveryKeyModal,
+      confirmSetupRecoveryKey,
       handleRestoreRequest,
       confirmRestoreChoice,
       cancelRestoreChoice,

@@ -287,6 +287,7 @@ export default function App() {
     state.restoring ||
     state.backingUp ||
     state.changingVaultPassword ||
+    state.settingUpRecoveryKey ||
     state.sending;
   const chatSyncing = state.messageLoading || state.recentLoading;
   const activeConversation = Array.isArray(state.conversations)
@@ -462,6 +463,16 @@ export default function App() {
               }}
             >
               Change vault password
+            </button>
+            <button
+              className="secondary"
+              type="button"
+              disabled={busy || !state.started || state.disconnected}
+              onClick={() => {
+                actions.openRecoveryKeyModal();
+              }}
+            >
+              Create recovery key
             </button>
             {!signedInWithGoogle ? (
               <button
@@ -809,6 +820,61 @@ export default function App() {
         </ModalFrame>
       ) : null}
 
+      {state.modal?.type === "recovery_key_setup" ? (
+        <ModalFrame
+          title="Create Recovery Key"
+          subtitle="Create a recovery key for this unlocked vault. The key can be used in a later recovery flow if you forget the vault password."
+          eyebrow="Vault recovery"
+          actions={
+            <>
+              <button className="secondary" type="button" onClick={actions.closeModal}>
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                disabled={state.settingUpRecoveryKey}
+                onClick={() => void actions.confirmSetupRecoveryKey()}
+              >
+                Create Recovery Key
+              </button>
+            </>
+          }
+        >
+          <ModalNote tone="warning">
+            The recovery key will be shown once. Save it somewhere private. Anyone
+            with this key and access to the encrypted backup may be able to recover
+            this vault in a future recovery flow.
+          </ModalNote>
+          <ModalNote>
+            After creating the key, run Backup to Cloud so the encrypted recovery
+            wrapper is included in cloud backup. If you chat again before switching
+            devices, save another fresh backup from the newest working device.
+          </ModalNote>
+        </ModalFrame>
+      ) : null}
+
+      {state.modal?.type === "recovery_key_created" ? (
+        <ModalFrame
+          title="Save Your Recovery Key"
+          subtitle="This is the only time the full recovery key is shown. Store it outside this browser before closing this dialog."
+          eyebrow="Vault recovery"
+          actions={
+            <button className="primary" type="button" onClick={actions.closeModal}>
+              I saved this recovery key
+            </button>
+          }
+        >
+          <div className="recovery-key-box" role="group" aria-label="Recovery key">
+            {state.modal.recoveryKey}
+          </div>
+          <ModalNote tone="warning">
+            Do not share this key or include it in screenshots. The app stores only
+            an encrypted recovery wrapper, not this plain recovery key.
+          </ModalNote>
+        </ModalFrame>
+      ) : null}
+
       {state.modal?.type === "start_guard" ? (
         <ModalFrame
           title="Start Confirmation"
@@ -923,10 +989,18 @@ export default function App() {
               <strong>{state.modal.targetIdentityShort || "unknown"}</strong>
             </div>
           </div>
-          <ModalNote tone={state.modal.sameIdentity ? "info" : "warning"}>
+          <ModalNote
+            tone={
+              state.modal.sameIdentity || state.modal.localIdentityUnknown
+                ? "info"
+                : "warning"
+            }
+          >
             {state.modal.sameIdentity
               ? "This appears to be the same identity. Restore will refresh this browser with the cloud backup state."
-              : "This browser currently has a different identity for the same display name. Continue only if you intend to replace the local vault identity."}
+              : state.modal.localIdentityUnknown
+                ? "The current local identity could not be verified with this vault password. This can happen when this browser still has an older local vault encrypted with a previous password. Restore will replace that local copy with the selected cloud backup."
+                : "This browser currently has a different identity for the same display name. Continue only if you intend to replace the local vault identity."}
           </ModalNote>
         </ModalFrame>
       ) : null}

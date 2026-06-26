@@ -896,6 +896,7 @@ const server = http.createServer((req, res) => {
             backupVersion: Number(doc.version || 2),
             clientSavedAt: doc.clientSavedAt || null,
             serverSavedAt: doc.serverSavedAt || doc.updatedAt || null,
+            hasRecoveryKey: !!doc.recoveryWrapper,
             createdAt: doc.createdAt || null,
             updatedAt: doc.updatedAt || null,
           }));
@@ -985,6 +986,10 @@ const server = http.createServer((req, res) => {
           ivB64: doc.ivB64,
           saltB64: doc.saltB64,
           kdf: doc.kdf,
+          recoveryWrapper:
+            doc.recoveryWrapper && typeof doc.recoveryWrapper === "object"
+              ? doc.recoveryWrapper
+              : null,
         });
       } catch (err) {
         console.warn("[backup_get] failed:", err);
@@ -1545,6 +1550,10 @@ wss.on("connection", (ws) => {
           ivB64: data.ivB64,
           saltB64: data.saltB64,
           kdf: data.kdf && typeof data.kdf === "object" ? data.kdf : null,
+          recoveryWrapper:
+            data.recoveryWrapper && typeof data.recoveryWrapper === "object"
+              ? data.recoveryWrapper
+              : null,
         });
         return sendJson(ws, {
           type: "backup_saved",

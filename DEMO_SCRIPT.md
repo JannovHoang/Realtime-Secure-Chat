@@ -385,9 +385,10 @@ server as plaintext.
 
 `Recovery key`
 
-A future client-held recovery secret for recovering or rotating the vault
-password without giving the server plaintext E2EE keys. This feature is not
-implemented yet in the current checkpoint.
+A client-held recovery secret for future vault-password recovery. The current
+implementation can create and store an encrypted recovery wrapper, but the
+`Forgot vault password` recovery flow is not implemented yet. The server never
+receives the raw recovery key.
 
 `Backup to Cloud`
 
@@ -452,6 +453,9 @@ Before demo:
 - restore before chatting on a new device
 - after important test messages, save a fresh backup from the newest working
   device before restoring elsewhere
+- creating a recovery key does not replace this rule; it only prepares a future
+  password-recovery path, while Backup to Cloud carries the latest encrypted
+  chat state
 - if a restore warning says the cloud backup may be older, cancel unless you are
   intentionally testing rollback
 

@@ -21,6 +21,7 @@ const CONV_INDEX_KEY = "__securechat_conversations_v1__";
 const CONV_META_KEY = "__securechat_conversation_meta_v1__";
 const IDENTITY_META_KEY = "__securechat_identity_meta_v2__";
 const BACKUP_META_KEY = "__securechat_backup_meta_v1__";
+const RECOVERY_META_KEY = "__securechat_recovery_meta_v1__";
 
 // Chunking scheme
 const CHUNK_META_SUFFIX = "::chunks_meta"; // JSON { n, encoding, totalBytes }
@@ -47,6 +48,12 @@ async function makeVaultStorageKey(userId) {
   const label = `securechat:vault:${userId}`;
   const h = await hashLabel(label);
   return `securechat:vault:${h}`;
+}
+
+async function makeRecoveryStorageKey(userId) {
+  const label = `securechat:recovery:${userId}`;
+  const h = await hashLabel(label);
+  return `securechat:recovery:${h}`;
 }
 
 /**
@@ -143,6 +150,41 @@ function randomBytes(len) {
   const out = new Uint8Array(len);
   crypto.getRandomValues(out);
   return out.buffer;
+}
+
+function formatRecoveryKey(secretAb) {
+  const raw = toBase64Url(secretAb).toUpperCase();
+  const groups = raw.match(/.{1,6}/g) || [raw];
+  return `RSC-RECOVERY-${groups.join("-")}`;
+}
+
+function normalizeRecoveryWrapper(value) {
+  if (!value || typeof value !== "object") return null;
+  if (Number(value.version) !== 1) return null;
+  if (typeof value.ciphertextB64 !== "string" || !value.ciphertextB64) return null;
+  if (typeof value.ivB64 !== "string" || !value.ivB64) return null;
+  if (typeof value.saltB64 !== "string" || !value.saltB64) return null;
+
+  return {
+    version: 1,
+    createdAt: normalizeIsoTimestamp(value.createdAt) || new Date().toISOString(),
+    ciphertextB64: value.ciphertextB64,
+    ivB64: value.ivB64,
+    saltB64: value.saltB64,
+    kdf:
+      value.kdf && typeof value.kdf === "object"
+        ? {
+            name: String(value.kdf.name || "PBKDF2"),
+            hash: String(value.kdf.hash || "SHA-256"),
+            iterations: Number(value.kdf.iterations || 100000),
+          }
+        : {
+            name: "PBKDF2",
+            hash: "SHA-256",
+            iterations: 100000,
+          },
+    snapshotVersion: Number(value.snapshotVersion || 1),
+  };
 }
 
 function canonicalize(value) {
@@ -266,6 +308,32 @@ async function deriveBackupKey(password, saltAb, usages) {
     false,
     usages
   );
+}
+
+async function encryptRecoverySnapshot(snapshot, recoveryKey) {
+  const saltAb = randomBytes(16);
+  const ivAb = randomBytes(12);
+  const key = await deriveBackupKey(recoveryKey, saltAb, ["encrypt"]);
+  const plaintextAb = strToAb(JSON.stringify(snapshot));
+  const ciphertextAb = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: ivAb },
+    key,
+    plaintextAb
+  );
+
+  return {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    snapshotVersion: Number(snapshot?.version || 1),
+    ciphertextB64: abToB64(ciphertextAb),
+    ivB64: abToB64(ivAb),
+    saltB64: abToB64(saltAb),
+    kdf: {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      iterations: 100000,
+    },
+  };
 }
 
 // -------------------- Chunked KV helpers --------------------
@@ -538,6 +606,7 @@ export async function changeVaultPassword(
     CONV_META_KEY,
     IDENTITY_META_KEY,
     BACKUP_META_KEY,
+    RECOVERY_META_KEY,
   ];
   const recordNames = Array.from(
     new Set([...indexedNames, ...systemNames].map(normalizeKeyName).filter(Boolean))
@@ -718,6 +787,103 @@ export async function loadBackupMetadata() {
   };
 }
 
+async function readRecoveryWrapperForUser(userId) {
+  const key = await makeRecoveryStorageKey(userId);
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    return normalizeRecoveryWrapper(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+async function writeRecoveryWrapperForUser(userId, wrapper) {
+  const normalized = normalizeRecoveryWrapper(wrapper);
+  if (!normalized) {
+    throw new Error("Invalid recovery wrapper");
+  }
+  const key = await makeRecoveryStorageKey(userId);
+  localStorage.setItem(key, JSON.stringify(normalized));
+  return normalized;
+}
+
+async function buildRecoverySnapshot(userId) {
+  if (!keychain) throw new Error("Vault not initialized");
+  const username = normalizeKeyName(userId);
+  const identityMeta = await loadIdentityMetadata();
+  if (!username || !identityMeta?.identityId) {
+    throw new Error("No unlocked identity available for recovery setup");
+  }
+
+  const indexedNames = await readIndex();
+  const systemNames = [
+    CONV_INDEX_KEY,
+    CONV_META_KEY,
+    IDENTITY_META_KEY,
+    BACKUP_META_KEY,
+    RECOVERY_META_KEY,
+  ];
+  const recordNames = Array.from(
+    new Set([...indexedNames, ...systemNames].map(normalizeKeyName).filter(Boolean))
+  ).filter((name) => name !== INDEX_KEY);
+
+  const records = {};
+  for (const name of recordNames) {
+    const value = await getValueChunked(name);
+    if (value != null) records[name] = value;
+  }
+
+  return {
+    version: 1,
+    username,
+    accountId: identityMeta.accountId || null,
+    displayName: identityMeta.displayName || username,
+    identityId: identityMeta.identityId,
+    createdAt: new Date().toISOString(),
+    records,
+  };
+}
+
+export async function setupRecoveryKey(userId = "default") {
+  const username = normalizeKeyName(userId);
+  if (!username) throw new Error("Display name is required");
+  if (!keychain) throw new Error("Vault not initialized");
+
+  const recoveryKey = formatRecoveryKey(randomBytes(32));
+  const snapshot = await buildRecoverySnapshot(username);
+  const wrapper = await encryptRecoverySnapshot(snapshot, recoveryKey);
+  const savedWrapper = await writeRecoveryWrapperForUser(username, wrapper);
+
+  await storeRecord(
+    RECOVERY_META_KEY,
+    JSON.stringify({
+      version: 1,
+      username,
+      identityId: snapshot.identityId,
+      createdAt: savedWrapper.createdAt,
+      hasLocalRecoveryWrapper: true,
+    })
+  );
+
+  return {
+    recoveryKey,
+    createdAt: savedWrapper.createdAt,
+    identityId: snapshot.identityId,
+  };
+}
+
+export async function getRecoveryKeyStatus(userId = "default") {
+  const username = normalizeKeyName(userId);
+  if (!username) return { configured: false };
+  const wrapper = await readRecoveryWrapperForUser(username);
+  return {
+    configured: !!wrapper,
+    createdAt: wrapper?.createdAt || null,
+    snapshotVersion: wrapper?.snapshotVersion || null,
+  };
+}
+
 export async function exportIdentityPayload(userId = "default") {
   const persisted = await readPersistedForUser(userId);
   if (!persisted?.repr || !persisted?.digest) {
@@ -741,6 +907,7 @@ export async function exportIdentityPayload(userId = "default") {
     identityId: identityMeta.identityId,
     repr: persisted.repr,
     digest: persisted.digest,
+    recoveryWrapper: await readRecoveryWrapperForUser(username),
     exportedAt: new Date().toISOString(),
   };
 }
@@ -805,6 +972,7 @@ export async function encryptIdentityPayload(payload, password) {
       hash: "SHA-256",
       iterations: 100000,
     },
+    recoveryWrapper: normalizeRecoveryWrapper(payload.recoveryWrapper),
   };
 }
 
@@ -886,6 +1054,9 @@ export async function importIdentityPayload(
     digest: payload.digest,
     savedAt: Date.now(),
   });
+  if (payload.recoveryWrapper) {
+    await writeRecoveryWrapperForUser(username, payload.recoveryWrapper).catch(() => {});
+  }
 }
 
 export async function listRecordNames(prefix = "") {

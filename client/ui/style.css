@@ -1123,6 +1123,23 @@ button.compact {
   color: #7c4a03;
 }
 
+.recovery-key-box {
+  margin-top: 6px;
+  padding: 16px;
+  border: 1px solid rgba(43, 89, 217, 0.18);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(239, 246, 255, 0.92), rgba(255, 255, 255, 0.96));
+  color: var(--text);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.6;
+  letter-spacing: 0.05em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .identity-compare {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -9152,6 +9152,65 @@ Checkpoint 2 test expectation:
 - Backup to Cloud and Restore from Cloud still work as before
 - docs clearly state that recovery key is future client-held recovery material, not a server-side reset mechanism
 
+### Vault Recovery And Password Safety - Checkpoint 3: Recovery Key Setup
+
+Goal:
+
+- allow an unlocked vault to create a client-held recovery key
+- store only an encrypted recovery wrapper, never the raw recovery key
+- include the encrypted recovery wrapper in the next cloud backup
+
+Implemented:
+
+- added `setupRecoveryKey(...)` in `client/storage.js`
+- added `setupLocalRecoveryKey(...)` in `client/chat.js`
+- added a `Create recovery key` action in the React UI when the vault is unlocked
+- added a confirmation modal before recovery key creation
+- added a one-time recovery key display modal after creation
+- added `recoveryWrapper` passthrough to encrypted backup save/restore payloads
+- added `hasRecoveryKey` metadata for backup list responses
+
+Security behavior:
+
+- the raw recovery key is generated in the browser and shown once
+- the raw recovery key is not written to localStorage
+- the raw recovery key is not sent to the server
+- MongoDB stores only `recoveryWrapper`, which is encrypted with the recovery key
+- Backup to Cloud after setup includes the encrypted recovery wrapper
+
+Current limitation:
+
+- this checkpoint does not implement `Forgot vault password`
+- this checkpoint does not yet use the recovery key to unlock or re-encrypt a vault
+- if the user creates a recovery key but does not run Backup to Cloud, the recovery wrapper exists only in this browser
+- the recovery key does not synchronize Double Ratchet state by itself
+- after any new chat messages following a cloud backup, the current device must save another fresh Backup to Cloud before another device restores and continues chatting
+
+Checkpoint 3 test expectation:
+
+- unlock an existing vault
+- click `Create recovery key`
+- confirm creation
+- verify the key is shown once in a modal
+- close the modal and verify the key is not shown again
+- run Backup to Cloud
+- if you send more messages after that backup, run Backup to Cloud again before switching to another browser or phone
+- verify chat, backup, restore, realtime, and offline pending behavior still work
+
+Follow-up fix during Checkpoint 3 testing:
+
+- device-switch testing showed that a decrypt failure after restore could trigger an automatic per-peer ratchet reset
+- removed that automatic reset path from normal message decrypt failure handling
+- decrypt-failed packets are kept queued instead of mutating the live ratchet state
+- peer connection reset remains reserved for explicit peer certificate public-key changes
+- this avoids turning a transient/stale packet into a permanent local ratchet-state fork
+
+Restore safety wording fix:
+
+- when restoring with a new vault password on a browser that still has an older local vault, the app may not be able to verify the current local identity
+- the restore overwrite modal now distinguishes `unknown local identity` from a confirmed different identity
+- this keeps the warning accurate when password rotation keeps the same cryptographic identity but the old local vault copy cannot be opened with the current password
+
 ### Roadmap Phase 4: Device Switching And Backup Discipline
 
 Goal:

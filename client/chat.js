@@ -22,6 +22,7 @@ import {
   deriveIdentityIdFromPublicJwk,
   saveIdentityMetadata,
   changeVaultPassword as changeStoredVaultPassword,
+  setupRecoveryKey as setupStoredRecoveryKey,
 } from "./storage.js";
 import {
   buildLocalAccountProfile,
@@ -934,6 +935,13 @@ export async function changeLocalVaultPassword(currentPassword, newPassword) {
   return await changeStoredVaultPassword(myUser, currentPassword, newPassword);
 }
 
+export async function setupLocalRecoveryKey() {
+  if (!myUser || !messenger) throw new Error("Call initChat() first");
+  await saveStateNow();
+  await ensureConversationHistoryRecordsIndexed();
+  return await setupStoredRecoveryKey(myUser);
+}
+
 function emitPeerReady(peer) {
   for (const fn of peerReadyListeners) {
     try {
@@ -1097,8 +1105,10 @@ async function processCipherPacket(from, header, ciphertextB64, ts) {
   try {
     plaintext = await messenger.receiveMessage(from, [header, ciphertext]);
   } catch (err) {
-    resetPeerConn(from);
-    plaintext = await messenger.receiveMessage(from, [header, ciphertext]);
+    // A decrypt failure is not proof that the peer certificate changed. Resetting
+    // the live ratchet here can destroy the last good state and make a stale
+    // restore/device-switch issue permanent. Keep the packet queued instead.
+    throw err;
   }
 
   const { primaryKey, messages } = await loadLocalHistoryFromAllThreadKeys(from);
@@ -1218,8 +1228,6 @@ async function handleIncoming(data) {
         ciphertextB64: data.ciphertextB64,
         ts: data.ts ?? Date.now(),
       });
-      // retry later
-      setTimeout(() => void drainInbound(from), 50);
     }
     return;
   }
