@@ -291,6 +291,7 @@ export default function App() {
     state.backingUp ||
     state.changingVaultPassword ||
     state.recoveringVaultPassword ||
+    state.resettingEncryptedIdentity ||
     state.settingUpRecoveryKey ||
     state.sending;
   const chatSyncing = state.messageLoading || state.recentLoading;
@@ -465,6 +466,16 @@ export default function App() {
               }}
             >
               Use recovery key
+            </button>
+            <button
+              className="secondary"
+              type="button"
+              disabled={busy || state.started || !state.username || !state.password}
+              onClick={() => {
+                actions.openResetEncryptedIdentityModal();
+              }}
+            >
+              Create new identity
             </button>
             <button
               className="secondary"
@@ -989,6 +1000,49 @@ export default function App() {
             or this browser. Recovery updates this browser first; the cloud backup
             may still require the old vault password until you unlock with the new
             password and use Backup to Cloud.
+          </ModalNote>
+        </ModalFrame>
+      ) : null}
+
+      {state.modal?.type === "reset_encrypted_identity" ? (
+        <ModalFrame
+          title="Create New Identity"
+          subtitle={`Create a new encrypted identity for ${state.modal.username} using the password field as the new vault password.`}
+          eyebrow="Vault recovery"
+          actions={
+            <>
+              <button className="secondary" type="button" onClick={actions.closeModal}>
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                disabled={state.resettingEncryptedIdentity}
+                onClick={() => void actions.confirmResetEncryptedIdentity()}
+              >
+                Create Identity
+              </button>
+            </>
+          }
+        >
+          <ModalNote tone="warning">
+            Use this only when the vault password and recovery key are lost. This
+            replaces the local encrypted identity in this browser. Old backups and
+            encrypted messages may remain unreadable without the old password or
+            recovery key.
+          </ModalNote>
+          <label className="modal-field">
+            <span>Type display name to confirm</span>
+            <input
+              type="text"
+              placeholder={state.modal.username}
+              value={state.resetIdentityInput}
+              onChange={(e) => actions.setResetIdentityInput(e.target.value)}
+            />
+          </label>
+          <ModalNote>
+            After creating the new identity, create a recovery key and run Backup
+            to Cloud before switching devices.
           </ModalNote>
         </ModalFrame>
       ) : null}

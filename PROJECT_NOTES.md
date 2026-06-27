@@ -9292,6 +9292,60 @@ Follow-up fix during Checkpoint 4 testing:
 - recovery key generation now uses a base32 alphabet that does not include `-`, so `-` is only a visual separator and newly generated keys are less error-prone to copy or type
 - recovery key input is normalized by removing whitespace/newlines and uppercasing before local key derivation
 
+### Vault Recovery And Password Safety - Checkpoint 5: Reset Encrypted Identity
+
+Goal:
+
+- provide a clear last-resort path when the user has no usable vault password, no recovery key, and no recoverable device
+- create a new encrypted identity without making the server capable of decrypting old E2EE data
+- warn that old encrypted backups/messages may remain unreadable
+
+Implemented:
+
+- added `clearRecoveryWrapper(...)` in `client/storage.js`
+  - removes the local encrypted recovery wrapper for a display name when intentionally creating a new identity
+  - prevents a new identity backup from accidentally carrying a stale recovery wrapper from an older identity
+- added a pre-unlock `Create new identity` action in the React UI
+  - available only before the vault is started/unlocked
+  - requires display name and the password field, which becomes the new vault password
+  - opens a confirmation modal before replacing local encrypted identity state
+  - requires typing the display name exactly before continuing
+- reset flow behavior:
+  - destroys any active chat runtime defensively
+  - clears the browser-local encrypted vault for that display name
+  - clears the browser-local recovery wrapper for that display name
+  - clears stale-session marker for that display name
+  - starts a new local encrypted identity with the entered vault password
+  - does not delete MongoDB cloud backups, ciphertext history, certs, or pending messages
+
+Security behavior:
+
+- reset does not recover old data
+- reset does not decrypt old backups or messages
+- reset does not delete old server-side encrypted backup records
+- old encrypted backups/messages may remain unreadable unless the user later finds the old password, recovery key, or another usable device
+- after reset, the user should create a new recovery key and run Backup to Cloud
+
+Non-goals for this checkpoint:
+
+- no server-side delete/reset endpoint
+- no MongoDB schema change
+- no automatic backup after reset
+- no attempt to merge old local history into the new identity
+- no Double Ratchet protocol change
+
+Checkpoint 5 test expectation:
+
+- `Create new identity` is disabled until display name and vault password are entered
+- modal requires typing the display name exactly
+- cancelling does not change the existing local vault
+- confirming creates a new local identity with the entered vault password
+- old vault password no longer unlocks that browser-local identity if the local vault was replaced
+- chat can start with the new identity
+- user can create a new recovery key for the new identity
+- Backup to Cloud stores the new identity backup without reusing the old recovery wrapper
+- old cloud backups remain available as separate old identity records if they existed
+
 ### Roadmap Phase 4: Firebase Identity Binding / Default Vault UX
 
 Goal:

@@ -600,6 +600,11 @@ export async function clearPersistedVault(userId = "default") {
   localStorage.removeItem(key);
 }
 
+export async function clearRecoveryWrapper(userId = "default") {
+  const key = await makeRecoveryStorageKey(userId);
+  localStorage.removeItem(key);
+}
+
 /**
  * Initialize OR load existing vault
  */

@@ -23,6 +23,8 @@ import {
   setupLocalRecoveryKey,
 } from "../../chat.js";
 import {
+  clearPersistedVault,
+  clearRecoveryWrapper,
   initVault,
   decryptIdentityPayload,
   encryptIdentityPayload,
@@ -53,6 +55,7 @@ const initialState = {
   backingUp: false,
   changingVaultPassword: false,
   recoveringVaultPassword: false,
+  resettingEncryptedIdentity: false,
   settingUpRecoveryKey: false,
   restoredThisSession: false,
   restoredUsername: "",
@@ -92,6 +95,7 @@ const initialState = {
     next: "",
     confirm: "",
   },
+  resetIdentityInput: "",
   pendingRecoveryReset: null,
   pendingRestore: null,
   pendingRestoreOverwrite: null,
@@ -678,6 +682,15 @@ function reducer(state, action) {
       };
     case "recover_vault_password_end":
       return { ...state, recoveringVaultPassword: false };
+    case "reset_identity_begin":
+      return {
+        ...state,
+        resettingEncryptedIdentity: true,
+        statusText: "Creating new identity...",
+        statusTone: "info",
+      };
+    case "reset_identity_end":
+      return { ...state, resettingEncryptedIdentity: false };
     case "setup_recovery_key_begin":
       return {
         ...state,
@@ -778,6 +791,7 @@ function reducer(state, action) {
           next: "",
           confirm: "",
         },
+        resetIdentityInput: "",
       };
     case "set_backup_password_input":
       return { ...state, backupPasswordInput: action.value };
@@ -797,6 +811,8 @@ function reducer(state, action) {
           [action.field]: action.value,
         },
       };
+    case "set_reset_identity_input":
+      return { ...state, resetIdentityInput: action.value };
     case "set_pending_recovery_reset":
       return { ...state, pendingRecoveryReset: action.value };
     case "set_pending_restore":
@@ -1839,6 +1855,62 @@ export function useChatApp() {
     }
   }
 
+  function openResetEncryptedIdentityModal() {
+    const username = String(state.username || "").trim();
+    const password = String(state.password || "");
+    if (state.started && !state.disconnected) {
+      pushToast("Log out before creating a new encrypted identity.", "warning");
+      return;
+    }
+    if (!username || !password) {
+      pushToast("Enter the display name and the new vault password first.", "warning");
+      return;
+    }
+    dispatch({
+      type: "open_modal",
+      modal: { type: "reset_encrypted_identity", username },
+    });
+  }
+
+  async function confirmResetEncryptedIdentity() {
+    const username = String(state.username || "").trim();
+    const password = String(state.password || "");
+    const confirmation = String(state.resetIdentityInput || "").trim();
+
+    if (!username || !password) {
+      pushToast("Display name and new vault password are required.", "warning");
+      return;
+    }
+    if (confirmation !== username) {
+      pushToast("Type the display name exactly to confirm creating a new identity.", "warning");
+      return;
+    }
+
+    dispatch({ type: "reset_identity_begin" });
+    try {
+      await destroyChat().catch(() => {});
+      await clearPersistedVault(username);
+      await clearRecoveryWrapper(username);
+      clearLocalSessionStale(username);
+      dispatch({ type: "close_modal" });
+      dispatch({ type: "allow_continue_without_restore", username });
+      await performStart({ skipGuard: true, skipBackupWarning: true });
+      pushToast(
+        "New encrypted identity created. Save a recovery key and Backup to Cloud before switching devices.",
+        "success"
+      );
+    } catch (err) {
+      dispatch({
+        type: "set_status",
+        message: "Identity reset failed",
+        tone: "error",
+      });
+      pushToast(String(err?.message || err || "Identity reset failed"), "error");
+    } finally {
+      dispatch({ type: "reset_identity_end" });
+    }
+  }
+
   async function handleRestoreRequest() {
     const username = String(state.username || "").trim();
     const password = String(state.password || "");
@@ -2223,6 +2295,8 @@ export function useChatApp() {
         dispatch({ type: "set_change_vault_password_input", field, value }),
       setRecoveryPasswordInput: (field, value) =>
         dispatch({ type: "set_recovery_password_input", field, value }),
+      setResetIdentityInput: (value) =>
+        dispatch({ type: "set_reset_identity_input", value }),
       setPeerDraft,
       closeModal: () => dispatch({ type: "close_modal" }),
       selectPeer,
@@ -2242,6 +2316,8 @@ export function useChatApp() {
       confirmRecoveryPasswordReset,
       confirmRecoveryResetChoice,
       cancelRecoveryResetChoice,
+      openResetEncryptedIdentityModal,
+      confirmResetEncryptedIdentity,
       handleRestoreRequest,
       confirmRestoreChoice,
       cancelRestoreChoice,
