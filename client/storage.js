@@ -38,6 +38,28 @@ function toBase64Url(buf) {
     .replace(/=+$/g, "");
 }
 
+function toBase32NoPadding(buf) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const bytes = new Uint8Array(buf);
+  let bits = 0;
+  let value = 0;
+  let out = "";
+
+  for (const byte of bytes) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      out += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+
+  if (bits > 0) {
+    out += alphabet[(value << (5 - bits)) & 31];
+  }
+  return out;
+}
+
 async function hashLabel(label) {
   const data = new TextEncoder().encode(String(label ?? ""));
   const digest = await crypto.subtle.digest("SHA-256", data);
@@ -153,9 +175,17 @@ function randomBytes(len) {
 }
 
 function formatRecoveryKey(secretAb) {
-  const raw = toBase64Url(secretAb).toUpperCase();
+  const raw = toBase32NoPadding(secretAb);
   const groups = raw.match(/.{1,6}/g) || [raw];
   return `RSC-RECOVERY-${groups.join("-")}`;
+}
+
+function normalizeRecoveryKeyText(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .toUpperCase()
+    .trim();
 }
 
 function normalizeRecoveryWrapper(value) {
@@ -333,6 +363,69 @@ async function encryptRecoverySnapshot(snapshot, recoveryKey) {
       hash: "SHA-256",
       iterations: 100000,
     },
+  };
+}
+
+async function decryptRecoverySnapshot(wrapperInput, recoveryKey) {
+  const wrapper = normalizeRecoveryWrapper(wrapperInput);
+  const keyText = normalizeRecoveryKeyText(recoveryKey);
+  if (!wrapper) throw new Error("No recovery wrapper is available");
+  if (!keyText || !keyText.startsWith("RSC-RECOVERY-")) {
+    throw new Error("Recovery key did not unlock this vault");
+  }
+
+  const saltAb = b64ToAb(wrapper.saltB64);
+  const ivAb = b64ToAb(wrapper.ivB64);
+  const ciphertextAb = b64ToAb(wrapper.ciphertextB64);
+  const key = await deriveBackupKey(keyText, saltAb, ["decrypt"]);
+
+  let plaintextAb;
+  try {
+    plaintextAb = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: ivAb },
+      key,
+      ciphertextAb
+    );
+  } catch {
+    throw new Error("Recovery key did not unlock this vault");
+  }
+
+  let snapshot;
+  try {
+    snapshot = JSON.parse(abToStr(plaintextAb));
+  } catch {
+    throw new Error("Recovery wrapper payload is not valid JSON");
+  }
+
+  const username = normalizeKeyName(snapshot?.username);
+  const identityId = normalizeKeyName(snapshot?.identityId);
+  const records =
+    snapshot?.records && typeof snapshot.records === "object" && !Array.isArray(snapshot.records)
+      ? snapshot.records
+      : null;
+  if (Number(snapshot?.version || 0) !== 1 || !username || !identityId || !records) {
+    throw new Error("Recovery wrapper payload is invalid");
+  }
+
+  const normalizedRecords = {};
+  for (const [name, value] of Object.entries(records)) {
+    const keyName = normalizeKeyName(name);
+    if (!keyName || keyName === INDEX_KEY) continue;
+    if (value == null) continue;
+    normalizedRecords[keyName] = String(value);
+  }
+  if (Object.keys(normalizedRecords).length === 0) {
+    throw new Error("Recovery wrapper contains no vault records");
+  }
+
+  return {
+    version: 1,
+    username,
+    accountId: normalizeAccountId(snapshot.accountId) || null,
+    displayName: normalizeDisplayName(snapshot.displayName || username) || username,
+    identityId,
+    createdAt: normalizeIsoTimestamp(snapshot.createdAt),
+    records: normalizedRecords,
   };
 }
 
@@ -881,6 +974,47 @@ export async function getRecoveryKeyStatus(userId = "default") {
     configured: !!wrapper,
     createdAt: wrapper?.createdAt || null,
     snapshotVersion: wrapper?.snapshotVersion || null,
+  };
+}
+
+export async function resetVaultPasswordWithRecoveryKey(
+  userId = "default",
+  recoveryKey,
+  newPassword,
+  wrapperInput = null
+) {
+  const username = normalizeKeyName(userId);
+  const next = String(newPassword || "");
+  if (!username) throw new Error("Display name is required");
+  if (!next) throw new Error("New vault password is required");
+
+  const wrapper = wrapperInput || (await readRecoveryWrapperForUser(username));
+  const snapshot = await decryptRecoverySnapshot(wrapper, recoveryKey);
+  if (snapshot.username !== username) {
+    throw new Error("Recovery backup username mismatch");
+  }
+
+  vaultStorageKey = await makeVaultStorageKey(username);
+  keychain = await Keychain.init(next);
+
+  const recordNames = Object.keys(snapshot.records)
+    .map(normalizeKeyName)
+    .filter(Boolean);
+  await setValueChunked(INDEX_KEY, JSON.stringify(recordNames));
+  for (const [name, value] of Object.entries(snapshot.records)) {
+    await setValueChunked(name, value);
+  }
+  await persistNow();
+
+  const savedWrapper = await writeRecoveryWrapperForUser(username, wrapper);
+  return {
+    username,
+    accountId: snapshot.accountId || null,
+    displayName: snapshot.displayName || username,
+    identityId: snapshot.identityId,
+    recoveryCreatedAt: savedWrapper.createdAt,
+    recordCount: recordNames.length,
+    savedAt: Date.now(),
   };
 }
 

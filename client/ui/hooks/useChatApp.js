@@ -34,6 +34,7 @@ import {
   loadBackupMetadata,
   saveBackupMetadata,
   loadIdentityMetadata,
+  resetVaultPasswordWithRecoveryKey,
   verifyPersistedVaultPassword,
 } from "../../storage.js";
 import {
@@ -51,9 +52,12 @@ const initialState = {
   restoring: false,
   backingUp: false,
   changingVaultPassword: false,
+  recoveringVaultPassword: false,
   settingUpRecoveryKey: false,
   restoredThisSession: false,
   restoredUsername: "",
+  recoveredPasswordThisSession: false,
+  recoveredPasswordUsername: "",
   continueWithoutRestoreFor: {},
   identityPanel: null,
   activePeer: "",
@@ -83,6 +87,12 @@ const initialState = {
     next: "",
     confirm: "",
   },
+  recoveryPasswordInput: {
+    recoveryKey: "",
+    next: "",
+    confirm: "",
+  },
+  pendingRecoveryReset: null,
   pendingRestore: null,
   pendingRestoreOverwrite: null,
   pendingRestoreStale: null,
@@ -613,6 +623,8 @@ function reducer(state, action) {
         disconnected: false,
         restoredThisSession: false,
         restoredUsername: "",
+        recoveredPasswordThisSession: false,
+        recoveredPasswordUsername: "",
         accountId: "",
         displayName: "",
         identityPanel: null,
@@ -657,6 +669,15 @@ function reducer(state, action) {
       };
     case "change_vault_password_end":
       return { ...state, changingVaultPassword: false };
+    case "recover_vault_password_begin":
+      return {
+        ...state,
+        recoveringVaultPassword: true,
+        statusText: "Recovering vault...",
+        statusTone: "info",
+      };
+    case "recover_vault_password_end":
+      return { ...state, recoveringVaultPassword: false };
     case "setup_recovery_key_begin":
       return {
         ...state,
@@ -752,6 +773,11 @@ function reducer(state, action) {
           next: "",
           confirm: "",
         },
+        recoveryPasswordInput: {
+          recoveryKey: "",
+          next: "",
+          confirm: "",
+        },
       };
     case "set_backup_password_input":
       return { ...state, backupPasswordInput: action.value };
@@ -763,6 +789,16 @@ function reducer(state, action) {
           [action.field]: action.value,
         },
       };
+    case "set_recovery_password_input":
+      return {
+        ...state,
+        recoveryPasswordInput: {
+          ...state.recoveryPasswordInput,
+          [action.field]: action.value,
+        },
+      };
+    case "set_pending_recovery_reset":
+      return { ...state, pendingRecoveryReset: action.value };
     case "set_pending_restore":
       return { ...state, pendingRestore: action.value };
     case "set_pending_restore_overwrite":
@@ -809,6 +845,10 @@ function reducer(state, action) {
         ...state,
         restoredThisSession: true,
         restoredUsername: normalizePeer(action.username),
+        recoveredPasswordThisSession: !!action.recoveredPassword,
+        recoveredPasswordUsername: action.recoveredPassword
+          ? normalizePeer(action.username)
+          : state.recoveredPasswordUsername,
         accountId: action.account?.accountId || state.accountId,
         displayName: action.account?.displayName || state.displayName,
         identityPanel: action.identityPanel || state.identityPanel,
@@ -1124,6 +1164,9 @@ export function useChatApp() {
     const account = await buildLocalAccountProfile(username);
     const restoredThisUsername =
       state.restoredThisSession && normalizePeer(state.restoredUsername) === username;
+    const recoveredPasswordThisUsername =
+      state.recoveredPasswordThisSession &&
+      normalizePeer(state.recoveredPasswordUsername) === username;
     const hasLocalVault = await hasPersistedVault(username);
     let localIdentityMeta = null;
     if (hasLocalVault) {
@@ -1184,13 +1227,26 @@ export function useChatApp() {
       return;
     }
 
-    if (!options.skipBackupWarning && hasUsableLocalIdentity && !restoredThisUsername) {
+    if (
+      !options.skipBackupWarning &&
+      hasUsableLocalIdentity &&
+      !restoredThisUsername
+    ) {
       const warning = await getPreStartBackupWarning(username, password, account);
       if (warning) {
         dispatch({ type: "set_pending_start_warning", value: { username } });
         dispatch({
           type: "open_modal",
-          modal: { type: "backup_freshness_warning", ...warning },
+          modal: recoveredPasswordThisUsername
+            ? {
+                type: "backup_freshness_warning",
+                ...warning,
+                recoveryPasswordReset: true,
+                modalTitle: "Vault Password Recovered",
+                modalSubtitle:
+                  "This browser has a recovered local vault. Unlock it with the new password, then save a fresh cloud backup.",
+              }
+            : { type: "backup_freshness_warning", ...warning },
         });
         return;
       }
@@ -1574,6 +1630,215 @@ export function useChatApp() {
     }
   }
 
+  async function openRecoveryPasswordResetModal() {
+    const username = String(state.username || "").trim();
+    if (state.started && !state.disconnected) {
+      pushToast("This vault is already unlocked. Use Change vault password instead.", "info");
+      return;
+    }
+    if (!username) {
+      pushToast("Enter the display name for the vault you want to recover.", "warning");
+      return;
+    }
+
+    dispatch({ type: "recover_vault_password_begin" });
+    try {
+      const items = await fetchCloudBackupIdentities(username);
+      const recoverable = Array.isArray(items)
+        ? items.filter((item) => item?.hasRecoveryKey)
+        : [];
+      if (recoverable.length === 1) {
+        dispatch({
+          type: "set_pending_recovery_reset",
+          value: {
+            username,
+            identityId: recoverable[0].identityId,
+            includeAuth: true,
+            source: "cloud",
+          },
+        });
+        dispatch({
+          type: "open_modal",
+          modal: {
+            type: "recovery_password_reset",
+            username,
+            identityId: recoverable[0].identityId,
+            source: "cloud",
+          },
+        });
+        return;
+      }
+      if (recoverable.length > 1) {
+        dispatch({
+          type: "set_pending_recovery_reset",
+          value: { username, items: recoverable, includeAuth: true, source: "cloud" },
+        });
+        dispatch({
+          type: "open_modal",
+          modal: { type: "recovery_choice", items: recoverable },
+        });
+        return;
+      }
+
+      dispatch({
+        type: "set_pending_recovery_reset",
+        value: { username, identityId: null, includeAuth: false, source: "local" },
+      });
+      dispatch({
+        type: "open_modal",
+        modal: { type: "recovery_password_reset", username, source: "local" },
+      });
+      pushToast(
+        "No cloud backup with a recovery key was found. Trying local recovery wrapper for this browser.",
+        "info"
+      );
+    } catch (err) {
+      console.warn("[recovery] cloud recovery lookup failed:", err);
+      dispatch({
+        type: "set_pending_recovery_reset",
+        value: { username, identityId: null, includeAuth: false, source: "local" },
+      });
+      dispatch({
+        type: "open_modal",
+        modal: { type: "recovery_password_reset", username, source: "local" },
+      });
+      pushToast(
+        "Cloud recovery lookup unavailable. You can still try the local recovery wrapper on this browser.",
+        "info"
+      );
+    } finally {
+      dispatch({ type: "recover_vault_password_end" });
+    }
+  }
+
+  function confirmRecoveryResetChoice(identityId) {
+    const pending = state.pendingRecoveryReset;
+    if (!pending?.username || !identityId) return;
+    dispatch({
+      type: "set_pending_recovery_reset",
+      value: {
+        username: pending.username,
+        identityId,
+        includeAuth: pending.includeAuth !== false,
+        source: "cloud",
+      },
+    });
+    dispatch({
+      type: "open_modal",
+      modal: {
+        type: "recovery_password_reset",
+        username: pending.username,
+        identityId,
+        source: "cloud",
+      },
+    });
+  }
+
+  function cancelRecoveryResetChoice() {
+    dispatch({ type: "set_pending_recovery_reset", value: null });
+    dispatch({ type: "close_modal" });
+    dispatch({ type: "set_status", message: "Recovery cancelled", tone: "info" });
+  }
+
+  async function confirmRecoveryPasswordReset() {
+    const pending = state.pendingRecoveryReset || {};
+    const username = String(pending.username || state.username || "").trim();
+    const recoveryKey = String(state.recoveryPasswordInput.recoveryKey || "").trim();
+    const next = String(state.recoveryPasswordInput.next || "");
+    const confirm = String(state.recoveryPasswordInput.confirm || "");
+
+    if (!username) {
+      pushToast("Display name is required for recovery.", "warning");
+      return;
+    }
+    if (!recoveryKey || !next || !confirm) {
+      pushToast("Fill in the recovery key and new vault password.", "warning");
+      return;
+    }
+    if (next !== confirm) {
+      pushToast("New vault password confirmation does not match.", "error");
+      return;
+    }
+
+    dispatch({ type: "recover_vault_password_begin" });
+    try {
+      let wrapper = null;
+      let blob = null;
+      if (pending.source === "cloud" && pending.identityId) {
+        blob = await fetchCloudBackup(username, pending.identityId, {
+          includeAuth: pending.includeAuth !== false,
+        });
+        wrapper = blob?.recoveryWrapper || null;
+        if (!wrapper) {
+          throw new Error("This cloud backup does not include a recovery key wrapper");
+        }
+      }
+
+      const result = await resetVaultPasswordWithRecoveryKey(
+        username,
+        recoveryKey,
+        next,
+        wrapper
+      );
+      clearLocalSessionStale(username);
+      const account = await buildLocalAccountProfile(username);
+      if (blob) {
+        try {
+          await saveBackupMetadata({
+            username,
+            accountId: blob.accountId || result.accountId || account.accountId,
+            displayName: result.displayName || account.displayName || username,
+            accountIdScheme: blob.accountIdScheme || account.accountIdScheme,
+            authMode: blob.authMode || account.authMode,
+            firebaseUid: blob.firebaseUid || null,
+            identityId: result.identityId,
+            backupVersion: blob.version || 2,
+            clientSavedAt: blob.clientSavedAt || null,
+            serverSavedAt: blob.serverSavedAt || null,
+          });
+        } catch (metadataErr) {
+          console.warn("[recovery] failed to save local backup metadata:", metadataErr);
+        }
+      }
+      dispatch({
+        type: "restore_success",
+        username,
+        account,
+        recoveredPassword: true,
+        identityPanel: {
+          displayName: result.displayName || account.displayName || username,
+          accountId: result.accountId || blob?.accountId || account.accountId || "",
+          accountIdScheme: blob?.accountIdScheme || account.accountIdScheme || "",
+          authMode: blob?.authMode || account.authMode || "",
+          firebaseUid: blob?.firebaseUid || "",
+          identityId: result.identityId || "",
+          backupServerSavedAt: blob?.serverSavedAt || "",
+          backupClientSavedAt: blob?.clientSavedAt || "",
+        },
+      });
+      dispatch({ type: "close_modal" });
+      dispatch({ type: "set_pending_recovery_reset", value: null });
+      dispatch({
+        type: "set_status",
+        message: "Vault recovered",
+        tone: "success",
+      });
+      pushToast(
+        "Vault recovered locally. Unlock with the new password, then Backup to Cloud so future restores use the new password.",
+        "success"
+      );
+    } catch (err) {
+      dispatch({
+        type: "set_status",
+        message: "Recovery failed",
+        tone: "error",
+      });
+      pushToast(String(err?.message || err || "Recovery failed"), "error");
+    } finally {
+      dispatch({ type: "recover_vault_password_end" });
+    }
+  }
+
   async function handleRestoreRequest() {
     const username = String(state.username || "").trim();
     const password = String(state.password || "");
@@ -1929,13 +2194,14 @@ export function useChatApp() {
   }
 
   function handleBackupFreshnessWarning(choice) {
+    const isRecoveryPasswordReset = !!state.modal?.recoveryPasswordReset;
     dispatch({ type: "close_modal" });
     dispatch({ type: "set_pending_start_warning", value: null });
-    if (choice === "restore") {
+    if (choice === "restore" && !isRecoveryPasswordReset) {
       void handleRestoreRequest();
       return;
     }
-    if (choice === "continue") {
+    if (choice === "continue" || (choice === "restore" && isRecoveryPasswordReset)) {
       void performStart({ skipGuard: true, skipBackupWarning: true });
     }
   }
@@ -1955,6 +2221,8 @@ export function useChatApp() {
         dispatch({ type: "set_backup_password_input", value }),
       setChangeVaultPasswordInput: (field, value) =>
         dispatch({ type: "set_change_vault_password_input", field, value }),
+      setRecoveryPasswordInput: (field, value) =>
+        dispatch({ type: "set_recovery_password_input", field, value }),
       setPeerDraft,
       closeModal: () => dispatch({ type: "close_modal" }),
       selectPeer,
@@ -1970,6 +2238,10 @@ export function useChatApp() {
       confirmChangeVaultPassword,
       openRecoveryKeyModal,
       confirmSetupRecoveryKey,
+      openRecoveryPasswordResetModal,
+      confirmRecoveryPasswordReset,
+      confirmRecoveryResetChoice,
+      cancelRecoveryResetChoice,
       handleRestoreRequest,
       confirmRestoreChoice,
       cancelRestoreChoice,

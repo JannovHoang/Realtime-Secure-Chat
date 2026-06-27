@@ -9219,6 +9219,79 @@ Checkpoint 3 status:
 - confirmed product rule: after creating a recovery key, later Backup to Cloud operations carry the current recovery wrapper; only create a new recovery key when the old key is lost, suspected leaked, or intentionally rotated
 - confirmed identity rule: changing the vault password does not create a new identity; if a browser cannot open an older local vault with the new password, the local identity may show as `unknown` until Restore and Replace refreshes that browser copy
 
+### Vault Recovery And Password Safety - Checkpoint 4: Forgot Vault Password
+
+Goal:
+
+- let a user who previously created a recovery key recover an encrypted vault without knowing the old vault password
+- keep recovery client-side: the server still stores only encrypted recovery wrapper data
+- set a new local vault password after the recovery key successfully unlocks the recovery wrapper
+
+Implemented:
+
+- added `resetVaultPasswordWithRecoveryKey(...)` in `client/storage.js`
+  - accepts a display name, recovery key, new vault password, and optional cloud recovery wrapper
+  - decrypts the encrypted recovery wrapper locally with the recovery key
+  - validates the wrapped snapshot username, identity id, and vault records
+  - creates a new local encrypted vault with the new vault password
+  - writes the recovered vault records into browser local storage
+  - keeps only the encrypted recovery wrapper in local storage, never the raw recovery key
+- added a pre-unlock `Use recovery key` action in the React UI
+  - visible before vault unlock when a display name is present
+  - fetches cloud backup identities and filters to backups with `hasRecoveryKey`
+  - supports choosing an identity when more than one cloud backup has a recovery wrapper
+  - falls back to the local recovery wrapper if cloud lookup is unavailable or no cloud recovery wrapper is found
+  - asks for recovery key, new vault password, and confirmation
+- successful recovery leaves the user logged out/unstarted
+  - the user must unlock/start with the new vault password
+  - the user should then run `Backup to Cloud` to save a fresh backup encrypted with the new vault password
+
+Security behavior:
+
+- raw recovery key is entered only in the browser UI
+- raw recovery key is not stored in localStorage
+- raw recovery key is not sent to the server
+- Firebase, MongoDB, and the Node server still cannot decrypt the vault or message contents
+- a wrong recovery key fails with `Recovery key did not unlock this vault`
+
+Current limitation:
+
+- the recovery wrapper created in Checkpoint 3 wraps a vault snapshot, not a durable vault master secret
+- recovery restores the state contained in that encrypted recovery wrapper
+- if the wrapper snapshot is older than the newest cloud backup or newest local chat state, recovery may restore an older Double Ratchet/local history state
+- after recovery, save a fresh Backup to Cloud before switching devices
+- a future wrapper-model checkpoint should replace snapshot recovery with a design that can unlock the latest encrypted vault backup without making users recreate recovery material after important state changes
+
+Non-goals for this checkpoint:
+
+- no server schema change
+- no Firebase/Admin/Auth hardening change
+- no Double Ratchet protocol change
+- no automatic cloud backup after recovery
+- no reset encrypted identity flow when no recovery path exists
+
+Checkpoint 4 test expectation:
+
+- `Use recovery key` is available before unlock when a display name is entered
+- wrong recovery key fails without deleting the existing local vault
+- mismatched new-password confirmation fails
+- valid recovery key sets a new local vault password
+- old vault password no longer unlocks after successful recovery
+- new vault password unlocks the recovered identity
+- after unlock, Backup to Cloud works with the new vault password
+- realtime chat and offline pending still work after recovery, subject to the snapshot freshness limitation above
+
+Follow-up fix during Checkpoint 4 testing:
+
+- after cloud recovery succeeds, the UI now saves local backup metadata from the cloud backup that supplied the recovery wrapper
+- this prevents the pre-start freshness guard from incorrectly warning `Cloud Backup May Be Newer` immediately after recovering from that same cloud backup
+- the warning can still be valid if the recovered wrapper or local state is genuinely older than a newer cloud backup created elsewhere
+- if a freshness warning still appears in the same session immediately after recovery-key password reset, the modal now uses recovery-specific wording and does not offer `Restore from Cloud`
+- this avoids sending users into a restore path that may still require the old vault password before they have saved a fresh cloud backup with the new password
+- recovery UI copy now explicitly reminds users that recovery updates this browser first and that cloud backup may still require the old vault password until they unlock and run `Backup to Cloud` with the new password
+- recovery key generation now uses a base32 alphabet that does not include `-`, so `-` is only a visual separator and newly generated keys are less error-prone to copy or type
+- recovery key input is normalized by removing whitespace/newlines and uppercasing before local key derivation
+
 ### Roadmap Phase 4: Firebase Identity Binding / Default Vault UX
 
 Goal:

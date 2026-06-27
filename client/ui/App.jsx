@@ -275,6 +275,9 @@ export default function App() {
   const [showChangeCurrentPassword, setShowChangeCurrentPassword] = React.useState(false);
   const [showChangeNextPassword, setShowChangeNextPassword] = React.useState(false);
   const [showChangeConfirmPassword, setShowChangeConfirmPassword] = React.useState(false);
+  const [showRecoveryKey, setShowRecoveryKey] = React.useState(false);
+  const [showRecoveryNextPassword, setShowRecoveryNextPassword] = React.useState(false);
+  const [showRecoveryConfirmPassword, setShowRecoveryConfirmPassword] = React.useState(false);
   const showPasswordField = !state.started || state.disconnected;
   const signedInWithGoogle = !!state.authUser?.uid;
   const startLabel = state.disconnected
@@ -287,6 +290,7 @@ export default function App() {
     state.restoring ||
     state.backingUp ||
     state.changingVaultPassword ||
+    state.recoveringVaultPassword ||
     state.settingUpRecoveryKey ||
     state.sending;
   const chatSyncing = state.messageLoading || state.recentLoading;
@@ -341,6 +345,14 @@ export default function App() {
       setShowChangeCurrentPassword(false);
       setShowChangeNextPassword(false);
       setShowChangeConfirmPassword(false);
+    }
+  }, [state.modal?.type]);
+
+  React.useEffect(() => {
+    if (state.modal?.type !== "recovery_password_reset") {
+      setShowRecoveryKey(false);
+      setShowRecoveryNextPassword(false);
+      setShowRecoveryConfirmPassword(false);
     }
   }, [state.modal?.type]);
 
@@ -443,6 +455,16 @@ export default function App() {
               }}
             >
               Restore from Cloud
+            </button>
+            <button
+              className="secondary"
+              type="button"
+              disabled={busy || state.started || !state.username}
+              onClick={() => {
+                void actions.openRecoveryPasswordResetModal();
+              }}
+            >
+              Use recovery key
             </button>
             <button
               className="secondary"
@@ -875,6 +897,102 @@ export default function App() {
         </ModalFrame>
       ) : null}
 
+      {state.modal?.type === "recovery_password_reset" ? (
+        <ModalFrame
+          title="Use Recovery Key"
+          subtitle={`Recover ${state.modal.username}'s encrypted vault and set a new local vault password.`}
+          eyebrow="Vault recovery"
+          actions={
+            <>
+              <button className="secondary" type="button" onClick={actions.closeModal}>
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                disabled={state.recoveringVaultPassword}
+                onClick={() => void actions.confirmRecoveryPasswordReset()}
+              >
+                Recover Vault
+              </button>
+            </>
+          }
+        >
+          <label className="modal-field">
+            <span>Recovery key</span>
+            <input
+              type={showRecoveryKey ? "text" : "password"}
+              placeholder="RSC-RECOVERY-..."
+              value={state.recoveryPasswordInput.recoveryKey}
+              onChange={(e) =>
+                actions.setRecoveryPasswordInput("recoveryKey", e.target.value)
+              }
+            />
+            <button
+              className="password-toggle modal-password-toggle"
+              type="button"
+              aria-label={showRecoveryKey ? "Hide recovery key" : "Show recovery key"}
+              aria-pressed={showRecoveryKey}
+              onClick={() => setShowRecoveryKey((value) => !value)}
+            >
+              <PasswordVisibilityIcon visible={showRecoveryKey} />
+            </button>
+          </label>
+          <label className="modal-field">
+            <span>New vault password</span>
+            <input
+              type={showRecoveryNextPassword ? "text" : "password"}
+              placeholder="Enter new vault password"
+              value={state.recoveryPasswordInput.next}
+              onChange={(e) =>
+                actions.setRecoveryPasswordInput("next", e.target.value)
+              }
+            />
+            <button
+              className="password-toggle modal-password-toggle"
+              type="button"
+              aria-label={
+                showRecoveryNextPassword ? "Hide new vault password" : "Show new vault password"
+              }
+              aria-pressed={showRecoveryNextPassword}
+              onClick={() => setShowRecoveryNextPassword((value) => !value)}
+            >
+              <PasswordVisibilityIcon visible={showRecoveryNextPassword} />
+            </button>
+          </label>
+          <label className="modal-field">
+            <span>Confirm new vault password</span>
+            <input
+              type={showRecoveryConfirmPassword ? "text" : "password"}
+              placeholder="Re-enter new vault password"
+              value={state.recoveryPasswordInput.confirm}
+              onChange={(e) =>
+                actions.setRecoveryPasswordInput("confirm", e.target.value)
+              }
+            />
+            <button
+              className="password-toggle modal-password-toggle"
+              type="button"
+              aria-label={
+                showRecoveryConfirmPassword
+                  ? "Hide confirmed vault password"
+                  : "Show confirmed vault password"
+              }
+              aria-pressed={showRecoveryConfirmPassword}
+              onClick={() => setShowRecoveryConfirmPassword((value) => !value)}
+            >
+              <PasswordVisibilityIcon visible={showRecoveryConfirmPassword} />
+            </button>
+          </label>
+          <ModalNote tone="warning">
+            Recovery uses the encrypted recovery wrapper from the selected backup
+            or this browser. Recovery updates this browser first; the cloud backup
+            may still require the old vault password until you unlock with the new
+            password and use Backup to Cloud.
+          </ModalNote>
+        </ModalFrame>
+      ) : null}
+
       {state.modal?.type === "start_guard" ? (
         <ModalFrame
           title="Start Confirmation"
@@ -935,23 +1053,39 @@ export default function App() {
                 type="button"
                 onClick={() => actions.handleBackupFreshnessWarning("continue")}
               >
-                {signedInWithGoogle ? "Unlock anyway" : "Start anyway"}
+                {state.modal.recoveryPasswordReset
+                  ? signedInWithGoogle
+                    ? "Unlock vault"
+                    : "Start"
+                  : signedInWithGoogle
+                    ? "Unlock anyway"
+                    : "Start anyway"}
               </button>
-              <button
-                className="primary"
-                type="button"
-                onClick={() => actions.handleBackupFreshnessWarning("restore")}
-              >
-                Restore from Cloud
-              </button>
+              {state.modal.recoveryPasswordReset ? null : (
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={() => actions.handleBackupFreshnessWarning("restore")}
+                >
+                  Restore from Cloud
+                </button>
+              )}
             </>
           }
         >
-          <ModalNote tone="warning">
-            Starting from an older local vault can desynchronize secure chat
-            state. Restore first if you recently used this account on another
-            browser or phone.
-          </ModalNote>
+          {state.modal.recoveryPasswordReset ? (
+            <ModalNote tone="warning">
+              The cloud backup may still use the old vault password until you
+              save a new backup. Unlock this recovered vault with the new
+              password, then use Backup to Cloud.
+            </ModalNote>
+          ) : (
+            <ModalNote tone="warning">
+              Starting from an older local vault can desynchronize secure chat
+              state. Restore first if you recently used this account on another
+              browser or phone.
+            </ModalNote>
+          )}
         </ModalFrame>
       ) : null}
 
@@ -1103,6 +1237,49 @@ export default function App() {
                   type="button"
                   className="restore-choice-item"
                   onClick={() => void actions.confirmRestoreChoice(item.identityId)}
+                >
+                  <span className="restore-choice-label">Identity</span>
+                  <span className="restore-choice-id">
+                    {helpers.formatIdentityShort(item.identityId)}
+                  </span>
+                  <span className={`restore-choice-owner ${ownership.chipClass}`}>
+                    {ownership.chipText}
+                  </span>
+                  {item.displayName ? (
+                    <span className="restore-choice-time">
+                      display name {item.displayName}
+                    </span>
+                  ) : null}
+                  <span className="restore-choice-time">
+                    updated {helpers.formatRestoreUpdatedAt(item.updatedAt)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </ModalFrame>
+      ) : null}
+
+      {state.modal?.type === "recovery_choice" ? (
+        <ModalFrame
+          title="Choose Recovery Identity"
+          subtitle="This display name has multiple cloud backups with recovery keys. Choose the identity you want to recover."
+          eyebrow="Vault recovery"
+          actions={
+            <button className="secondary" type="button" onClick={actions.cancelRecoveryResetChoice}>
+              Cancel
+            </button>
+          }
+        >
+          <div className="restore-choice-list">
+            {state.modal.items.map((item) => {
+              const ownership = helpers.formatBackupOwnership(item);
+              return (
+                <button
+                  key={item.identityId}
+                  type="button"
+                  className="restore-choice-item"
+                  onClick={() => void actions.confirmRecoveryResetChoice(item.identityId)}
                 >
                   <span className="restore-choice-label">Identity</span>
                   <span className="restore-choice-id">
