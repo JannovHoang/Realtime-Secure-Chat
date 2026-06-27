@@ -475,7 +475,7 @@ export default function App() {
                 actions.openResetEncryptedIdentityModal();
               }}
             >
-              Create new identity
+              Start over
             </button>
             <button
               className="secondary"
@@ -1006,8 +1006,8 @@ export default function App() {
 
       {state.modal?.type === "reset_encrypted_identity" ? (
         <ModalFrame
-          title="Create New Identity"
-          subtitle={`Create a new encrypted identity for ${state.modal.username} using the password field as the new vault password.`}
+          title="Start Over"
+          subtitle={`Create a new encrypted identity for ${state.modal.username} with the password currently entered above.`}
           eyebrow="Vault recovery"
           actions={
             <>
@@ -1020,16 +1020,15 @@ export default function App() {
                 disabled={state.resettingEncryptedIdentity}
                 onClick={() => void actions.confirmResetEncryptedIdentity()}
               >
-                Create Identity
+                Start Over
               </button>
             </>
           }
         >
           <ModalNote tone="warning">
-            Use this only when the vault password and recovery key are lost. This
-            replaces the local encrypted identity in this browser. Old backups and
-            encrypted messages may remain unreadable without the old password or
-            recovery key.
+            Use this only when you cannot unlock or recover the old vault. This
+            removes the old local chat history from this browser. Old encrypted
+            messages may be unreadable without the old password or recovery key.
           </ModalNote>
           <label className="modal-field">
             <span>Type display name to confirm</span>
@@ -1041,8 +1040,8 @@ export default function App() {
             />
           </label>
           <ModalNote>
-            After creating the new identity, create a recovery key and run Backup
-            to Cloud before switching devices.
+            After starting over, save a recovery key and run Backup to Cloud when
+            you are ready to protect this new identity.
           </ModalNote>
         </ModalFrame>
       ) : null}

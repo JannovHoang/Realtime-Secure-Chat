@@ -1896,7 +1896,7 @@ export function useChatApp() {
       dispatch({ type: "allow_continue_without_restore", username });
       await performStart({ skipGuard: true, skipBackupWarning: true });
       pushToast(
-        "New encrypted identity created. Save a recovery key and Backup to Cloud before switching devices.",
+        "Started over with a new encrypted identity. Save a recovery key and back it up when ready.",
         "success"
       );
     } catch (err) {

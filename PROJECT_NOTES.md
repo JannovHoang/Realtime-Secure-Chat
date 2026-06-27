@@ -9305,7 +9305,7 @@ Implemented:
 - added `clearRecoveryWrapper(...)` in `client/storage.js`
   - removes the local encrypted recovery wrapper for a display name when intentionally creating a new identity
   - prevents a new identity backup from accidentally carrying a stale recovery wrapper from an older identity
-- added a pre-unlock `Create new identity` action in the React UI
+- added a pre-unlock `Start over` action in the React UI
   - available only before the vault is started/unlocked
   - requires display name and the password field, which becomes the new vault password
   - opens a confirmation modal before replacing local encrypted identity state
@@ -9336,7 +9336,7 @@ Non-goals for this checkpoint:
 
 Checkpoint 5 test expectation:
 
-- `Create new identity` is disabled until display name and vault password are entered
+- `Start over` is disabled until display name and vault password are entered
 - modal requires typing the display name exactly
 - cancelling does not change the existing local vault
 - confirming creates a new local identity with the entered vault password
@@ -9345,6 +9345,51 @@ Checkpoint 5 test expectation:
 - user can create a new recovery key for the new identity
 - Backup to Cloud stores the new identity backup without reusing the old recovery wrapper
 - old cloud backups remain available as separate old identity records if they existed
+
+### Vault Recovery And Password Safety - Checkpoint 6: Final UX Wording And Regression
+
+Goal:
+
+- finish the Vault Recovery phase with clearer user-facing wording
+- keep the implemented recovery/reset behavior unchanged
+- document the final regression expectations before moving to the next roadmap phase
+
+Implemented:
+
+- changed the reset action label from `Create new identity` to `Start over`
+  - this better communicates that the user is abandoning the old local encrypted identity and starting fresh
+  - the underlying behavior remains the Checkpoint 5 reset flow
+- tightened the reset modal wording
+  - emphasizes this is for cases where the old vault cannot be unlocked or recovered
+  - states that old local chat history is removed from this browser
+  - states that old encrypted messages may be unreadable without the old password or recovery key
+- shortened the reset success toast
+  - tells the user they started over with a new encrypted identity
+  - reminds them to save a recovery key and back it up when ready
+
+Final phase behavior summary:
+
+- `Change vault password` rotates the local vault password only after unlock
+- `Create recovery key` creates client-held recovery material for the currently unlocked vault
+- `Backup to Cloud` after recovery-key setup carries the encrypted recovery wrapper
+- `Use recovery key` can set a new local vault password without the old vault password
+- after `Use recovery key`, the user should unlock with the new password and save a new cloud backup
+- `Start over` creates a new local encrypted identity when the old identity cannot be recovered
+- none of these flows give Firebase, MongoDB, or the Node server plaintext E2EE keys
+
+Checkpoint 6 regression checklist:
+
+- public-domain app still builds and serves through `npm start` + Cloudflare Tunnel
+- Google Sign-In still works if Firebase config is present
+- existing users can unlock with their current vault password
+- realtime chat still works
+- offline pending still works
+- Backup to Cloud and Restore from Cloud still work
+- Change vault password still works after unlock
+- Create recovery key still shows the raw key only once
+- Use recovery key still sets a new local vault password
+- Start over still creates a new identity only after explicit display-name confirmation
+- after Start over, user can chat, create a new recovery key, and save a new cloud backup
 
 ### Roadmap Phase 4: Firebase Identity Binding / Default Vault UX
 
