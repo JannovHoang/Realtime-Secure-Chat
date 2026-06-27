@@ -9211,7 +9211,52 @@ Restore safety wording fix:
 - the restore overwrite modal now distinguishes `unknown local identity` from a confirmed different identity
 - this keeps the warning accurate when password rotation keeps the same cryptographic identity but the old local vault copy cannot be opened with the current password
 
-### Roadmap Phase 4: Device Switching And Backup Discipline
+Checkpoint 3 status:
+
+- user completed testing and pushed the Checkpoint 3 commit
+- recovery key creation, immediate cloud backup, restore, realtime chat, and offline pending were reported stable after the decrypt-fail ratchet reset fix
+- confirmed product rule: creating a recovery key does not need to be repeated after every message
+- confirmed product rule: after creating a recovery key, later Backup to Cloud operations carry the current recovery wrapper; only create a new recovery key when the old key is lost, suspected leaked, or intentionally rotated
+- confirmed identity rule: changing the vault password does not create a new identity; if a browser cannot open an older local vault with the new password, the local identity may show as `unknown` until Restore and Replace refreshes that browser copy
+
+### Roadmap Phase 4: Firebase Identity Binding / Default Vault UX
+
+Goal:
+
+- make the Google sign-in flow feel closer to a real product login while preserving E2EE boundaries
+- reduce reliance on manual display-name entry after Google sign-in
+- bind a signed-in Firebase account to a default local/cloud identity profile
+
+Why this phase is needed:
+
+- Firebase Auth currently proves account ownership but does not automatically identify which local encrypted vault should be opened
+- display name is still used in the legacy/local flow and still appears in the main unlock form
+- the intended product model is: Google account identifies the account, vault password unlocks E2EE keys, display name is only a profile label
+
+Expected result:
+
+- Google Sign-In identifies the real account as `firebase:<uid>`
+- each Google account can have a default display name/profile
+- browser can know which local vault belongs to the signed-in Google account
+- if a local vault exists for the signed-in account, the main UI can ask only for `Vault password`
+- if no local vault exists, the UI should show `Restore from Cloud` or `Create encrypted identity`
+- display name should move toward profile/settings instead of acting like the primary login field
+- if a Google account has multiple identity backups, the UI should show identity/device labels clearly
+
+Recommended timing:
+
+- do this after `Vault Recovery And Password Safety`
+- do it before `Device Switching And Backup Discipline`
+- it is separate from Firebase Admin/Auth Hardening and Security Hardening because those phases harden security, while this phase fixes account-to-vault UX and mapping
+
+Non-goals:
+
+- do not remove the vault password
+- do not let Google/Firebase decrypt E2EE keys
+- do not remove legacy mode until migration is deliberate
+- do not implement full multi-device Double Ratchet sync
+
+### Roadmap Phase 5: Device Switching And Backup Discipline
 
 Goal:
 
@@ -9232,7 +9277,7 @@ Recommended checkpoints:
    - state that the project supports safe device switching through encrypted backup/restore
    - state that it does not yet implement full automatic multi-device state synchronization
 
-### Roadmap Phase 5: Firebase Admin / Auth Hardening
+### Roadmap Phase 6: Firebase Admin / Auth Hardening
 
 Goal:
 
@@ -9253,7 +9298,7 @@ Recommended checkpoints:
 4. Revocation and disabled-user behavior:
    - document or implement revoked-token and disabled-user handling when production readiness requires it
 
-### Roadmap Phase 6: Security Hardening
+### Roadmap Phase 7: Security Hardening
 
 Goal:
 
