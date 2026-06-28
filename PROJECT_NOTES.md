@@ -9428,6 +9428,169 @@ Non-goals:
 - do not remove legacy mode until migration is deliberate
 - do not implement full multi-device Double Ratchet sync
 
+### Firebase Identity Binding / Default Vault UX - Checkpoint 0: Baseline Design
+
+Goal:
+
+- define the account-to-vault UX model before changing runtime behavior
+- make Google Sign-In feel like the account entry point while preserving E2EE boundaries
+- avoid using display name as the long-term primary login key in Firebase mode
+
+Current baseline:
+
+- Google Sign-In is already available and can prove Firebase account ownership when Firebase config is present
+- backend Firebase token verification already derives a trusted canonical account id as `firebase:<uid>`
+- Firebase-owned backup save/list/fetch paths already scope ownership by the verified Firebase account when authenticated
+- local UI still asks for `Display name` as a primary field before unlock/start
+- client code still derives a local transitional account profile from display name via `buildLocalAccountProfile(displayName)`
+- local encrypted vault storage is still keyed by display name/user label, not by Firebase uid
+- vault password remains required to decrypt local vault data and encrypted cloud backup payloads
+
+Design decision:
+
+- Google account identifies the product account
+- vault password unlocks the E2EE vault
+- display name is a profile/chat label, not the long-term account owner key
+- each Firebase account should have one active encrypted identity at a time
+- the active identity's latest backup is the default restore target
+- older backups are archived/recovery snapshots, not the normal continue-chat restore path
+- Firebase account recovery can restore account access but cannot decrypt E2EE data
+- default vault UX should reduce manual display-name entry after Google Sign-In, not remove the vault password
+
+Active identity model:
+
+- Firebase account id is `firebase:<uid>` after backend token verification
+- server and client must not trust client-provided `uid`, `accountId`, email, or display name unless the Firebase ID token has been verified
+- intended model:
+  - one Firebase account
+  - one active encrypted identity
+  - one latest backup used by default restore
+  - older backups treated as archived/recovery backups
+- if a user starts over, the new identity becomes the active identity
+- old identity records may remain for legacy/debug/recovery purposes, but should not appear as independent active users under the same Google account
+- this phase should not implement full multi-identity active use under one Firebase account
+
+Backup model:
+
+- an active identity can have multiple backup records over time
+- default restore should use the latest backup for the active identity
+- older backups should be hidden from the normal restore path and exposed only through an advanced/recovery path
+- restoring an older backup can roll back Double Ratchet state, cause decrypt failures, or make recent messages unreadable
+- selecting an older backup must require a strong warning and explicit confirmation
+- wrong-password or failed restore must not overwrite the local vault
+
+Display name rules:
+
+- `displayName` is a human-readable chat/profile label
+- Firebase mode must not use `displayName` as the durable account owner key
+- Firebase mode must not authorize backup ownership by matching display names
+- display name can remain as:
+  - UI label in chat/profile
+  - legacy local vault label during migration
+  - helper text for recognizing old identities/backups
+- editing display name must not change Firebase account ownership
+
+Target UX:
+
+- signed-out users can still use the existing legacy/display-name flow during migration
+- signed-in Google users should see Google as the account context
+- if a default local vault profile exists for the signed-in Google account, the main unlock form should ask for vault password first
+- if no local vault exists for the signed-in Google account, the UI should guide toward:
+  - `Restore from Cloud`
+  - `Start over` / create encrypted identity
+- display name should move toward profile/settings or identity label editing rather than primary login
+- backup/restore identity selectors should clearly show identity id, display name/profile label, backup owner, and backup time
+
+Client-side mapping plan:
+
+- introduce a browser-local default vault pointer for each Firebase account
+- the pointer can store:
+  - `schemaVersion`
+  - `authMode: "firebase"`
+  - `firebaseUid`
+  - canonical account id `firebase:<uid>`
+  - active/default `identityId`
+  - default display name/profile label
+  - local vault user label currently needed to open existing storage, such as `legacyVaultLabel`
+  - last known backup version or monotonic freshness value if available
+  - last known backup server save time
+  - last selected/updated timestamp
+- the pointer must not store vault password, recovery key, plaintext private keys, or decrypted vault contents
+- the pointer is convenience metadata only; losing it should not destroy the vault or cloud backup
+- if pointer `firebaseUid` does not match the current Firebase user, ignore it
+- if the pointer is malformed, ignore it and show the missing-pointer fallback
+- if the pointer references a local vault that no longer exists, show Restore/Create/Migration choices
+- clearing the pointer must not delete the encrypted vault
+
+Migration approach:
+
+- keep legacy display-name flow working
+- when a signed-in Firebase user successfully unlocks/restores/backs up an identity, save/update the local default vault pointer
+- do not automatically link legacy backups to Google accounts by display name alone
+- prefer explicit restore/backup under verified Firebase ownership
+- do not rewrite local vault storage keys in the first checkpoint
+
+Recommended checkpoints for this phase:
+
+1. Default vault pointer storage helper:
+   - add read/write/clear/validate helpers for Firebase default vault pointers
+   - ensure Google account A cannot read/use Google account B's pointer
+   - ensure pointer corruption does not crash the app
+2. Save pointer after successful unlock/restore/start-over:
+   - save pointer only after the vault has actually decrypted or an identity has been explicitly created
+   - do not save pointer on wrong password or cancelled flow
+   - do not auto-link legacy backups by display name
+3. Google signed-in unlock form:
+   - with a valid pointer, show Google account context and ask only for `Vault password`
+   - show display name as label/profile metadata, not login field
+   - keep legacy signed-out flow unchanged
+4. Missing pointer fallback:
+   - signed-in Google account without pointer sees Restore from Cloud, Start over/create encrypted identity, and Use legacy local identity
+   - Use legacy local identity requires display name + vault password once, then saves pointer only after successful decrypt
+5. Latest backup restore rule:
+   - default Restore from Cloud uses latest backup for the active identity
+   - older backups move behind an advanced/recovery path with strong warning
+6. Vault freshness guard before unlock:
+   - compare pointer/local backup freshness with cloud latest backup metadata
+   - warn if cloud may be newer
+   - offer Restore latest backup, Unlock local vault anyway, and Cancel
+7. Start over / reset identity rule:
+   - ensure one active identity per Firebase account
+   - update pointer to the new active identity
+   - treat old identities as archived/inaccessible rather than active peers
+8. Docs and regression:
+   - update notes/demo script and run public-domain regression
+
+Hard stop rules:
+
+- stop if Google account A can read or use Google account B's pointer
+- stop if a pointer stores vault password, recovery key, plaintext private keys, plaintext ratchet state, message keys, or backup plaintext
+- stop if the app auto-links a legacy identity to a Firebase account only because display name matches
+- stop if an older backup appears as the normal/default restore choice
+- stop if older-backup restore has no strong warning
+- stop if Start over creates multiple active identities for one Firebase account
+- stop if freshness guard is bypassed when cloud metadata indicates a newer backup
+- stop if Google Sign-In wording implies Firebase can decrypt the vault
+- stop if legacy flow breaks before migration is complete
+
+Non-goals for this checkpoint:
+
+- no source behavior change yet
+- no server schema change
+- no removal of display-name fallback
+- no removal of vault password
+- no automatic cloud restore
+- no automatic multi-device sync
+- no Firebase Admin SDK migration
+
+Checkpoint 0 test expectation:
+
+- behavior is unchanged from the end of Vault Recovery And Password Safety
+- public-domain app still works through `npm start` and Cloudflare Tunnel
+- Google Sign-In still works if Firebase config is present
+- existing users can unlock with display name and vault password
+- realtime chat, offline pending, Backup to Cloud, Restore from Cloud, Change vault password, Create recovery key, Use recovery key, and Start over still work as before
+
 ### Roadmap Phase 5: Device Switching And Backup Discipline
 
 Goal:
