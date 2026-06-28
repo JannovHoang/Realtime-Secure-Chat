@@ -9909,6 +9909,47 @@ Checkpoint 6 test expectation:
 - signed-in no-pointer fallback still works
 - realtime chat, reconnect active conversation reload, Backup to Cloud, and Restore from Cloud still work
 
+### Firebase Identity Binding / Default Vault UX - Checkpoint 7: Start Over Pointer Rule
+
+Goal:
+
+- keep Start over explicit and deterministic in the Firebase default-vault flow
+- avoid leaving a stale default vault pointer behind when the user intentionally creates a new encrypted identity
+- make the new identity become the browser-local default identity for the signed-in Google account after successful Start over
+
+Implemented:
+
+- Start over now clears the matching Firebase default vault pointer before deleting the old local vault
+  - only clears the pointer when it belongs to the currently signed-in Firebase uid and the same local vault label
+  - does not clear pointers for other Google accounts
+  - does not delete any cloud backup
+- after the new identity starts successfully, the existing success path saves a fresh default vault pointer for the new identity
+- Start Over modal wording now states that:
+  - a new encrypted identity will be created
+  - old local chat history is removed from this browser
+  - old encrypted messages may need the old password or recovery key
+  - the new identity becomes this browser's default for the signed-in Google account
+
+Non-goals for this checkpoint:
+
+- no server schema for archived identities
+- no deletion of old cloud backups
+- no automatic backup after Start over
+- no account-only restore endpoint
+- no multi-device automatic sync
+
+Checkpoint 7 test expectation:
+
+- signed-in Google user can Start over only after entering display name, new vault password, and confirming the display name
+- Start over clears the old local vault and recovery wrapper for that label
+- matching local default vault pointer is cleared before reset
+- after Start over succeeds, a new identity is active and a new default vault pointer is saved
+- reload after Start over asks only for vault password for the new identity
+- old cloud backups are not deleted and remain advanced/recovery data
+- user can create a recovery key and run Backup to Cloud for the new identity
+- Google account pointers for other browser profiles/accounts are not affected
+- signed-out legacy Start over still works
+
 ### Roadmap Phase 5: Device Switching And Backup Discipline
 
 Goal:

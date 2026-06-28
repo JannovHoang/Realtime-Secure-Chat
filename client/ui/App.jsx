@@ -1176,8 +1176,9 @@ export default function App() {
         >
           <ModalNote tone="warning">
             Use this only when you cannot unlock or recover the old vault. This
-            removes the old local chat history from this browser. Old encrypted
-            messages may be unreadable without the old password or recovery key.
+            creates a new encrypted identity and removes the old local chat
+            history from this browser. Old encrypted messages may be unreadable
+            without the old password or recovery key.
           </ModalNote>
           <label className="modal-field">
             <span>Type display name to confirm</span>
@@ -1189,8 +1190,9 @@ export default function App() {
             />
           </label>
           <ModalNote>
-            After starting over, save a recovery key and run Backup to Cloud when
-            you are ready to protect this new identity.
+            After starting over, this browser will use the new identity as the
+            default for the signed-in Google account. Save a recovery key and
+            run Backup to Cloud when ready.
           </ModalNote>
         </ModalFrame>
       ) : null}

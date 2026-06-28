@@ -7,6 +7,7 @@ import {
   signOut as signOutFirebase,
 } from "../../auth/firebaseClient.js";
 import {
+  clearDefaultVaultPointer,
   getDefaultVaultPointer,
   setDefaultVaultPointer,
 } from "../../defaultVaultPointer.js";
@@ -1299,6 +1300,24 @@ export function useChatApp() {
     }
   }
 
+  function clearFirebaseDefaultVaultPointerFor(username) {
+    const firebaseUid = String(state.authUser?.uid || "").trim();
+    const legacyVaultLabel = normalizePeer(username);
+    if (!firebaseUid || !legacyVaultLabel) return false;
+    if (
+      state.defaultVaultPointer?.firebaseUid !== firebaseUid ||
+      normalizePeer(state.defaultVaultPointer?.legacyVaultLabel) !== legacyVaultLabel
+    ) {
+      return false;
+    }
+
+    const cleared = clearDefaultVaultPointer(firebaseUid);
+    if (cleared) {
+      dispatch({ type: "default_vault_pointer", value: null });
+    }
+    return cleared;
+  }
+
   async function getPreStartBackupWarning(
     username,
     password,
@@ -2095,6 +2114,7 @@ export function useChatApp() {
     dispatch({ type: "reset_identity_begin" });
     try {
       await destroyChat().catch(() => {});
+      clearFirebaseDefaultVaultPointerFor(username);
       await clearPersistedVault(username);
       await clearRecoveryWrapper(username);
       clearLocalSessionStale(username);
