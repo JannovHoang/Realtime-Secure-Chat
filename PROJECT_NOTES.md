@@ -9767,6 +9767,57 @@ Checkpoint 3 test expectation:
 - signed-out legacy user still sees display name + vault password
 - realtime chat and Backup to Cloud still work after unlock
 
+### Firebase Identity Binding / Default Vault UX - Checkpoint 4: Missing Pointer Fallback
+
+Goal:
+
+- when a signed-in Google account has no valid default vault pointer on this browser, stop showing the normal Start/Unlock form as if display name were still the primary account login
+- guide the user toward the explicit choices:
+  - Restore from Cloud
+  - Create new encrypted identity
+  - Use legacy local identity
+- keep signed-out legacy flow unchanged
+
+Implemented:
+
+- app state now tracks whether default vault pointer loading has completed
+  - this avoids briefly showing the missing-pointer fallback while localStorage is still being checked
+- when Google is signed in, the vault is locked, pointer loading is complete, and no valid pointer exists:
+  - the topbar shows a "No encrypted identity found on this browser" panel
+  - the primary Start/Unlock button is not shown in that ambiguous state
+  - Restore/Create/Use legacy are explicit choices
+- choosing Restore from Cloud opens a restore form that asks for the backup display/vault label and vault password
+  - this is a transitional limitation because the current backup HTTP API is still routed by `/api/backups/:username`
+  - Firebase auth still scopes which Firebase-owned backups can be listed/restored
+- choosing Create new encrypted identity asks for display name and a new vault password, then uses the existing Start Over confirmation flow
+- choosing Use legacy local identity asks for existing local display name and vault password, then unlocks once and lets the successful unlock save the Firebase default vault pointer
+- signed-in Google users with a valid pointer keep the Checkpoint 3 behavior:
+  - display name is shown as context
+  - only vault password is required to unlock
+- signed-out users keep the legacy display-name + vault-password flow
+
+Non-goals for this checkpoint:
+
+- no server schema change
+- no account-only restore endpoint yet
+- no automatic restore
+- no latest-backup-only restore rule yet
+- no advanced/older-backup restore UI yet
+- no freshness guard behavior change
+- no removal of legacy flow
+
+Checkpoint 4 test expectation:
+
+- signed-in Google account with a valid pointer still unlocks by vault password only
+- signed-in Google account with no pointer sees Restore/Create/Use legacy choices instead of the normal Start button
+- selecting Use legacy local identity and entering an existing local display name + vault password unlocks and saves a pointer
+- after reload, the same signed-in Google account uses the pointer and no longer asks for display name
+- selecting Restore from Cloud in the missing-pointer fallback requires backup label + vault password and uses existing restore behavior
+- selecting Create new encrypted identity requires display name + new vault password and uses the existing Start Over confirmation
+- wrong password does not save a pointer
+- signed-out legacy flow remains unchanged
+- realtime chat and Backup to Cloud still work after unlock
+
 ### Roadmap Phase 5: Device Switching And Backup Discipline
 
 Goal:

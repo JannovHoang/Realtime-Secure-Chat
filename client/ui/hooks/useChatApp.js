@@ -112,6 +112,7 @@ const initialState = {
   authUser: null,
   authError: "",
   defaultVaultPointer: null,
+  defaultVaultPointerLoaded: false,
   toasts: [],
 };
 
@@ -842,6 +843,7 @@ function reducer(state, action) {
         authError: "",
         authUser,
         defaultVaultPointer: authUser?.uid ? state.defaultVaultPointer : null,
+        defaultVaultPointerLoaded: !authUser?.uid,
         username: shouldPrefillDisplayName ? suggestedDisplayName : state.username,
       };
     }
@@ -849,6 +851,7 @@ function reducer(state, action) {
       return {
         ...state,
         defaultVaultPointer: action.value || null,
+        defaultVaultPointerLoaded: true,
         username:
           action.value?.legacyVaultLabel && !state.started
             ? action.value.legacyVaultLabel

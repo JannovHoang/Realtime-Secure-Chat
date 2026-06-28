@@ -278,10 +278,25 @@ export default function App() {
   const [showRecoveryKey, setShowRecoveryKey] = React.useState(false);
   const [showRecoveryNextPassword, setShowRecoveryNextPassword] = React.useState(false);
   const [showRecoveryConfirmPassword, setShowRecoveryConfirmPassword] = React.useState(false);
+  const [firebaseVaultFallbackMode, setFirebaseVaultFallbackMode] = React.useState("");
   const showPasswordField = !state.started || state.disconnected;
   const signedInWithGoogle = !!state.authUser?.uid;
   const firebaseDefaultVault = signedInWithGoogle ? state.defaultVaultPointer : null;
   const useDefaultVaultUnlock = !!firebaseDefaultVault && showPasswordField;
+  const loadingFirebaseDefaultVault =
+    signedInWithGoogle && showPasswordField && !state.defaultVaultPointerLoaded;
+  const needsFirebaseVaultChoice =
+    signedInWithGoogle &&
+    showPasswordField &&
+    state.defaultVaultPointerLoaded &&
+    !firebaseDefaultVault &&
+    !firebaseVaultFallbackMode;
+  const usingFirebaseFallbackForm =
+    signedInWithGoogle &&
+    showPasswordField &&
+    state.defaultVaultPointerLoaded &&
+    !firebaseDefaultVault &&
+    !!firebaseVaultFallbackMode;
   const startLabel = state.disconnected
     ? "Reconnect"
     : signedInWithGoogle
@@ -360,6 +375,12 @@ export default function App() {
   }, [state.modal?.type]);
 
   React.useEffect(() => {
+    if (!signedInWithGoogle || firebaseDefaultVault || state.started) {
+      setFirebaseVaultFallbackMode("");
+    }
+  }, [signedInWithGoogle, firebaseDefaultVault, state.started]);
+
+  React.useEffect(() => {
     const activePeerChanged = lastActivePeerRef.current !== state.activePeer;
     if (activePeerChanged) {
       lastActivePeerRef.current = state.activePeer;
@@ -397,141 +418,257 @@ export default function App() {
         </div>
 
         <div className="login">
-          <div className="auth-fields">
-            {useDefaultVaultUnlock ? (
-              <div className="auth-context-note">
-                <strong>Display name:</strong>{" "}
-                {firebaseDefaultVault.displayName ||
-                  firebaseDefaultVault.legacyVaultLabel}
+          {loadingFirebaseDefaultVault ? (
+            <div className="auth-fields">
+              <div className="firebase-vault-choice">
+                <div className="firebase-vault-choice-title">Checking encrypted identity</div>
+                <div className="firebase-vault-choice-detail">
+                  Looking for this Google account's local vault on this browser.
+                </div>
               </div>
-            ) : (
-              <Field
-                label="Display name"
-                placeholder={
-                  signedInWithGoogle
-                    ? "Display name for this vault"
-                    : "Enter your display name"
-                }
-                value={state.username}
-                onChange={(value) => actions.setField("username", value)}
-                disabled={busy}
-              />
-            )}
-            {showPasswordField ? (
-              <Field
-                label="Vault password"
-                placeholder="Enter your vault password"
-                type={showTopbarPassword ? "text" : "password"}
-                value={state.password}
-                onChange={(value) => actions.setField("password", value)}
-                disabled={busy}
-                trailing={
-                  <button
-                    className="password-toggle"
-                    type="button"
-                    aria-label={showTopbarPassword ? "Hide vault password" : "Show vault password"}
-                    aria-pressed={showTopbarPassword}
+            </div>
+          ) : needsFirebaseVaultChoice ? (
+            <div className="firebase-vault-choice">
+              <div className="firebase-vault-choice-title">
+                No encrypted identity found on this browser
+              </div>
+              <div className="firebase-vault-choice-detail">
+                Restore a cloud backup, create a new encrypted identity, or
+                migrate an existing legacy local vault.
+              </div>
+              <div className="firebase-vault-choice-actions">
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={busy || state.started}
+                  onClick={() => setFirebaseVaultFallbackMode("restore")}
+                >
+                  Restore from Cloud
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={busy || state.started}
+                  onClick={() => setFirebaseVaultFallbackMode("create")}
+                >
+                  Create new encrypted identity
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={busy || state.started}
+                  onClick={() => setFirebaseVaultFallbackMode("legacy")}
+                >
+                  Use legacy local identity
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="auth-fields">
+                {useDefaultVaultUnlock ? (
+                  <div className="auth-context-note">
+                    <strong>Display name:</strong>{" "}
+                    {firebaseDefaultVault.displayName ||
+                      firebaseDefaultVault.legacyVaultLabel}
+                  </div>
+                ) : (
+                  <Field
+                    label={
+                      usingFirebaseFallbackForm
+                        ? firebaseVaultFallbackMode === "restore"
+                          ? "Vault label"
+                          : "Display name"
+                        : "Display name"
+                    }
+                    placeholder={
+                      signedInWithGoogle
+                        ? firebaseVaultFallbackMode === "restore"
+                          ? "Backup display name"
+                          : firebaseVaultFallbackMode === "legacy"
+                            ? "Existing local display name"
+                            : "Display name for this vault"
+                        : "Enter your display name"
+                    }
+                    value={state.username}
+                    onChange={(value) => actions.setField("username", value)}
                     disabled={busy}
-                    onClick={() => setShowTopbarPassword((value) => !value)}
-                  >
-                    <PasswordVisibilityIcon visible={showTopbarPassword} />
-                  </button>
-                }
-              />
-            ) : null}
-            {signedInWithGoogle ? (
-              <div className="auth-context-note">
-                {useDefaultVaultUnlock
-                  ? "Google identifies your account. Enter the vault password to unlock E2EE keys."
-                  : "Google identifies your account. Display name labels this chat identity."}
+                  />
+                )}
+                {showPasswordField ? (
+                  <Field
+                    label="Vault password"
+                    placeholder={
+                      firebaseVaultFallbackMode === "create"
+                        ? "Create a vault password"
+                        : "Enter your vault password"
+                    }
+                    type={showTopbarPassword ? "text" : "password"}
+                    value={state.password}
+                    onChange={(value) => actions.setField("password", value)}
+                    disabled={busy}
+                    trailing={
+                      <button
+                        className="password-toggle"
+                        type="button"
+                        aria-label={showTopbarPassword ? "Hide vault password" : "Show vault password"}
+                        aria-pressed={showTopbarPassword}
+                        disabled={busy}
+                        onClick={() => setShowTopbarPassword((value) => !value)}
+                      >
+                        <PasswordVisibilityIcon visible={showTopbarPassword} />
+                      </button>
+                    }
+                  />
+                ) : null}
+                {signedInWithGoogle ? (
+                  <div className="auth-context-note">
+                    {useDefaultVaultUnlock
+                      ? "Google identifies your account. Enter the vault password to unlock E2EE keys."
+                      : firebaseVaultFallbackMode === "restore"
+                        ? "Restore currently needs the backup display name plus vault password."
+                        : firebaseVaultFallbackMode === "legacy"
+                          ? "Unlock once to bind this local vault to the signed-in Google account."
+                          : firebaseVaultFallbackMode === "create"
+                            ? "This creates a new encrypted identity for this Google account."
+                            : "Google identifies your account. Display name labels this chat identity."}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
 
-          <div className="topbar-actions">
-            <button
-              className="primary"
-              type="button"
-              disabled={startDisabled}
-              onClick={() => {
-                void actions.handleStart();
-              }}
-            >
-              {startLabel}
-            </button>
-            <button
-              className="secondary"
-              type="button"
-              disabled={busy || state.started || !state.username || !state.password}
-              onClick={() => {
-                void actions.handleRestoreRequest();
-              }}
-            >
-              Restore from Cloud
-            </button>
-            <button
-              className="secondary"
-              type="button"
-              disabled={busy || state.started || !state.username}
-              onClick={() => {
-                void actions.openRecoveryPasswordResetModal();
-              }}
-            >
-              Use recovery key
-            </button>
-            <button
-              className="secondary"
-              type="button"
-              disabled={busy || state.started || !state.username || !state.password}
-              onClick={() => {
-                actions.openResetEncryptedIdentityModal();
-              }}
-            >
-              Start over
-            </button>
-            <button
-              className="secondary"
-              type="button"
-              disabled={backupDisabled}
-              onClick={() => {
-                actions.openBackupModal();
-              }}
-            >
-              Backup to Cloud
-            </button>
-            <button
-              className="secondary"
-              type="button"
-              disabled={busy || !state.started || state.disconnected}
-              onClick={() => {
-                actions.openChangeVaultPasswordModal();
-              }}
-            >
-              Change vault password
-            </button>
-            <button
-              className="secondary"
-              type="button"
-              disabled={busy || !state.started || state.disconnected}
-              onClick={() => {
-                actions.openRecoveryKeyModal();
-              }}
-            >
-              Create recovery key
-            </button>
-            {!signedInWithGoogle ? (
-              <button
-                className="secondary"
-                type="button"
-                disabled={logoutDisabled}
-                onClick={() => {
-                  void actions.handleLogout();
-                }}
-              >
-                Logout
-              </button>
-            ) : null}
-          </div>
+              <div className="topbar-actions">
+                {usingFirebaseFallbackForm ? (
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setFirebaseVaultFallbackMode("")}
+                  >
+                    Back
+                  </button>
+                ) : null}
+                {firebaseVaultFallbackMode === "restore" ? (
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={busy || state.started || !state.username || !state.password}
+                    onClick={() => {
+                      void actions.handleRestoreRequest();
+                    }}
+                  >
+                    Restore from Cloud
+                  </button>
+                ) : firebaseVaultFallbackMode === "create" ? (
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={busy || state.started || !state.username || !state.password}
+                    onClick={() => {
+                      actions.openResetEncryptedIdentityModal();
+                    }}
+                  >
+                    Create identity
+                  </button>
+                ) : firebaseVaultFallbackMode === "legacy" ? (
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={startDisabled}
+                    onClick={() => {
+                      void actions.handleStart();
+                    }}
+                  >
+                    Use legacy identity
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="primary"
+                      type="button"
+                      disabled={startDisabled}
+                      onClick={() => {
+                        void actions.handleStart();
+                      }}
+                    >
+                      {startLabel}
+                    </button>
+                    <button
+                      className="secondary"
+                      type="button"
+                      disabled={busy || state.started || !state.username || !state.password}
+                      onClick={() => {
+                        void actions.handleRestoreRequest();
+                      }}
+                    >
+                      Restore from Cloud
+                    </button>
+                    <button
+                      className="secondary"
+                      type="button"
+                      disabled={busy || state.started || !state.username}
+                      onClick={() => {
+                        void actions.openRecoveryPasswordResetModal();
+                      }}
+                    >
+                      Use recovery key
+                    </button>
+                    <button
+                      className="secondary"
+                      type="button"
+                      disabled={busy || state.started || !state.username || !state.password}
+                      onClick={() => {
+                        actions.openResetEncryptedIdentityModal();
+                      }}
+                    >
+                      Start over
+                    </button>
+                  </>
+                )}
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={backupDisabled}
+                  onClick={() => {
+                    actions.openBackupModal();
+                  }}
+                >
+                  Backup to Cloud
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={busy || !state.started || state.disconnected}
+                  onClick={() => {
+                    actions.openChangeVaultPasswordModal();
+                  }}
+                >
+                  Change vault password
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={busy || !state.started || state.disconnected}
+                  onClick={() => {
+                    actions.openRecoveryKeyModal();
+                  }}
+                >
+                  Create recovery key
+                </button>
+                {!signedInWithGoogle ? (
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={logoutDisabled}
+                    onClick={() => {
+                      void actions.handleLogout();
+                    }}
+                  >
+                    Logout
+                  </button>
+                ) : null}
+              </div>
+            </>
+          )}
 
           <div className="topbar-status">
             <div className="status-label">Session status</div>
