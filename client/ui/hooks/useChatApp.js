@@ -71,6 +71,7 @@ const initialState = {
   peerDraft: "",
   conversations: [],
   conversationsLoaded: false,
+  conversationReloadNonce: 0,
   messages: [],
   messageDraft: "",
   messageLoading: false,
@@ -623,6 +624,7 @@ function reducer(state, action) {
         password: "",
         peerDraft: "",
         conversationsLoaded: false,
+        conversationReloadNonce: state.conversationReloadNonce + 1,
         messages: [],
         messageDraft: "",
         messageLoading: false,
@@ -664,6 +666,7 @@ function reducer(state, action) {
         peerDraft: "",
         conversations: [],
         conversationsLoaded: false,
+        conversationReloadNonce: state.conversationReloadNonce + 1,
         messages: [],
         messageDraft: "",
         messageLoading: false,
@@ -756,6 +759,7 @@ function reducer(state, action) {
           peerDraft: "",
           conversations: [],
           conversationsLoaded: false,
+          conversationReloadNonce: state.conversationReloadNonce + 1,
           messages: [],
           messageDraft: "",
           messageLoading: false,
@@ -1123,7 +1127,7 @@ export function useChatApp() {
     return () => {
       cancelled = true;
     };
-  }, [state.started, state.activePeer]);
+  }, [state.started, state.activePeer, state.conversationReloadNonce]);
 
   async function inspectPersistedLocalIdentity(username, password) {
     if (!(await hasPersistedVault(username))) return null;

@@ -9862,6 +9862,14 @@ Checkpoint 5 test expectation:
 - signed-in pointer unlock from Checkpoint 3 still works
 - signed-out legacy flow remains unchanged
 
+Follow-up fix after Checkpoint 5 testing:
+
+- after a WebSocket/session disconnect, reconnecting with the vault password should reload the active conversation pane
+- previously, reconnect could leave the current chat pane blank until the user selected another peer and came back
+- app state now bumps a conversation reload nonce on session start/reconnect/logout/reset
+- the active conversation loader depends on that nonce, so the current peer's local history and recent catch-up are loaded again even when the peer name did not change
+- this is a UI/session reload fix only; it does not change backup or restore semantics
+
 ### Roadmap Phase 5: Device Switching And Backup Discipline
 
 Goal:
