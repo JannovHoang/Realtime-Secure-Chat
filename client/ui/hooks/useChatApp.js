@@ -1243,7 +1243,9 @@ export function useChatApp() {
     };
 
     try {
-      return setDefaultVaultPointer(firebaseUid, pointer);
+      const savedPointer = setDefaultVaultPointer(firebaseUid, pointer);
+      dispatch({ type: "default_vault_pointer", value: savedPointer });
+      return savedPointer;
     } catch (err) {
       console.warn("[default-vault] failed to save pointer:", err);
       return null;
