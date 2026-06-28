@@ -17,7 +17,7 @@ The current demo focuses on:
 - encrypted identity backup and restore
 - account and identity metadata visibility
 - safer device switching warnings
-- Firebase Auth foundation in optional/legacy-safe mode
+- Firebase default-vault UX in optional/legacy-safe mode
 - fixed public domain access through Cloudflare Tunnel
 
 ## 2. How To Run The Demo
@@ -65,18 +65,18 @@ an encrypted vault. The cloud backup feature uploads an encrypted identity
 backup to MongoDB. Restore from Cloud downloads that encrypted backup and imports
 it back into the browser after the user enters the correct password.
 
-The current account model is transitional. The user still enters a display name,
-but the app also derives an internal `accountId` and tracks a cryptographic
-`identityId`. This helps make routing and restore decisions safer, while keeping
-the UI understandable for demo.
+The current account model is transitional but Firebase-aware. Google Sign-In can
+identify the product account as `firebase:<uid>`, while the vault password still
+opens the E2EE vault. A browser-local default vault pointer lets a signed-in
+Google account remember which local vault label and identity id belong to this
+browser. When that pointer exists, the app asks only for the vault password
+before unlock. When it does not exist, the app guides the user to Restore from
+Cloud, Create new encrypted identity, or Use legacy local identity.
 
-The Firebase Auth foundation has been added incrementally. In the current safe
-demo configuration, Firebase can be disabled or optional, so the existing local
-display-name flow still works. When Firebase is configured later, the server is
-prepared to verify Firebase ID tokens and use the verified Firebase user id for
-authenticated account ownership. Firebase login does not unlock the encrypted
-vault and does not recover Double Ratchet keys; the user still needs the local
-vault password and cloud restore flow for E2EE state.
+Firebase login does not unlock the encrypted vault and does not recover Double
+Ratchet keys. The user still needs the local vault password, recovery key, or
+cloud restore flow for E2EE state. Display name is a chat/profile label and
+legacy vault label, not the Firebase account owner key.
 
 For public access, the app runs locally on port `3000`, and Cloudflare Tunnel
 exposes it through `https://chat.securechat.id.vn`. This does not turn the laptop
@@ -135,30 +135,41 @@ Expected result:
 ### D. Restore From Cloud
 
 1. Open another browser/profile or phone.
-2. Enter the same display name and password.
-3. Click `Restore from Cloud`.
-4. If multiple backup identities exist, choose the correct identity.
-5. After restore succeeds, press `Start`.
-6. Open the previous conversation and send a test message.
+2. Sign in with the same Google account if Firebase is configured.
+3. If the browser has no default vault pointer, choose `Restore from Cloud`.
+4. Enter the backup display/vault label and the vault password.
+5. If one backup exists, restore proceeds directly.
+6. If multiple backup identities exist, choose `Restore Latest Backup`.
+7. Older backups are visible only under `Advanced: show older backups` and
+   require a warning confirmation.
+8. After restore succeeds, unlock/start if prompted.
+9. Open the previous conversation and send a test message.
 
 Expected result:
 
 - restore requires the correct password
-- restore does not auto-start chat
-- after pressing Start, the restored identity can continue chatting
+- the normal path restores the latest backup
+- older backups are advanced recovery data, not the default continue-chat path
+- after unlock/start, the restored identity can continue chatting
+- the restored browser saves a default vault pointer, so the next reload asks
+  only for vault password
 
 ### E. Device Switching Safety
 
 1. Backup the user from the current browser.
-2. Use another browser or phone with the same display name.
-3. Try pressing `Start` directly when a cloud backup is available or newer.
+2. Use another browser or phone with the same Google account.
+3. Restore the latest backup if this is a new browser with no local pointer.
+4. Chat and run `Backup to Cloud` from that newer device.
+5. Return to the older browser and try to unlock.
 
 Expected result:
 
-- the app shows a backup safety warning before entering chat
-- the user can choose `Restore from Cloud`, `Start anyway`, or `Cancel`
-- for safe use, choose `Restore from Cloud` before chatting from a different
-  device
+- if cloud backup metadata is newer than the older browser's local pointer or
+  backup metadata, the app shows `Cloud Backup May Be Newer`
+- the user can choose `Restore from Cloud`, `Unlock anyway`, or `Cancel`
+- for safe use, choose `Restore from Cloud` before chatting from the older
+  browser
+- this is a guard, not full automatic multi-device Double Ratchet sync
 
 ### F. Restore Overwrite Safety
 
@@ -202,15 +213,13 @@ different layers.
 2. If Firebase is configured, click `Sign in with Google`.
 3. Confirm that signing in does not auto-start chat, auto-unlock the vault, or
    auto-restore a cloud backup.
-4. Confirm that the topbar asks for `Vault password`, not a Google password.
-5. If the display-name field is empty, confirm it is suggested from the Google
-   profile; if it already contains a demo name such as `AliceDemo`, confirm the
-   app does not overwrite it.
-6. Enter the correct vault password and click `Unlock vault`.
-7. Chat normally, then click `Sign out`.
-8. Confirm that `Sign out` closes the local chat session and signs out Google,
+4. If this browser has a valid default vault pointer, confirm that the topbar
+   shows the display name as context and asks only for `Vault password`.
+5. Enter the correct vault password and click `Unlock vault`.
+6. Chat normally, then click `Sign out`.
+7. Confirm that `Sign out` closes the local chat session and signs out Google,
    but does not delete local vault data or cloud backups.
-9. Run the auth verify smoke test if needed:
+8. Run the auth verify smoke test if needed:
 
 ```powershell
 Invoke-RestMethod -Method POST https://chat.securechat.id.vn/api/auth/firebase/verify
@@ -224,6 +233,53 @@ Expected result:
 - local vault data remains available if browser site data was not deleted
 - if Firebase server auth is still in legacy mode, the verify endpoint returns a
   safe legacy/disabled response
+
+### H2. Firebase Default Vault UX Smoke
+
+Use this after the Firebase Identity Binding / Default Vault UX phase.
+
+1. Sign in with Google on a browser that already has a pointer for a demo user.
+2. Confirm the main unlock form does not ask for editable display name.
+3. Enter the vault password and unlock.
+4. Sign out.
+5. Use a fresh browser/profile with the same Google account.
+6. Confirm the app shows:
+   - `Restore from Cloud`
+   - `Create new encrypted identity`
+   - `Use legacy local identity`
+7. Choose `Restore from Cloud`, enter the backup label and vault password, and
+   restore the latest backup.
+8. Reload the fresh browser.
+9. Confirm it now asks only for vault password.
+
+Expected result:
+
+- pointer exists only per browser/profile
+- missing pointer does not fall back to ambiguous Start as the primary action
+- restore saves the pointer immediately; no sign-out/sign-in cycle is required
+- wrong password does not save a usable pointer
+
+### H3. Start Over Safety Smoke
+
+Use a disposable demo identity.
+
+1. Sign in with Google.
+2. Ensure the app is in locked state, not already unlocked.
+3. Enter the display/vault label and a new vault password.
+4. Click `Start over`.
+5. Confirm by typing the display/vault label exactly.
+6. After the new identity starts, send one test message.
+7. Create a recovery key and run `Backup to Cloud`.
+8. Reload and unlock with the new vault password.
+
+Expected result:
+
+- Start over is unavailable while the vault session is already unlocked
+- Start over creates a new encrypted identity and removes old local history from
+  this browser
+- the old local pointer is cleared before reset and a new pointer is saved after
+  success
+- old cloud backups are not deleted and remain advanced/recovery data
 
 ### I. Firebase Account Ownership Enforcement Smoke
 
@@ -353,10 +409,10 @@ Expected result:
 
 `Display name`
 
-The human-readable name typed by the user. In the current transitional version,
-this is still the main visible chat label and legacy vault lookup key. After
-Google sign-in, the app may suggest a display name from the Google profile, but
-display name is not the security boundary.
+The human-readable profile/chat label. It is also still the legacy local vault
+lookup key during migration. In Firebase mode, display name is not the account
+owner key and cannot distinguish two different Google accounts with the same
+label.
 
 `accountId`
 
@@ -403,8 +459,15 @@ imports the selected identity into the browser.
 `Firebase Auth`
 
 A real account authentication layer for proving account ownership when it is
-configured. It does not decrypt messages, does not unlock the vault, and does not
-replace Backup to Cloud / Restore from Cloud.
+configured. It identifies the product account as `firebase:<uid>`. It does not
+decrypt messages, does not unlock the vault, and does not replace Backup to
+Cloud / Restore from Cloud.
+
+`Default vault pointer`
+
+Browser-local metadata that maps a Firebase uid to a local vault label and
+active identity id for this browser. It does not contain vault password, recovery
+key, plaintext keys, plaintext messages, or decrypted vault content.
 
 `Sign out`
 
@@ -427,6 +490,9 @@ still appear.
 - Google sign-in does not replace the vault password and does not recover lost
   E2EE keys.
 - Legacy `accountId` is still transitional and derived from display name.
+- Local vault storage is still keyed by the legacy display/vault label.
+- Restore still asks for the backup display/vault label because the HTTP restore
+  API is still routed by `/api/backups/:username`.
 - The project still works best with one active browser/device per account at a
   time.
 - Switching devices should be done by backing up on the old device and restoring
@@ -438,6 +504,10 @@ still appear.
 - Firebase Auth does not solve stale Double Ratchet state by itself. The newest
   working device still needs to save a fresh cloud backup before another device
   restores.
+- A different device can still hold an older local identity after Start over
+  until the future Active Identity Enforcement phase warns or blocks it.
+- Peer selection is still display-name based, so duplicate display names across
+  different Google accounts are not fully disambiguated yet.
 
 ## 7. Safe Demo Checklist
 

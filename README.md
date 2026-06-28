@@ -18,6 +18,9 @@ The server **never decrypts** messages. It only relays ciphertext.
 - Certificate signing by a server CA (ECDSA P-384)
 - Offline message queue (ciphertext only)
 - Local state persistence in an encrypted vault (browser localStorage, client-side only)
+- Optional Google/Firebase sign-in for account ownership
+- Browser-local default vault pointer for Google signed-in unlock UX
+- Encrypted cloud backup/restore with latest-backup restore as the default path
 
 ---
 
@@ -45,22 +48,40 @@ server/
 
 ## Run (Development)
 
-Open two terminals in the project root:
+Normal local/public-domain setup uses two terminals in the project root:
 
-Terminal 1 (server):
+Terminal 1:
 ```
 npm start
 ```
 
-Terminal 2 (UI):
+Terminal 2:
 ```
-npm run dev
+cloudflared tunnel run realtime-secure-chat
 ```
 
 Then open:
 ```
-http://localhost:5173
+https://chat.securechat.id.vn
 ```
+
+For Vite-only client development, `npm run dev` is still available.
+
+## Account And Vault Model
+
+Google/Firebase sign-in proves account ownership when configured, but it does
+not unlock encrypted chat data. The vault password is still required to open the
+browser-local E2EE vault and decrypt encrypted cloud backups.
+
+In Firebase mode, display name is a chat/profile label and legacy vault label,
+not the durable account owner key. A browser-local default vault pointer can
+remember which local vault belongs to the signed-in Google account on that
+browser. The pointer stores metadata only and must not contain vault passwords,
+recovery keys, plaintext keys, or plaintext messages.
+
+The app does not implement full automatic multi-device Double Ratchet sync.
+Before switching devices, save a fresh cloud backup from the newest working
+device, then restore the latest backup on the other device.
 
 ---
 

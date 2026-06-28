@@ -9418,7 +9418,7 @@ Expected result:
 Recommended timing:
 
 - do this after `Vault Recovery And Password Safety`
-- do it before `Device Switching And Backup Discipline`
+- do it before `Device Switching And Active Identity Enforcement`
 - it is separate from Firebase Admin/Auth Hardening and Security Hardening because those phases harden security, while this phase fixes account-to-vault UX and mapping
 
 Non-goals:
@@ -9950,28 +9950,118 @@ Checkpoint 7 test expectation:
 - Google account pointers for other browser profiles/accounts are not affected
 - signed-out legacy Start over still works
 
-### Roadmap Phase 5: Device Switching And Backup Discipline
+### Firebase Identity Binding / Default Vault UX - Checkpoint 8: Docs And Regression
 
 Goal:
 
-- make switching devices safer without claiming full automatic multi-device Double Ratchet sync
+- close the Firebase default-vault UX phase with explicit docs, demo flow, and regression expectations
+- record the remaining known limitations so later phases do not assume they were solved here
+- update the roadmap order based on testing findings
+
+Phase result:
+
+- Google Sign-In is now treated as the account entry point in Firebase mode
+- vault password remains required to unlock E2EE vault data
+- display name is now a profile/chat label and legacy local vault label, not the durable Firebase account owner key
+- browser-local default vault pointer maps a Firebase uid to the local vault label and active identity id for this browser
+- with a valid pointer, signed-in Google users unlock by entering only vault password
+- without a pointer, signed-in Google users see explicit Restore/Create/Use legacy choices
+- default Restore from Cloud prefers the latest backup; older backups are advanced recovery data
+- freshness guard checks Firebase pointer/cloud metadata before unlocking when possible
+- Start over clears the matching local pointer before creating a new local identity, then stores a fresh pointer after success
+
+Known limitations after this phase:
+
+- local encrypted vault storage is still keyed by legacy display/vault label
+- restore HTTP endpoints still route by `/api/backups/:username`, so restore still asks for the backup label
+- the browser-local pointer is convenience metadata, not a server-enforced active identity record
+- a different device can still hold an older local identity for the same Firebase account until a later active-identity enforcement phase detects or blocks it
+- server/contact UX still chooses peers by display name, so two different Google accounts with the same display name remain ambiguous at the contact layer
+- older backups remain available through advanced recovery and are not deleted
+- the project still does not implement full automatic multi-device Double Ratchet synchronization
+
+Regression checklist:
+
+- signed-in Google account with a valid pointer shows only vault password before unlock
+- signed-in Google account without a pointer shows Restore/Create/Use legacy fallback
+- Use legacy local identity creates a pointer only after successful unlock
+- Restore from Cloud on a new browser restores latest backup and saves pointer without requiring sign-out/sign-in
+- multiple backups show Restore Latest Backup as default and hide older backups under Advanced
+- selecting an older backup requires an explicit warning
+- cloud backup newer than local pointer/local backup metadata shows `Cloud Backup May Be Newer`
+- Start over clears the matching pointer, creates a new identity, and stores a new pointer after success
+- reconnect after WebSocket disconnect reloads the active conversation pane
+- signed-out legacy display-name flow still works
+- Backup to Cloud, Restore from Cloud, Change vault password, Create recovery key, Use recovery key, realtime chat, and offline pending still work
+- Google account A cannot use Google account B's pointer
+- pointer metadata does not contain vault password, recovery key, plaintext keys, plaintext messages, or decrypted vault content
+- public-domain setup still works through `npm start` plus `cloudflared tunnel run realtime-secure-chat`
+
+Checkpoint 8 test expectation:
+
+- docs match the current runtime behavior
+- demo script includes Google default-vault UX, latest restore, freshness warning, and Start over safety
+- no runtime behavior changes are introduced by this checkpoint
+
+### Roadmap Phase 5: Device Switching And Active Identity Enforcement
+
+Goal:
+
+- make switching devices safer by enforcing one active encrypted identity per Firebase account at the server/account layer
+- prevent old local identities on other devices from silently continuing as if they were the current active identity
+- keep backup/restore discipline aligned with the active identity rather than with display-name-only local state
+
+Why this phase is next:
+
+- Checkpoint 7 only clears the default pointer on the browser that starts over
+- another browser/device can still hold an older local identity and old pointer for the same Firebase account
+- the next phase must make `activeIdentityId` a server-visible account rule, not only browser-local convenience metadata
+- this should happen before Contact Identity Binding because it answers "which identity is active for my own account?" before solving "which account/contact am I chatting with?"
 
 Recommended checkpoints:
 
-1. Device label:
-   - store a user-editable label such as browser/device name
-2. Backup metadata improvements:
-   - include device label, server save time, identity id, schema version, and local freshness hints
-3. Stale device banner:
-   - warn when a device may be using older encrypted state
-4. Active device policy:
-   - keep the current one-active-session-per-account behavior clear
-   - explain that restoring on a new device makes the old local copy potentially stale
-5. Docs:
-   - state that the project supports safe device switching through encrypted backup/restore
-   - state that it does not yet implement full automatic multi-device state synchronization
+1. Server active identity metadata:
+   - persist `accountId`, `activeIdentityId`, display name, updated time, and device label for the current Firebase account
+2. Client active identity check before unlock:
+   - compare local pointer/local identity with server active identity before opening chat
+   - warn or block when the browser has an inactive identity
+3. Start over promotes active identity:
+   - make the new identity the server active identity for the Firebase account after explicit reset
+4. Inactive identity guard:
+   - prevent stale devices from chatting silently with an old identity
+   - allow only explicit advanced/recovery handling for inactive identities
+5. Backup/restore alignment:
+   - default restore targets the active identity's latest backup
+   - older identities stay advanced/recovery only
+6. Device label and stale-device UX:
+   - show which device last made the active backup when metadata is available
+7. Docs and regression:
+   - test start-over on device A, return to device B with old local identity, and verify B is warned or blocked before chat
 
-### Roadmap Phase 6: Firebase Admin / Auth Hardening
+### Roadmap Phase 6: Contact Identity Binding / Peer Disambiguation
+
+Goal:
+
+- make peer/contact selection account- and identity-aware instead of display-name-only
+- handle duplicate display names across different Firebase accounts
+- warn when a peer changes encrypted identity
+
+Recommended checkpoints:
+
+1. Contact model baseline:
+   - document contact as `displayName` plus account/identity metadata
+2. Store peer identity metadata locally:
+   - remember peer display name, account id when available, identity id, and last seen time
+3. Duplicate display-name detection:
+   - show distinct contact records when different accounts/identities share the same display name
+4. Identity-change warning:
+   - warn when a known display name appears with a new identity id
+5. Peer selection by contact:
+   - select a contact record instead of routing only by typed display name
+6. Regression:
+   - same display name with different Google accounts, Start over identity change, restore old identity, offline pending, and realtime routing
+
+### Roadmap Phase 7: Firebase Admin / Auth Hardening
 
 Goal:
 
@@ -9992,7 +10082,7 @@ Recommended checkpoints:
 4. Revocation and disabled-user behavior:
    - document or implement revoked-token and disabled-user handling when production readiness requires it
 
-### Roadmap Phase 7: Security Hardening
+### Roadmap Phase 8: Security Hardening
 
 Goal:
 
