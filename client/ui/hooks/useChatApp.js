@@ -6,6 +6,7 @@ import {
   signInWithGoogle,
   signOut as signOutFirebase,
 } from "../../auth/firebaseClient.js";
+import { setDefaultVaultPointer } from "../../defaultVaultPointer.js";
 import {
   changeLocalVaultPassword,
   destroyChat,
@@ -1132,6 +1133,56 @@ export function useChatApp() {
     };
   }
 
+  async function saveFirebaseDefaultVaultPointer(username, patch = {}) {
+    const firebaseUid = String(state.authUser?.uid || "").trim();
+    const legacyVaultLabel = normalizePeer(username);
+    if (!firebaseUid || !legacyVaultLabel) return null;
+
+    let identityMeta = patch.identityMeta || null;
+    let backupMeta = patch.backupMeta || null;
+    if (!identityMeta) {
+      identityMeta = await loadIdentityMetadata().catch(() => null);
+    }
+    if (!backupMeta) {
+      backupMeta = await loadBackupMetadata().catch(() => null);
+    }
+
+    const activeIdentityId = String(
+      patch.activeIdentityId ||
+        identityMeta?.identityId ||
+        backupMeta?.identityId ||
+        ""
+    ).trim();
+    if (!activeIdentityId) return null;
+
+    const pointer = {
+      firebaseUid,
+      accountId: `firebase:${firebaseUid}`,
+      activeIdentityId,
+      displayName:
+        patch.displayName ||
+        identityMeta?.displayName ||
+        backupMeta?.displayName ||
+        legacyVaultLabel,
+      legacyVaultLabel,
+      lastKnownBackupVersion:
+        patch.lastKnownBackupVersion || backupMeta?.backupVersion || null,
+      lastKnownBackupServerSavedAt:
+        patch.lastKnownBackupServerSavedAt ||
+        backupMeta?.localLastBackupServerSavedAt ||
+        backupMeta?.serverSavedAt ||
+        null,
+      lastUpdatedAt: new Date().toISOString(),
+    };
+
+    try {
+      return setDefaultVaultPointer(firebaseUid, pointer);
+    } catch (err) {
+      console.warn("[default-vault] failed to save pointer:", err);
+      return null;
+    }
+  }
+
   async function getPreStartBackupWarning(username, password, account) {
     try {
       await initVault(password, username);
@@ -1272,6 +1323,7 @@ export function useChatApp() {
     try {
       await initChat(username, password, account);
       dispatch({ type: "start_success", account });
+      void saveFirebaseDefaultVaultPointer(username);
       void refreshIdentityPanel(account);
       pushToast("Ready.", "success");
       if (!restoredThisUsername && !options.skipBackupWarning) {
@@ -1474,7 +1526,7 @@ export function useChatApp() {
       );
       const backupReceipt = await saveCloudBackup(blob);
       try {
-        await saveBackupMetadata({
+        const backupMeta = await saveBackupMetadata({
           username,
           accountId: backupReceipt?.accountId || account.accountId,
           displayName: account.displayName,
@@ -1485,6 +1537,14 @@ export function useChatApp() {
           backupVersion: blob.version,
           clientSavedAt,
           serverSavedAt: backupReceipt?.serverSavedAt || blob.serverSavedAt || null,
+        });
+        await saveFirebaseDefaultVaultPointer(username, {
+          activeIdentityId: payload.identityId,
+          displayName: account.displayName,
+          backupMeta,
+          lastKnownBackupVersion: blob.version,
+          lastKnownBackupServerSavedAt:
+            backupReceipt?.serverSavedAt || blob.serverSavedAt || null,
         });
       } catch (metadataErr) {
         console.warn("[backup] failed to save local metadata:", metadataErr);
@@ -1812,9 +1872,20 @@ export function useChatApp() {
             clientSavedAt: blob.clientSavedAt || null,
             serverSavedAt: blob.serverSavedAt || null,
           });
+          await saveFirebaseDefaultVaultPointer(username, {
+            activeIdentityId: result.identityId,
+            displayName: result.displayName || account.displayName || username,
+            lastKnownBackupVersion: blob.version || 2,
+            lastKnownBackupServerSavedAt: blob.serverSavedAt || null,
+          });
         } catch (metadataErr) {
           console.warn("[recovery] failed to save local backup metadata:", metadataErr);
         }
+      } else {
+        await saveFirebaseDefaultVaultPointer(username, {
+          activeIdentityId: result.identityId,
+          displayName: result.displayName || account.displayName || username,
+        });
       }
       dispatch({
         type: "restore_success",
@@ -2087,6 +2158,14 @@ export function useChatApp() {
           clientSavedAt: blob.clientSavedAt || payload.clientSavedAt || null,
           serverSavedAt: blob.serverSavedAt || null,
         });
+        if (!options.legacyRestore) {
+          await saveFirebaseDefaultVaultPointer(username, {
+            activeIdentityId: payload.identityId,
+            displayName: payload.displayName || account.displayName || username,
+            lastKnownBackupVersion: blob.version || payload.version || 2,
+            lastKnownBackupServerSavedAt: blob.serverSavedAt || null,
+          });
+        }
       } catch (metadataErr) {
         console.warn("[restore] failed to save local backup metadata:", metadataErr);
       }

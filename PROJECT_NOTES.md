@@ -9662,6 +9662,61 @@ Checkpoint 1 test expectation:
 - the helper rejects a pointer for a different Firebase uid
 - clearing the pointer does not delete the local encrypted vault
 
+### Firebase Identity Binding / Default Vault UX - Checkpoint 2: Save Pointer After Successful Identity Access
+
+Goal:
+
+- start writing the browser-local default vault pointer only after the app has actually unlocked, restored, recovered, backed up, or explicitly created an identity for the signed-in Google account
+- keep UI behavior unchanged for this checkpoint
+- avoid saving pointers after wrong-password, cancelled, or failed flows
+
+Implemented:
+
+- imported `setDefaultVaultPointer(...)` into the React app hook
+- added internal `saveFirebaseDefaultVaultPointer(username, patch)` helper
+  - runs only when a Firebase user is currently signed in
+  - derives pointer owner from `state.authUser.uid`
+  - writes `accountId` as `firebase:<uid>`
+  - uses the current display-name vault label as `legacyVaultLabel`
+  - uses decrypted/restored `identityId` as `activeIdentityId`
+  - optionally carries latest known backup version and server save time
+  - catches/logs pointer save failures so unlock/restore/backup success is not lost because local pointer metadata failed
+- pointer save points:
+  - after successful `Start` / `Unlock vault`
+  - after successful `Backup to Cloud`
+  - after successful cloud recovery via recovery key
+  - after successful local recovery via recovery key when enough identity metadata exists
+  - after successful Firebase-owned `Restore from Cloud`
+- explicit legacy restore compatibility path does not save a pointer automatically
+  - this avoids linking legacy backup ownership by display name alone
+  - users should save a fresh Firebase-owned backup after explicit legacy restore before relying on Google-account default vault UX
+
+Security behavior:
+
+- wrong vault password does not save pointer because it fails before the success path
+- cancelled restore/reset flows do not save pointer
+- pointer does not store vault password, recovery key, plaintext keys, plaintext messages, or decrypted vault content
+- pointer remains local browser metadata only and does not authorize server access
+
+Non-goals for this checkpoint:
+
+- no UI form changes yet
+- no hidden automatic restore
+- no restore latest-only behavior yet
+- no server schema change
+- no local vault storage-key rewrite
+- no removal of display-name fallback
+
+Checkpoint 2 test expectation:
+
+- existing signed-out legacy flow remains unchanged
+- signed-in Google user can unlock an existing local vault and the app still reaches `Ready`
+- signed-in Google user can restore and still must press Start/Unlock afterward
+- wrong password does not create usable pointer behavior
+- Backup to Cloud still succeeds
+- realtime chat still works
+- behavior visible to users remains unchanged until the next UI checkpoint
+
 ### Roadmap Phase 5: Device Switching And Backup Discipline
 
 Goal:
