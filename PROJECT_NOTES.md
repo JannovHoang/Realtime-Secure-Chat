@@ -9591,6 +9591,77 @@ Checkpoint 0 test expectation:
 - existing users can unlock with display name and vault password
 - realtime chat, offline pending, Backup to Cloud, Restore from Cloud, Change vault password, Create recovery key, Use recovery key, and Start over still work as before
 
+### Firebase Identity Binding / Default Vault UX - Checkpoint 1: Default Vault Pointer Storage Helper
+
+Goal:
+
+- add a small client-side helper for browser-local Firebase default vault pointers
+- keep runtime behavior unchanged until later checkpoints wire the helper into unlock/restore/start-over flows
+- enforce that pointer metadata is scoped to the current Firebase uid and contains no E2EE secrets
+
+Implemented:
+
+- added `client/defaultVaultPointer.js`
+  - path note: `client/storage.js` already exists as a file, so the helper cannot live at `client/storage/defaultVaultPointer.js` on Windows
+- exported:
+  - `validateDefaultVaultPointer(pointer, currentFirebaseUid)`
+  - `getDefaultVaultPointer(firebaseUid, options)`
+  - `setDefaultVaultPointer(firebaseUid, pointer)`
+  - `clearDefaultVaultPointer(firebaseUid)`
+- local storage key format:
+  - `securechat:defaultVault:firebase:<encoded firebase uid>`
+- normalized pointer shape:
+
+```js
+{
+  schemaVersion: 1,
+  authMode: "firebase",
+  firebaseUid: "...",
+  accountId: "firebase:<uid>",
+  activeIdentityId: "...",
+  displayName: "AliceDemo",
+  legacyVaultLabel: "AliceDemo",
+  lastKnownBackupVersion: 12,
+  lastKnownBackupServerSavedAt: "...",
+  lastUpdatedAt: "..."
+}
+```
+
+Validation behavior:
+
+- rejects missing, malformed, or cross-account pointers
+- requires `firebaseUid` to match the current Firebase uid
+- requires `accountId` to equal `firebase:<uid>`
+- requires `activeIdentityId`
+- requires `legacyVaultLabel`, with fallback from older candidate fields such as `vaultLabel` or `displayName`
+- normalizes display name, timestamps, and backup version metadata
+- `getDefaultVaultPointer(firebaseUid, { requireLocalVault: true })` also verifies that the referenced local vault exists
+- corruption or missing localStorage data returns `null` instead of crashing
+- `clearDefaultVaultPointer(firebaseUid)` removes only the pointer and does not delete the encrypted vault
+
+Security behavior:
+
+- pointer stores convenience metadata only
+- pointer does not store vault password, recovery key, plaintext private keys, plaintext ratchet state, message keys, backup plaintext, or decrypted vault content
+- pointer loss must not destroy the local vault or cloud backup
+
+Non-goals for this checkpoint:
+
+- no UI change
+- no server change
+- no automatic pointer creation yet
+- no display-name field removal yet
+- no restore behavior change yet
+- no local vault storage-key rewrite
+
+Checkpoint 1 test expectation:
+
+- build still passes
+- behavior remains unchanged from Checkpoint 0
+- the helper can validate a pointer for the matching Firebase uid
+- the helper rejects a pointer for a different Firebase uid
+- clearing the pointer does not delete the local encrypted vault
+
 ### Roadmap Phase 5: Device Switching And Backup Discipline
 
 Goal:
