@@ -9717,6 +9717,56 @@ Checkpoint 2 test expectation:
 - realtime chat still works
 - behavior visible to users remains unchanged until the next UI checkpoint
 
+### Firebase Identity Binding / Default Vault UX - Checkpoint 3: Google Signed-In Unlock Form Uses Pointer
+
+Goal:
+
+- when a signed-in Google account has a valid local default vault pointer, stop asking for display name as a primary login field
+- keep legacy/display-name flow unchanged when signed out or when no valid pointer exists
+- keep vault password required to unlock E2EE keys
+
+Implemented:
+
+- app state now tracks `defaultVaultPointer`
+- after Firebase auth state provides a uid, the app loads `getDefaultVaultPointer(firebaseUid, { requireLocalVault: true })`
+  - malformed pointer returns `null`
+  - pointer for a different Firebase uid returns `null`
+  - pointer pointing to a missing local vault returns `null`
+- when the pointer is valid:
+  - internal `username` is set to the pointer's `legacyVaultLabel`
+  - topbar no longer renders the editable `Display name` field before unlock
+  - topbar shows the display name as account/vault context instead
+  - user only enters `Vault password` and clicks `Unlock vault`
+- when no valid pointer is available:
+  - signed-in Google flow still uses the existing display-name field for now
+  - the dedicated missing-pointer fallback will be implemented in a later checkpoint
+- signed-out legacy flow still shows display name + vault password
+
+Security behavior:
+
+- Google Sign-In still does not unlock the vault
+- vault password is still required
+- pointer is local metadata only and does not authorize server access
+- no secret is read from or written to the pointer
+
+Non-goals for this checkpoint:
+
+- no missing-pointer Restore/Create/Use-legacy landing yet
+- no latest-backup restore rule yet
+- no freshness guard change yet
+- no server schema change
+- no local vault storage-key rewrite
+- no removal of legacy flow
+
+Checkpoint 3 test expectation:
+
+- signed-in Google user with a valid pointer sees display name as a label, not an editable login input
+- same user can unlock by entering only vault password
+- wrong vault password still fails
+- signed-in Google user without valid pointer still sees the old display-name field for now
+- signed-out legacy user still sees display name + vault password
+- realtime chat and Backup to Cloud still work after unlock
+
 ### Roadmap Phase 5: Device Switching And Backup Discipline
 
 Goal:

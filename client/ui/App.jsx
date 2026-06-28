@@ -280,6 +280,8 @@ export default function App() {
   const [showRecoveryConfirmPassword, setShowRecoveryConfirmPassword] = React.useState(false);
   const showPasswordField = !state.started || state.disconnected;
   const signedInWithGoogle = !!state.authUser?.uid;
+  const firebaseDefaultVault = signedInWithGoogle ? state.defaultVaultPointer : null;
+  const useDefaultVaultUnlock = !!firebaseDefaultVault && showPasswordField;
   const startLabel = state.disconnected
     ? "Reconnect"
     : signedInWithGoogle
@@ -396,17 +398,25 @@ export default function App() {
 
         <div className="login">
           <div className="auth-fields">
-            <Field
-              label="Display name"
-              placeholder={
-                signedInWithGoogle
-                  ? "Display name for this vault"
-                  : "Enter your display name"
-              }
-              value={state.username}
-              onChange={(value) => actions.setField("username", value)}
-              disabled={busy}
-            />
+            {useDefaultVaultUnlock ? (
+              <div className="auth-context-note">
+                <strong>Display name:</strong>{" "}
+                {firebaseDefaultVault.displayName ||
+                  firebaseDefaultVault.legacyVaultLabel}
+              </div>
+            ) : (
+              <Field
+                label="Display name"
+                placeholder={
+                  signedInWithGoogle
+                    ? "Display name for this vault"
+                    : "Enter your display name"
+                }
+                value={state.username}
+                onChange={(value) => actions.setField("username", value)}
+                disabled={busy}
+              />
+            )}
             {showPasswordField ? (
               <Field
                 label="Vault password"
@@ -431,7 +441,9 @@ export default function App() {
             ) : null}
             {signedInWithGoogle ? (
               <div className="auth-context-note">
-                Google identifies your account. Display name labels this chat identity.
+                {useDefaultVaultUnlock
+                  ? "Google identifies your account. Enter the vault password to unlock E2EE keys."
+                  : "Google identifies your account. Display name labels this chat identity."}
               </div>
             ) : null}
           </div>

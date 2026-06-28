@@ -6,7 +6,10 @@ import {
   signInWithGoogle,
   signOut as signOutFirebase,
 } from "../../auth/firebaseClient.js";
-import { setDefaultVaultPointer } from "../../defaultVaultPointer.js";
+import {
+  getDefaultVaultPointer,
+  setDefaultVaultPointer,
+} from "../../defaultVaultPointer.js";
 import {
   changeLocalVaultPassword,
   destroyChat,
@@ -108,6 +111,7 @@ const initialState = {
   authBusy: false,
   authUser: null,
   authError: "",
+  defaultVaultPointer: null,
   toasts: [],
 };
 
@@ -837,9 +841,19 @@ function reducer(state, action) {
         authBusy: false,
         authError: "",
         authUser,
+        defaultVaultPointer: authUser?.uid ? state.defaultVaultPointer : null,
         username: shouldPrefillDisplayName ? suggestedDisplayName : state.username,
       };
     }
+    case "default_vault_pointer":
+      return {
+        ...state,
+        defaultVaultPointer: action.value || null,
+        username:
+          action.value?.legacyVaultLabel && !state.started
+            ? action.value.legacyVaultLabel
+            : state.username,
+      };
     case "auth_begin":
       return {
         ...state,
@@ -922,6 +936,33 @@ export function useChatApp() {
       dispatch({ type: "auth_state", user });
     });
   }, []);
+
+  useEffect(() => {
+    const firebaseUid = String(state.authUser?.uid || "").trim();
+    let cancelled = false;
+
+    if (!firebaseUid) {
+      dispatch({ type: "default_vault_pointer", value: null });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      const pointer = await getDefaultVaultPointer(firebaseUid, {
+        requireLocalVault: true,
+      }).catch((err) => {
+        console.warn("[default-vault] failed to load pointer:", err);
+        return null;
+      });
+      if (cancelled) return;
+      dispatch({ type: "default_vault_pointer", value: pointer });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.authUser?.uid]);
 
   function pushToast(text, tone = "info") {
     const id = nextToastId();
