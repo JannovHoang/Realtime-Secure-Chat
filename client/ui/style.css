@@ -1220,6 +1220,39 @@ button.compact {
   margin-top: 12px;
 }
 
+.restore-latest-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 14px 15px;
+  border: 1px solid rgba(43, 89, 217, 0.18);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.94));
+}
+
+.restore-latest-card strong {
+  color: var(--text);
+  font-size: 15px;
+  word-break: break-all;
+}
+
+.restore-advanced {
+  margin-top: 14px;
+}
+
+.restore-advanced summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.restore-advanced[open] summary {
+  margin-bottom: 10px;
+}
+
 .restore-choice-item {
   width: 100%;
   text-align: left;

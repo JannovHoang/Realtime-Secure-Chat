@@ -104,6 +104,7 @@ const initialState = {
   pendingRestore: null,
   pendingRestoreOverwrite: null,
   pendingRestoreStale: null,
+  pendingRestoreOlder: null,
   pendingLegacyRestore: null,
   pendingStartWarning: null,
   authAvailability: getFirebaseAuthAvailability(),
@@ -414,6 +415,26 @@ function getBackupBlobTimeMs(blob, payload = null) {
     parseTimeMs(payload?.clientSavedAt) ||
     parseTimeMs(payload?.exportedAt)
   );
+}
+
+function getBackupItemTimeMs(item) {
+  return (
+    parseTimeMs(item?.serverSavedAt) ||
+    parseTimeMs(item?.updatedAt) ||
+    parseTimeMs(item?.clientSavedAt) ||
+    parseTimeMs(item?.createdAt)
+  );
+}
+
+function sortBackupItemsByFreshness(items) {
+  if (!Array.isArray(items)) return [];
+  return [...items].sort((a, b) => {
+    const timeDiff = getBackupItemTimeMs(b) - getBackupItemTimeMs(a);
+    if (timeDiff) return timeDiff;
+    const versionDiff = Number(b?.backupVersion || 0) - Number(a?.backupVersion || 0);
+    if (versionDiff) return versionDiff;
+    return String(a?.identityId || "").localeCompare(String(b?.identityId || ""));
+  });
 }
 
 function getLocalBackupCloudTimeMs(meta) {
@@ -827,6 +848,8 @@ function reducer(state, action) {
       return { ...state, pendingRestoreOverwrite: action.value };
     case "set_pending_restore_stale":
       return { ...state, pendingRestoreStale: action.value };
+    case "set_pending_restore_older":
+      return { ...state, pendingRestoreOlder: action.value };
     case "set_pending_legacy_restore":
       return { ...state, pendingLegacyRestore: action.value };
     case "set_pending_start_warning":
@@ -2056,13 +2079,14 @@ export function useChatApp() {
         await completeRestore(items[0].identityId, username, password);
         return;
       }
+      const sortedItems = sortBackupItemsByFreshness(items);
       dispatch({
         type: "set_pending_restore",
-        value: { username, password, items, includeAuth: true, legacyRestore: false },
+        value: { username, password, items: sortedItems, includeAuth: true, legacyRestore: false },
       });
       dispatch({
         type: "open_modal",
-        modal: { type: "restore_choice", items },
+        modal: { type: "restore_choice", items: sortedItems },
       });
     } catch (err) {
       dispatch({ type: "set_status", message: "Restore failed", tone: "error" });
@@ -2224,6 +2248,7 @@ export function useChatApp() {
       dispatch({ type: "set_pending_restore", value: null });
       dispatch({ type: "set_pending_restore_overwrite", value: null });
       dispatch({ type: "set_pending_restore_stale", value: null });
+      dispatch({ type: "set_pending_restore_older", value: null });
       pushToast(
         options.legacyRestore
           ? "Legacy backup restored. Start, then save a new cloud backup to associate it with your signed-in account."
@@ -2237,6 +2262,7 @@ export function useChatApp() {
       dispatch({ type: "set_pending_restore", value: null });
       dispatch({ type: "set_pending_restore_overwrite", value: null });
       dispatch({ type: "set_pending_restore_stale", value: null });
+      dispatch({ type: "set_pending_restore_older", value: null });
       pushToast(
         String(err?.message || "Restore failed. Check your display name, vault password, or backup availability."),
         "error"
@@ -2297,10 +2323,60 @@ export function useChatApp() {
     });
   }
 
-  async function confirmRestoreChoice(identityId) {
+  async function confirmRestoreChoice(identityId, options = {}) {
     const pending = state.pendingRestore;
     if (!pending?.username || !pending?.password) return;
+    if (options.olderBackup) {
+      dispatch({
+        type: "set_pending_restore_older",
+        value: {
+          username: pending.username,
+          password: pending.password,
+          identityId,
+          includeAuth: pending.includeAuth !== false,
+          legacyRestore: !!pending.legacyRestore,
+        },
+      });
+      dispatch({
+        type: "open_modal",
+        modal: { type: "restore_older_confirm", username: pending.username },
+      });
+      return;
+    }
     await completeRestore(identityId, pending.username, pending.password, {
+      includeAuth: pending.includeAuth !== false,
+      legacyRestore: !!pending.legacyRestore,
+    });
+  }
+
+  async function handleRestoreOlderConfirm(choice) {
+    const pending = state.pendingRestoreOlder;
+    if (choice !== "continue") {
+      dispatch({ type: "set_pending_restore_older", value: null });
+      if (state.pendingRestore?.items?.length) {
+        dispatch({
+          type: "open_modal",
+          modal: {
+            type: "restore_choice",
+            items: state.pendingRestore.items,
+            legacyRestore: !!state.pendingRestore.legacyRestore,
+          },
+        });
+      } else {
+        dispatch({ type: "close_modal" });
+      }
+      return;
+    }
+
+    if (!pending?.username || !pending?.password || !pending?.identityId) {
+      dispatch({ type: "set_pending_restore_older", value: null });
+      dispatch({ type: "close_modal" });
+      dispatch({ type: "set_status", message: "Restore failed", tone: "error" });
+      pushToast("Restore failed. Please try again.", "error");
+      return;
+    }
+
+    await completeRestore(pending.identityId, pending.username, pending.password, {
       includeAuth: pending.includeAuth !== false,
       legacyRestore: !!pending.legacyRestore,
     });
@@ -2308,6 +2384,7 @@ export function useChatApp() {
 
   function cancelRestoreChoice() {
     dispatch({ type: "set_pending_restore", value: null });
+    dispatch({ type: "set_pending_restore_older", value: null });
     dispatch({ type: "restore_end" });
     dispatch({ type: "close_modal" });
     dispatch({ type: "set_status", message: "Restore cancelled", tone: "info" });
@@ -2348,12 +2425,13 @@ export function useChatApp() {
         return;
       }
 
+      const sortedItems = sortBackupItemsByFreshness(items);
       dispatch({
         type: "set_pending_restore",
         value: {
           username: pending.username,
           password: pending.password,
-          items,
+          items: sortedItems,
           includeAuth: false,
           legacyRestore: true,
         },
@@ -2361,7 +2439,7 @@ export function useChatApp() {
       dispatch({ type: "set_pending_legacy_restore", value: null });
       dispatch({
         type: "open_modal",
-        modal: { type: "restore_choice", items, legacyRestore: true },
+        modal: { type: "restore_choice", items: sortedItems, legacyRestore: true },
       });
     } catch (err) {
       dispatch({ type: "set_pending_legacy_restore", value: null });
@@ -2446,6 +2524,7 @@ export function useChatApp() {
       cancelRestoreChoice,
       handleLegacyRestoreConfirm,
       handleRestoreStaleConfirm,
+      handleRestoreOlderConfirm,
       handleStartGuard,
       handleBackupFreshnessWarning,
       handleRestoreOverwriteConfirm,

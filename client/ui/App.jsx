@@ -1409,17 +1409,29 @@ export default function App() {
 
       {state.modal?.type === "restore_choice" ? (
         <ModalFrame
-          title="Choose Backup Identity"
+          title="Restore Latest Backup"
           subtitle={
             state.modal.legacyRestore
-              ? "This display name has multiple legacy cloud backups. Choose the identity you own and want to restore."
-              : "This display name has multiple cloud backups. Choose the device identity you want to restore."
+              ? "This display name has multiple legacy cloud backups. The latest backup is the normal restore path."
+              : "This display name has multiple cloud backups. Restore the latest encrypted state unless you are doing advanced recovery."
           }
           eyebrow={state.modal.legacyRestore ? "Legacy restore" : "Cloud restore"}
           actions={
-            <button className="secondary" type="button" onClick={actions.cancelRestoreChoice}>
-              Cancel
-            </button>
+            <>
+              <button className="secondary" type="button" onClick={actions.cancelRestoreChoice}>
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                disabled={!state.modal.items?.[0]?.identityId}
+                onClick={() =>
+                  void actions.confirmRestoreChoice(state.modal.items[0].identityId)
+                }
+              >
+                Restore Latest Backup
+              </button>
+            </>
           }
         >
           {state.modal.legacyRestore ? (
@@ -1430,35 +1442,104 @@ export default function App() {
               Google account ownership.
             </ModalNote>
           ) : null}
-          <div className="restore-choice-list">
-            {state.modal.items.map((item) => {
-              const ownership = helpers.formatBackupOwnership(item);
-              return (
-                <button
-                  key={item.identityId}
-                  type="button"
-                  className="restore-choice-item"
-                  onClick={() => void actions.confirmRestoreChoice(item.identityId)}
-                >
-                  <span className="restore-choice-label">Identity</span>
-                  <span className="restore-choice-id">
-                    {helpers.formatIdentityShort(item.identityId)}
-                  </span>
-                  <span className={`restore-choice-owner ${ownership.chipClass}`}>
-                    {ownership.chipText}
-                  </span>
-                  {item.displayName ? (
-                    <span className="restore-choice-time">
-                      display name {item.displayName}
+          {state.modal.items?.[0] ? (
+            <div className="restore-latest-card">
+              {(() => {
+                const item = state.modal.items[0];
+                const ownership = helpers.formatBackupOwnership(item);
+                return (
+                  <>
+                    <span className="restore-choice-label">Latest backup</span>
+                    <strong>{helpers.formatIdentityShort(item.identityId)}</strong>
+                    <span className={`restore-choice-owner ${ownership.chipClass}`}>
+                      {ownership.chipText}
                     </span>
-                  ) : null}
-                  <span className="restore-choice-time">
-                    updated {helpers.formatRestoreUpdatedAt(item.updatedAt)}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                    <span className="restore-choice-time">
+                      display name {item.displayName || "unknown"}
+                    </span>
+                    <span className="restore-choice-time">
+                      updated {helpers.formatRestoreUpdatedAt(item.serverSavedAt || item.updatedAt)}
+                    </span>
+                  </>
+                );
+              })()}
+            </div>
+          ) : null}
+          {state.modal.items?.length > 1 ? (
+            <details className="restore-advanced">
+              <summary>Advanced: show older backups</summary>
+              <ModalNote tone="warning">
+                Older backups can roll back Double Ratchet state and make recent
+                messages unreadable. Use an older backup only if the latest one
+                cannot be restored.
+              </ModalNote>
+              <div className="restore-choice-list">
+                {state.modal.items.slice(1).map((item) => {
+                  const ownership = helpers.formatBackupOwnership(item);
+                  return (
+                    <button
+                      key={item.identityId}
+                      type="button"
+                      className="restore-choice-item"
+                      onClick={() =>
+                        void actions.confirmRestoreChoice(item.identityId, {
+                          olderBackup: true,
+                        })
+                      }
+                    >
+                      <span className="restore-choice-label">Older identity</span>
+                      <span className="restore-choice-id">
+                        {helpers.formatIdentityShort(item.identityId)}
+                      </span>
+                      <span className={`restore-choice-owner ${ownership.chipClass}`}>
+                        {ownership.chipText}
+                      </span>
+                      {item.displayName ? (
+                        <span className="restore-choice-time">
+                          display name {item.displayName}
+                        </span>
+                      ) : null}
+                      <span className="restore-choice-time">
+                        updated {helpers.formatRestoreUpdatedAt(item.serverSavedAt || item.updatedAt)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </details>
+          ) : null}
+        </ModalFrame>
+      ) : null}
+
+      {state.modal?.type === "restore_older_confirm" ? (
+        <ModalFrame
+          title="Restore Older Backup?"
+          subtitle={`This backup is older than the latest encrypted state for ${state.modal.username}.`}
+          eyebrow="Advanced restore"
+          actions={
+            <>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleRestoreOlderConfirm("cancel")}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => void actions.handleRestoreOlderConfirm("continue")}
+              >
+                Restore Older Backup
+              </button>
+            </>
+          }
+        >
+          <ModalNote tone="warning">
+            Restoring an older backup may cause Double Ratchet state mismatch or
+            make recent messages unreadable. Use this only if the latest backup
+            cannot be restored.
+          </ModalNote>
         </ModalFrame>
       ) : null}
 

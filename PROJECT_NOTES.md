@@ -9818,6 +9818,50 @@ Checkpoint 4 test expectation:
 - signed-out legacy flow remains unchanged
 - realtime chat and Backup to Cloud still work after unlock
 
+### Firebase Identity Binding / Default Vault UX - Checkpoint 5: Latest Backup Restore Rule
+
+Goal:
+
+- make normal Restore from Cloud prefer the latest encrypted backup state
+- stop presenting older backups as equal default choices
+- keep older backups available only behind an advanced recovery path with a strong warning
+
+Implemented:
+
+- restore lists are sorted by freshness before being shown
+  - preferred timestamp order: `serverSavedAt`, `updatedAt`, `clientSavedAt`, `createdAt`
+  - `backupVersion` is used as a tie-breaker when timestamps are equal or missing
+- when multiple backups/identities exist for the entered vault label:
+  - the modal now presents the latest backup as the primary restore path
+  - the primary button restores only that latest backup
+  - older backups are hidden under `Advanced: show older backups`
+- choosing an older backup no longer restores immediately
+  - the app first shows a warning that older backup restore can roll back Double Ratchet state or make recent messages unreadable
+  - only after confirmation does restore proceed
+- legacy restore compatibility follows the same latest-first behavior
+
+Non-goals for this checkpoint:
+
+- no account-only restore endpoint yet
+- no server active-identity schema change
+- no automatic restore
+- no removal of legacy restore
+- no freshness guard rewrite
+- no multi-device automatic sync
+
+Checkpoint 5 test expectation:
+
+- Restore from Cloud with a single backup still restores directly
+- Restore from Cloud with multiple backups shows `Restore Latest Backup` as the primary action
+- older backups are not visible until opening `Advanced: show older backups`
+- selecting an older backup shows `Restore Older Backup?` before any restore happens
+- cancelling the older-backup warning returns to the restore choice modal
+- wrong password still fails and does not overwrite local vault
+- successful latest restore still saves local vault metadata and Firebase default pointer
+- signed-in no-pointer fallback from Checkpoint 4 still works
+- signed-in pointer unlock from Checkpoint 3 still works
+- signed-out legacy flow remains unchanged
+
 ### Roadmap Phase 5: Device Switching And Backup Discipline
 
 Goal:
