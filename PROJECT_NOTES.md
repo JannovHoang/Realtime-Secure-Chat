@@ -10020,23 +10020,213 @@ Why this phase is next:
 
 Recommended checkpoints:
 
-1. Server active identity metadata:
-   - persist `accountId`, `activeIdentityId`, display name, updated time, and device label for the current Firebase account
-2. Client active identity check before unlock:
+1. Server active identity metadata model:
+   - persist `accountId`, `activeIdentityId`, `activeRevision`, display name, updated time, and device label for the current Firebase account
+2. Read active identity endpoint:
+   - expose the signed-in account's active identity metadata through a verified Firebase-authenticated API
+3. Establish active identity for migration/create/restore:
+   - establish active identity only from explicit create/start-over, restore-latest, or confirmed migration flows
+4. Client stale identity warning before unlock:
    - compare local pointer/local identity with server active identity before opening chat
    - warn or block when the browser has an inactive identity
-3. Start over promotes active identity:
-   - make the new identity the server active identity for the Firebase account after explicit reset
-4. Inactive identity guard:
-   - prevent stale devices from chatting silently with an old identity
-   - allow only explicit advanced/recovery handling for inactive identities
-5. Backup/restore alignment:
+5. WebSocket register blocks inactive identity:
+   - server rejects Firebase WebSocket registration/binding when the identity differs from active identity
+6. Backup save/list/restore align with active identity:
+   - active backup save requires `identityId == activeIdentityId`
    - default restore targets the active identity's latest backup
    - older identities stay advanced/recovery only
-6. Device label and stale-device UX:
-   - show which device last made the active backup when metadata is available
-7. Docs and regression:
+7. Start over promotes new active identity safely:
+   - make the new identity the server active identity for the Firebase account after explicit reset
+   - increment `activeRevision`
+8. Device label and stale-device UX polish:
+   - show which device last made the active identity/backup metadata when available
+9. Docs and regression:
    - test start-over on device A, return to device B with old local identity, and verify B is warned or blocked before chat
+
+### Device Switching And Active Identity Enforcement - Checkpoint 0: Baseline Design
+
+Goal:
+
+- define the active-identity enforcement model before changing runtime behavior
+- make the rule "one Firebase account has one active encrypted identity" enforceable across devices, not only in one browser's local pointer
+- keep the project honest that this still is not full automatic multi-device Double Ratchet synchronization
+
+Problem being solved:
+
+- the previous phase made a browser-local default vault pointer for a signed-in Google account
+- that pointer works on the browser where it was saved, but another device can still hold an older local vault and older pointer
+- after Start over on device A, device B may still have the previous identity locally
+- if device B unlocks that old identity and chats, the app can desynchronize secure chat state or confuse which identity is active for the Firebase account
+
+Design decision:
+
+- Firebase account id remains the account owner key:
+  - `accountId = firebase:<uid>`
+- active identity is an account-level server-side fact:
+  - `firebase:<uid> -> activeIdentityId`
+- local default vault pointer is convenience metadata only:
+  - it can help the browser find a local vault
+  - it cannot decide that an old identity is still active if the server says otherwise
+- latest cloud backup should align with the active identity
+- older identities/backups are recovery/advanced data, not normal chat-continuation identities
+
+Active identity metadata target:
+
+```js
+{
+  schemaVersion: 1,
+  accountId: "firebase:<uid>",
+  firebaseUid: "<uid>",
+  activeIdentityId: "<identityId>",
+  activeRevision: 3,
+  displayName: "<profile/chat label>",
+  deviceLabel: "<last device/browser label>",
+  source: "migration_unlock" | "restore_latest" | "create" | "start_over" | "backup_active",
+  serverUpdatedAt: "<server ISO timestamp>"
+}
+```
+
+Active revision rule:
+
+- every explicit active identity promotion increments `activeRevision`
+- clients can compare their known revision with the server revision to detect stale local state
+- a device returning with an older pointer/revision must not silently promote itself back to active
+- `serverUpdatedAt` is for human/debug freshness; `activeRevision` is the monotonic account-level ordering signal
+
+Promotion source rules:
+
+- `create` / `start_over`:
+  - may promote a new identity after explicit user confirmation
+- `restore_latest`:
+  - may establish/promote the active identity after restoring the latest active backup
+- `backup_active`:
+  - may update active metadata only when the backup identity already matches `activeIdentityId`
+  - must not promote a different/inactive identity
+- `migration_unlock`:
+  - may establish active identity only when the server has no active identity yet and the user chose an explicit migration flow such as Use legacy local identity
+- plain `unlock`:
+  - must not override an existing server `activeIdentityId`
+- `unlock_inactive`:
+  - is recovery-only and must not promote active identity
+
+Enforcement model:
+
+- before opening a signed-in Firebase vault, the client should be able to ask the server for the active identity metadata for `firebase:<uid>`
+- if no server active identity is known yet:
+  - current behavior may continue only through explicit migration/create/restore flows
+  - Restore latest Firebase-owned backup can establish the active identity
+  - Create / Start over can establish the active identity after confirmation
+  - legacy local unlock can establish active identity only when the signed-in user chose an explicit migration flow and unlocked successfully
+- if local pointer/local identity matches server `activeIdentityId`:
+  - unlock may continue, subject to freshness checks
+- if local pointer/local identity differs from server `activeIdentityId`:
+  - the browser is holding an inactive/stale identity
+  - normal chat should not open silently
+  - UI should guide to Restore latest active backup
+  - advanced unlock/restore of inactive identity should be recovery-only, not the normal chat path
+- Start over promotes the new identity to active only after explicit confirmation
+- enforcement must exist on the server, not only in client UI
+- Firebase WebSocket register / identity bind must reject inactive identities once an active identity exists for the account
+- Firebase-owned backup save must reject inactive identities from updating the active/latest backup path
+
+Target inactive identity WebSocket response:
+
+```json
+{
+  "type": "auth_error",
+  "error": "inactive_identity",
+  "message": "This device has an older encrypted identity. Restore the latest active backup before chatting.",
+  "activeIdentityId": "id_new",
+  "activeRevision": 3
+}
+```
+
+Target active identity read API:
+
+```text
+GET /api/account/active-identity
+Authorization: Bearer <Firebase ID token>
+```
+
+Example response:
+
+```json
+{
+  "configured": true,
+  "accountId": "firebase:<uid>",
+  "activeIdentityId": "id_xxx",
+  "activeRevision": 3,
+  "displayName": "AliceDemo",
+  "deviceLabel": "Dell G15 Chrome",
+  "serverUpdatedAt": "2026-06-28T00:00:00.000Z"
+}
+```
+
+Server-side responsibilities:
+
+- derive `accountId` from verified Firebase token when Firebase auth is present
+- never trust client-supplied Firebase uid/account id as ownership proof without token verification
+- store active identity metadata by canonical `accountId`
+- update active identity metadata only when a Firebase-owned identity is explicitly promoted through an allowed source
+- expose a safe metadata endpoint for the signed-in account's active identity
+- reject WebSocket register/identity bind for inactive Firebase identities after an active identity exists
+- reject active-path backup save for inactive Firebase identities
+- keep old backup records unless a later cleanup policy is explicitly designed
+
+Client-side responsibilities:
+
+- keep using the browser-local default vault pointer for convenience
+- treat pointer mismatch with server active identity as a stale/inactive identity condition
+- do not silently overwrite local vault data
+- do not auto-restore cloud backup
+- preserve legacy signed-out flow during migration
+- show clear wording that inactive identity restore is advanced/recovery, not normal continuation
+- never treat a successful plain unlock as permission to override server active identity
+
+Advanced restore policy:
+
+- latest active identity restore remains the default path
+- older identity restore remains available only behind advanced/recovery UI
+- restoring an inactive identity should not automatically promote it to active
+- promoting an older identity back to active should be a separate explicit action with strong warning
+- recovery-only means:
+  - no WebSocket chat registration as the active account
+  - no sending messages
+  - no active/latest backup save
+  - no silent active identity promotion
+  - optional local inspection/export/recovery only when a later UI explicitly supports it
+- this phase should not implement "promote older identity" unless the flow is deliberately added with strong warning
+
+Non-goals for this checkpoint:
+
+- no runtime behavior change
+- no server schema change yet
+- no endpoint addition yet
+- no active identity revision storage yet
+- no automatic restore
+- no deletion of old backups
+- no promote-older-identity flow
+- no full multi-device Double Ratchet sync
+- no contact/peer disambiguation yet
+
+Hard stop rules for the phase:
+
+- stop if a client can claim another Firebase account's active identity without a verified token
+- stop if an inactive local identity can silently chat in Firebase mode after the server knows a different active identity
+- stop if Start over creates a new active identity locally but does not update server active identity before the user relies on it
+- stop if unlock of a stale local vault can promote an old identity over an existing server active identity
+- stop if Firebase backup save can update the active/latest path from an inactive identity
+- stop if default restore picks an older inactive identity as the normal path
+- stop if advanced inactive identity restore lacks a strong warning
+- stop if legacy signed-out flow breaks before migration is explicitly complete
+
+Checkpoint 0 test expectation:
+
+- behavior remains unchanged
+- public-domain setup still works through `npm start` and `cloudflared tunnel run realtime-secure-chat`
+- Google default vault UX from the previous phase still works
+- Start over, Backup to Cloud, Restore from Cloud, freshness guard, reconnect reload, and legacy flow still work as before
+- docs now clearly distinguish browser-local pointer from server-enforced active identity
 
 ### Roadmap Phase 6: Contact Identity Binding / Peer Disambiguation
 
