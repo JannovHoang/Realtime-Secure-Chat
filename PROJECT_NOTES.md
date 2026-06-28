@@ -9870,6 +9870,45 @@ Follow-up fix after Checkpoint 5 testing:
 - the active conversation loader depends on that nonce, so the current peer's local history and recent catch-up are loaded again even when the peer name did not change
 - this is a UI/session reload fix only; it does not change backup or restore semantics
 
+### Firebase Identity Binding / Default Vault UX - Checkpoint 6: Firebase Pointer Freshness Guard
+
+Goal:
+
+- when a signed-in Google account has a valid default vault pointer, check cloud backup freshness against that Firebase-owned identity before unlocking into chat
+- prevent the Google default-vault flow from silently using a stale local vault when another device has saved a newer cloud backup
+
+Implemented:
+
+- pre-start freshness checks now build a Firebase account profile from the default vault pointer when available
+  - `accountId` is `firebase:<uid>`
+  - `activeIdentityId` comes from the pointer
+  - restore/list calls still use the existing vault label route, but cloud backup matching no longer compares Firebase backups against a local display-name account id
+- cloud/local freshness comparison now considers:
+  - local backup metadata `localLastBackupServerSavedAt`
+  - local backup metadata `serverSavedAt`
+  - pointer metadata `lastKnownBackupServerSavedAt`
+- when the cloud backup for the pointer's active identity has a newer `serverSavedAt`, the existing `Cloud Backup May Be Newer` modal appears before unlock/chat
+- the user can still cancel, restore from cloud, or intentionally unlock anyway
+
+Non-goals for this checkpoint:
+
+- no automatic restore
+- no account-only restore endpoint
+- no server schema change
+- no full multi-device synchronization
+- no change to WebSocket reconnect behavior beyond the previous follow-up fix
+
+Checkpoint 6 test expectation:
+
+- device A and device B signed in to the same Google account with the same default vault pointer can both unlock normally when cloud metadata is not newer
+- after device B chats and runs Backup to Cloud, device A should show `Cloud Backup May Be Newer` before unlocking if its local pointer/backup metadata is older
+- choosing Restore from Cloud from that modal should restore the latest backup path
+- choosing Unlock/Start anyway should still be possible but remains an explicit risk choice
+- if the cloud freshness check is unavailable or rate limited, the existing backup safety modal appears instead of silently opening chat
+- signed-out legacy Start still works
+- signed-in no-pointer fallback still works
+- realtime chat, reconnect active conversation reload, Backup to Cloud, and Restore from Cloud still work
+
 ### Roadmap Phase 5: Device Switching And Backup Discipline
 
 Goal:

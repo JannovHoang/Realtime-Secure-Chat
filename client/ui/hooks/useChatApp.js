@@ -281,10 +281,11 @@ function getTimeMs(value) {
 }
 
 function findMatchingCloudBackup(items, identityMeta, account) {
-  if (!Array.isArray(items) || !identityMeta?.identityId) return null;
+  const identityId = String(identityMeta?.identityId || "").trim();
+  if (!Array.isArray(items) || !identityId) return null;
   return (
     items.find((item) => {
-      if (item?.identityId !== identityMeta.identityId) return false;
+      if (item?.identityId !== identityId) return false;
       if (item?.accountId && account?.accountId && item.accountId !== account.accountId) {
         return false;
       }
@@ -304,14 +305,20 @@ function getAccountCloudBackups(items, account) {
   });
 }
 
-function getBackupFreshnessSignal(cloudBackup, localBackupMeta) {
+function getKnownLocalBackupMs(localBackupMeta, pointer = null) {
+  return Math.max(
+    getTimeMs(localBackupMeta?.localLastBackupServerSavedAt),
+    getTimeMs(localBackupMeta?.serverSavedAt),
+    getTimeMs(pointer?.lastKnownBackupServerSavedAt)
+  );
+}
+
+function getBackupFreshnessSignal(cloudBackup, localBackupMeta, pointer = null) {
   if (!cloudBackup?.serverSavedAt) return null;
   const cloudServerMs = getTimeMs(cloudBackup.serverSavedAt);
   if (!cloudServerMs) return null;
 
-  const localKnownMs = getTimeMs(
-    localBackupMeta?.localLastBackupServerSavedAt || localBackupMeta?.serverSavedAt
-  );
+  const localKnownMs = getKnownLocalBackupMs(localBackupMeta, pointer);
   if (!localKnownMs) {
     return {
       status: "Cloud backup available",
@@ -334,9 +341,27 @@ function getBackupFreshnessSignal(cloudBackup, localBackupMeta) {
   };
 }
 
-function getPreStartCloudBackupSignal(cloudItems, identityMeta, localBackupMeta, account) {
-  const matchingCloudBackup = findMatchingCloudBackup(cloudItems, identityMeta, account);
-  const freshnessSignal = getBackupFreshnessSignal(matchingCloudBackup, localBackupMeta);
+function getPreStartCloudBackupSignal(
+  cloudItems,
+  identityMeta,
+  localBackupMeta,
+  account,
+  pointer = null
+) {
+  const expectedIdentityMeta = {
+    ...identityMeta,
+    identityId: pointer?.activeIdentityId || identityMeta?.identityId || "",
+  };
+  const matchingCloudBackup = findMatchingCloudBackup(
+    cloudItems,
+    expectedIdentityMeta,
+    account
+  );
+  const freshnessSignal = getBackupFreshnessSignal(
+    matchingCloudBackup,
+    localBackupMeta,
+    pointer
+  );
   if (freshnessSignal) return freshnessSignal;
 
   const accountBackups = getAccountCloudBackups(cloudItems, account);
@@ -371,6 +396,17 @@ function getFirebaseDisplayNameSuggestion(user) {
   if (profileName) return profileName;
   const emailLocalPart = String(normalizedUser.email || "").split("@")[0];
   return normalizePeer(emailLocalPart);
+}
+
+function buildFirebasePointerAccountProfile(pointer) {
+  if (!pointer?.firebaseUid || !pointer?.accountId) return null;
+  return {
+    accountId: pointer.accountId,
+    displayName: pointer.displayName || pointer.legacyVaultLabel || "",
+    accountIdScheme: "firebase",
+    authMode: "firebase",
+    firebaseUid: pointer.firebaseUid,
+  };
 }
 
 function findConversationByPeer(conversations, peer) {
@@ -1139,15 +1175,22 @@ export function useChatApp() {
     }
   }
 
-  async function checkBackupFreshness(username, account) {
+  async function checkBackupFreshness(username, account, pointer = null) {
     try {
       const [identityMeta, localBackupMeta, cloudItems] = await Promise.all([
         loadIdentityMetadata(),
         loadBackupMetadata().catch(() => null),
         fetchCloudBackupIdentities(username),
       ]);
-      const cloudBackup = findMatchingCloudBackup(cloudItems, identityMeta, account);
-      const signal = getBackupFreshnessSignal(cloudBackup, localBackupMeta);
+      const cloudBackup = findMatchingCloudBackup(
+        cloudItems,
+        {
+          ...identityMeta,
+          identityId: pointer?.activeIdentityId || identityMeta?.identityId || "",
+        },
+        account
+      );
+      const signal = getBackupFreshnessSignal(cloudBackup, localBackupMeta, pointer);
       if (!signal) return;
 
       dispatch({
@@ -1256,7 +1299,12 @@ export function useChatApp() {
     }
   }
 
-  async function getPreStartBackupWarning(username, password, account) {
+  async function getPreStartBackupWarning(
+    username,
+    password,
+    account,
+    pointer = null
+  ) {
     try {
       await initVault(password, username);
       const [identityMeta, localBackupMeta, cloudItems] = await Promise.all([
@@ -1268,7 +1316,8 @@ export function useChatApp() {
         cloudItems,
         identityMeta,
         localBackupMeta,
-        account
+        account,
+        pointer
       );
       if (!signal) return null;
       return {
@@ -1302,6 +1351,14 @@ export function useChatApp() {
     }
 
     const account = await buildLocalAccountProfile(username);
+    const firebasePointer =
+      state.authUser?.uid &&
+      state.defaultVaultPointer?.firebaseUid === state.authUser.uid &&
+      normalizePeer(state.defaultVaultPointer?.legacyVaultLabel) === username
+        ? state.defaultVaultPointer
+        : null;
+    const freshnessAccount =
+      buildFirebasePointerAccountProfile(firebasePointer) || account;
     const restoredThisUsername =
       state.restoredThisSession && normalizePeer(state.restoredUsername) === username;
     const recoveredPasswordThisUsername =
@@ -1372,7 +1429,12 @@ export function useChatApp() {
       hasUsableLocalIdentity &&
       !restoredThisUsername
     ) {
-      const warning = await getPreStartBackupWarning(username, password, account);
+      const warning = await getPreStartBackupWarning(
+        username,
+        password,
+        freshnessAccount,
+        firebasePointer
+      );
       if (warning) {
         dispatch({ type: "set_pending_start_warning", value: { username } });
         dispatch({
@@ -1400,7 +1462,7 @@ export function useChatApp() {
       void refreshIdentityPanel(account);
       pushToast("Ready.", "success");
       if (!restoredThisUsername && !options.skipBackupWarning) {
-        void checkBackupFreshness(username, account);
+        void checkBackupFreshness(username, freshnessAccount, firebasePointer);
       }
     } catch (err) {
       dispatch({
