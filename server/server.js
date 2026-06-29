@@ -242,6 +242,34 @@ function isActiveAccountSocket(ws) {
   return active?.ws === ws && active.activeIdentityId === session.identityId;
 }
 
+async function getInactiveIdentityError(accountId, identityId) {
+  const normalizedAccountId = normalizeAccountId(accountId);
+  const normalizedIdentityId = normalizeIdentityId(identityId);
+  if (!normalizedAccountId || !normalizedIdentityId) return null;
+
+  const activeIdentity = await getAccountActiveIdentity(normalizedAccountId);
+  if (!activeIdentity?.configured && !activeIdentity?.activeIdentityId) return null;
+  if (!activeIdentity.activeIdentityId) return null;
+  if (activeIdentity.activeIdentityId === normalizedIdentityId) return null;
+
+  return {
+    type: "auth_error",
+    error: "inactive_identity",
+    message:
+      "This device has an older encrypted identity. Restore the latest active backup before chatting.",
+    activeIdentityId: activeIdentity.activeIdentityId,
+    activeRevision: activeIdentity.activeRevision || 0,
+    serverUpdatedAt: activeIdentity.serverUpdatedAt || null,
+  };
+}
+
+function sendInactiveIdentityError(ws, payload) {
+  sendJson(ws, payload);
+  try {
+    ws.close(4003, "Inactive identity");
+  } catch {}
+}
+
 async function sendCertCacheAndPending(user, ws, identityId = null) {
   const all = await getCertCacheWithFallback();
   sendJson(ws, { type: "cert_cache", items: all });
@@ -1317,6 +1345,13 @@ wss.on("connection", (ws) => {
       const deviceLabel = normalizeDeviceLabel(data.deviceLabel);
       const connectedAt = new Date().toISOString();
 
+      if (verifiedFirebase && identityId) {
+        const inactiveError = await getInactiveIdentityError(accountId, identityId);
+        if (inactiveError) {
+          return sendInactiveIdentityError(ws, inactiveError);
+        }
+      }
+
       wsToSession.set(ws, {
         user,
         accountId: accountId || null,
@@ -1361,6 +1396,13 @@ wss.on("connection", (ws) => {
       const connectedAt = session?.connectedAt || new Date().toISOString();
       if (!session?.user || !identityId) {
         return sendJson(ws, { type: "error", error: "Invalid identity binding" });
+      }
+
+      if (session.firebaseUid) {
+        const inactiveError = await getInactiveIdentityError(accountId, identityId);
+        if (inactiveError) {
+          return sendInactiveIdentityError(ws, inactiveError);
+        }
       }
 
       if (session.identityId && session.identityId !== identityId) {

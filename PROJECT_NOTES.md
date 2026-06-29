@@ -10529,6 +10529,66 @@ Checkpoint 4 test expectation:
 - missing/unconfigured server active identity does not break first migration unlock
 - legacy signed-out flow remains unchanged
 
+### Device Switching And Active Identity Enforcement - Checkpoint 5: WebSocket Register Blocks Inactive Identity
+
+Goal:
+
+- enforce active identity on the server WebSocket path, not only in client UI
+- prevent a stale Firebase device from becoming the active chat session when it binds an identity that differs from the server active identity
+
+Server behavior:
+
+- Firebase WebSocket `register` still verifies the Firebase ID token and derives:
+  - `accountId = firebase:<uid>`
+- if `register` includes an `identityId`, the server checks it against `account_active_identities`
+- Firebase WebSocket `identity_bind` always checks the bound `identityId` against `account_active_identities`
+- if no server active identity exists yet:
+  - bind is allowed so first migration/create/restore flows can establish active identity
+- if the bound identity matches server `activeIdentityId`:
+  - bind continues normally
+  - `activateAccountSession()` can run
+  - cert submit, send, history, and backup paths remain available as before
+- if the bound identity differs from server `activeIdentityId`:
+  - server sends `auth_error`
+  - server closes the WebSocket
+  - server does not call `activateAccountSession()`
+  - stale device cannot send, receive pending flush as active, submit cert, fetch recent history, or save backup through that socket
+
+Inactive identity WebSocket response:
+
+```json
+{
+  "type": "auth_error",
+  "error": "inactive_identity",
+  "message": "This device has an older encrypted identity. Restore the latest active backup before chatting.",
+  "activeIdentityId": "id_new",
+  "activeRevision": 2,
+  "serverUpdatedAt": "2026-06-29T00:00:00.000Z"
+}
+```
+
+Client behavior:
+
+- existing `auth_error` handling now prefers server `message` over the short error code
+- normal client-side warning from Checkpoint 4 should usually catch stale identity first
+- if the client guard is bypassed or stale, the server still blocks `identity_bind`
+
+Non-goals for this checkpoint:
+
+- no backup HTTP/list/restore active-identity alignment yet
+- no backup save active-identity path blocking beyond the WebSocket active socket requirement
+- no automatic restore
+- no promote-older-identity flow
+- no contact/peer disambiguation
+
+Checkpoint 5 test expectation:
+
+- normal signed-in unlock still succeeds when local identity matches server active identity
+- after Start over on device A, device B with the old local identity cannot open a Firebase chat session as active
+- if the client warning is bypassed, the WebSocket still rejects stale `identity_bind`
+- legacy signed-out flow remains unchanged
+- no active session is created for an inactive Firebase identity
+
 ### Roadmap Phase 6: Contact Identity Binding / Peer Disambiguation
 
 Goal:

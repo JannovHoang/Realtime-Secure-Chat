@@ -1367,7 +1367,9 @@ export async function initChat(username, password, accountProfile = null) {
     }
 
     if (data.type === "auth_error") {
-      const err = new Error(String(data.error || "Authentication failed"));
+      const err = new Error(
+        String(data.message || data.error || "Authentication failed")
+      );
       rejectConfig(err);
       rejectRegistered(err);
       try {
