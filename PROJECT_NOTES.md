@@ -10664,6 +10664,60 @@ Follow-up fix during Checkpoint 6 testing:
 - this preserves server enforcement while preventing the newly created local vault from being rejected as an inactive identity before it can publish its certificate
 - the Firebase fallback UI now exits create/restore/legacy sub-mode after a session starts, so the user should not need to press Back before continuing
 
+### Device Switching And Active Identity Enforcement - Checkpoint 7: Inactive Identity UX Polish
+
+Goal:
+
+- make stale/inactive local identity warnings easier to understand during device switching and Start over tests
+- keep server-side active identity enforcement unchanged
+- avoid implying that an inactive local identity can silently become active again
+
+UI behavior:
+
+- the inactive identity modal now distinguishes:
+  - this browser's local vault identity
+  - the signed-in Google account's current server active identity
+- the warning explains that the local vault still exists but is no longer the active account identity
+- the modal shows server active identity context when available:
+  - device label
+  - server update time
+  - active revision
+- the modal offers explicit choices:
+  - `Restore from Cloud` to continue from the latest active account backup
+  - `Start over here` to open the existing Start Over confirmation and create a new active identity from this browser
+  - `Cancel`
+
+Security/UX intent:
+
+- Restore remains the default safe continuation path for an inactive local identity
+- Start over remains explicit and requires the existing display-name confirmation
+- the app does not promote the inactive local identity as active
+- the app does not add an advanced promote-old-identity flow in this checkpoint
+
+Non-goals for this checkpoint:
+
+- no server schema changes
+- no contact/peer disambiguation
+- no old identity promotion flow
+- no automatic restore
+- no backup deletion or archival migration
+
+Checkpoint 7 test expectation:
+
+- stale/inactive Firebase local identity opens the clearer inactive identity modal
+- `Restore from Cloud` still starts the normal latest active backup restore path
+- `Start over here` opens the existing Start Over confirmation
+- after confirmed Start over, the new identity is promoted through the Checkpoint 6 path
+- normal active identity unlock/chat/backup still works
+- legacy signed-out flow remains unchanged
+
+Follow-up fix during Checkpoint 7 testing:
+
+- `identity_bound` is now sent before the server flushes cert cache / pending messages for the newly active session
+- active device metadata persistence now runs asynchronously after the in-memory session is activated
+- this prevents the client from timing out during unlock with `Server identity binding timed out` when MongoDB/cache/pending flush is slow through the public-domain setup
+- the mobile `Chat with` field now submits through a real form with `enterKeyHint="go"` so soft-keyboard action keys can switch peers instead of requiring a tap on the conversation list
+
 ### Roadmap Phase 6: Contact Identity Binding / Peer Disambiguation
 
 Goal:

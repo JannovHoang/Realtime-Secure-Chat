@@ -689,7 +689,13 @@ export default function App() {
 
       <div className="content">
         <aside className="sidebar">
-          <div className="peer-target-card">
+          <form
+            className="peer-target-card"
+            onSubmit={(e) => {
+              e.preventDefault();
+              actions.commitPeerDraft();
+            }}
+          >
             <div className="field">
               <label>Chat with</label>
               <input
@@ -701,6 +707,7 @@ export default function App() {
                 value={peerInputValue}
                 onChange={(e) => actions.setPeerDraft(e.target.value)}
                 disabled={!state.started}
+                enterKeyHint="go"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -714,7 +721,7 @@ export default function App() {
                 ? "Open an existing chat or type a peer display name to start one."
                 : "Start or restore a session before choosing a peer."}
             </div>
-          </div>
+          </form>
 
           <AccountIdentityPanel info={state.identityPanel} helpers={helpers} />
 
@@ -1264,6 +1271,13 @@ export default function App() {
                 Cancel
               </button>
               <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleInactiveIdentityWarning("start_over")}
+              >
+                Start over here
+              </button>
+              <button
                 className="primary"
                 type="button"
                 onClick={() => actions.handleInactiveIdentityWarning("restore")}
@@ -1284,9 +1298,24 @@ export default function App() {
             </div>
           </div>
           <ModalNote tone="warning">
-            This usually means this account was started over or restored on
-            another device. Restore the latest cloud backup before chatting from
-            this browser.
+            This local vault is still stored on this browser, but it is not the
+            active identity for the signed-in Google account. Restore the latest
+            active backup to continue the account state, or start over here to
+            replace the account's active identity with a new local vault.
+          </ModalNote>
+          <ModalNote>
+            {state.modal.deviceLabel || state.modal.serverUpdatedAt
+              ? `Current active identity was recorded${
+                  state.modal.deviceLabel ? ` from ${state.modal.deviceLabel}` : ""
+                }${
+                  state.modal.serverUpdatedAt
+                    ? ` at ${helpers.formatDateTimeShort(state.modal.serverUpdatedAt)}`
+                    : ""
+                }.`
+              : "The active identity is tracked by the server for this Google account."}
+            {state.modal.activeRevision
+              ? ` Revision ${state.modal.activeRevision}.`
+              : ""}
           </ModalNote>
         </ModalFrame>
       ) : null}

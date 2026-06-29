@@ -337,21 +337,17 @@ async function activateAccountSession(
   });
   usernameSessions.set(user, accountKey);
 
-  try {
-    await saveAccountActiveDevice(user, identityId, {
-      accountId: normalizedAccountId || null,
-      displayName: normalizedDisplayName,
-      authMode,
-      firebaseUid,
-      accountIdSource,
-      deviceLabel,
-      connectedAt,
-    });
-  } catch (e) {
+  void saveAccountActiveDevice(user, identityId, {
+    accountId: normalizedAccountId || null,
+    displayName: normalizedDisplayName,
+    authMode,
+    firebaseUid,
+    accountIdSource,
+    deviceLabel,
+    connectedAt,
+  }).catch((e) => {
     console.warn("[account_active_devices] mongo save failed:", e);
-  }
-
-  await sendCertCacheAndPending(user, ws, identityId);
+  });
 }
 
 async function resolvePendingRecipientIdentityId(username, activeTargetSession = null) {
@@ -1408,6 +1404,9 @@ wss.on("connection", (ws) => {
 
       if (identityId) {
         await activateAccountSession(ws, user, identityId, accountId, displayName);
+        void sendCertCacheAndPending(user, ws, identityId).catch((e) => {
+          console.warn("[session] post-register cert cache flush failed:", e);
+        });
       }
       return;
     }
@@ -1468,7 +1467,7 @@ wss.on("connection", (ws) => {
         accountId,
         displayName
       );
-      return sendJson(ws, {
+      sendJson(ws, {
         type: "identity_bound",
         user: session.user,
         accountId: accountId || null,
@@ -1484,6 +1483,10 @@ wss.on("connection", (ws) => {
         deviceLabel,
         connectedAt,
       });
+      void sendCertCacheAndPending(session.user, ws, identityId).catch((e) => {
+        console.warn("[session] post-bind cert cache flush failed:", e);
+      });
+      return;
     }
 
     // 2) Client submits certificate

@@ -2732,6 +2732,10 @@ export function useChatApp() {
       void handleRestoreRequest();
       return;
     }
+    if (choice === "start_over") {
+      void openResetEncryptedIdentityModal();
+      return;
+    }
     if (choice === "retry") {
       void performStart();
     }
