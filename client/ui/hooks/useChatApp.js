@@ -15,6 +15,7 @@ import {
   changeLocalVaultPassword,
   destroyChat,
   establishAccountActiveIdentity,
+  fetchAccountActiveIdentity,
   fetchCloudBackup,
   fetchCloudBackupIdentities,
   fetchRecentMessages,
@@ -110,6 +111,7 @@ const initialState = {
   pendingRestoreOlder: null,
   pendingLegacyRestore: null,
   pendingStartWarning: null,
+  pendingInactiveIdentityStart: null,
   authAvailability: getFirebaseAuthAvailability(),
   authReady: false,
   authBusy: false,
@@ -896,6 +898,8 @@ function reducer(state, action) {
       return { ...state, pendingLegacyRestore: action.value };
     case "set_pending_start_warning":
       return { ...state, pendingStartWarning: action.value };
+    case "set_pending_inactive_identity_start":
+      return { ...state, pendingInactiveIdentityStart: action.value };
     case "auth_state": {
       const authUser = normalizeFirebaseUser(action.user);
       const suggestedDisplayName = getFirebaseDisplayNameSuggestion(action.user);
@@ -1328,6 +1332,23 @@ export function useChatApp() {
     });
   }
 
+  async function getInactiveIdentityStartWarning(username, localIdentityMeta) {
+    if (!state.authUser?.uid || !localIdentityMeta?.identityId) return null;
+
+    const serverActive = await fetchAccountActiveIdentity();
+    if (!serverActive?.configured || !serverActive.activeIdentityId) return null;
+    if (serverActive.activeIdentityId === localIdentityMeta.identityId) return null;
+
+    return {
+      username,
+      localIdentityId: localIdentityMeta.identityId,
+      activeIdentityId: serverActive.activeIdentityId,
+      activeRevision: serverActive.activeRevision || 0,
+      deviceLabel: serverActive.deviceLabel || "",
+      serverUpdatedAt: serverActive.serverUpdatedAt || null,
+    };
+  }
+
   async function getPreStartBackupWarning(
     username,
     password,
@@ -1414,6 +1435,51 @@ export function useChatApp() {
     }
 
     const hasUsableLocalIdentity = hasLocalVault && !!localIdentityMeta?.identityId;
+    if (
+      !options.skipActiveIdentityGuard &&
+      !options.activeIdentitySource &&
+      hasUsableLocalIdentity &&
+      state.authUser?.uid
+    ) {
+      try {
+        const inactiveWarning = await getInactiveIdentityStartWarning(
+          username,
+          localIdentityMeta
+        );
+        if (inactiveWarning) {
+          dispatch({
+            type: "set_pending_inactive_identity_start",
+            value: inactiveWarning,
+          });
+          dispatch({
+            type: "open_modal",
+            modal: {
+              type: "inactive_identity_warning",
+              ...inactiveWarning,
+            },
+          });
+          return;
+        }
+      } catch (err) {
+        console.warn("[active-identity] pre-start check skipped:", err);
+        dispatch({
+          type: "set_pending_inactive_identity_start",
+          value: {
+            username,
+            checkFailed: true,
+            error: String(err?.message || err || "Active identity check failed"),
+          },
+        });
+        dispatch({
+          type: "open_modal",
+          modal: {
+            type: "inactive_identity_check_failed",
+            username,
+          },
+        });
+        return;
+      }
+    }
     const shouldMigrationUnlock =
       !!state.authUser?.uid &&
       hasUsableLocalIdentity &&
@@ -2616,6 +2682,18 @@ export function useChatApp() {
     }
   }
 
+  function handleInactiveIdentityWarning(choice) {
+    dispatch({ type: "close_modal" });
+    dispatch({ type: "set_pending_inactive_identity_start", value: null });
+    if (choice === "restore") {
+      void handleRestoreRequest();
+      return;
+    }
+    if (choice === "retry") {
+      void performStart();
+    }
+  }
+
   return {
     state,
     helpers: {
@@ -2664,6 +2742,7 @@ export function useChatApp() {
       handleRestoreOlderConfirm,
       handleStartGuard,
       handleBackupFreshnessWarning,
+      handleInactiveIdentityWarning,
       handleRestoreOverwriteConfirm,
     },
   };

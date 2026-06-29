@@ -10479,6 +10479,56 @@ Checkpoint 3 test expectation:
 - advanced older restore does not promote active identity
 - current chat behavior is otherwise unchanged until enforcement checkpoints
 
+### Device Switching And Active Identity Enforcement - Checkpoint 4: Client Stale Identity Warning Before Unlock
+
+Goal:
+
+- prevent a signed-in Firebase browser from silently opening chat with a local identity that no longer matches the server active identity
+- keep enforcement staged: this checkpoint adds client-side pre-unlock guard, while WebSocket/server blocking remains for the next checkpoint
+
+Client behavior:
+
+- before `initChat()` opens the WebSocket session, the client:
+  - verifies the local vault password
+  - reads local identity metadata
+  - calls `GET /api/account/active-identity`
+  - compares local `identityId` with server `activeIdentityId`
+- if server has no active identity yet:
+  - unlock may continue
+  - Checkpoint 3 migration logic can seed server active identity with `source: "migration_unlock"`
+- if server active identity matches local identity:
+  - unlock may continue normally
+- if server active identity differs from local identity:
+  - normal unlock is stopped before chat opens
+  - UI shows `This Local Identity Is No Longer Active`
+  - user can Cancel or Restore from Cloud
+  - no `Unlock anyway` button is shown in this checkpoint
+- if the active identity check cannot be completed:
+  - UI shows `Could Not Check Active Identity`
+  - user can Cancel, Try again, or Restore from Cloud
+
+Why no Unlock Anyway in this checkpoint:
+
+- the project is specifically trying to prevent stale devices from silently chatting with old Double Ratchet state
+- server-side WebSocket blocking is not wired until the next checkpoint
+- allowing an explicit bypass here would weaken the checkpoint before backend enforcement is complete
+
+Non-goals for this checkpoint:
+
+- no WebSocket inactive identity blocking yet
+- no backup save blocking yet
+- no automatic restore
+- no older identity promotion
+- no contact/peer identity disambiguation
+
+Checkpoint 4 test expectation:
+
+- normal signed-in unlock succeeds when local identity matches server active identity
+- if server active identity is different, unlock stops before chat opens and the warning modal appears
+- Restore from Cloud from the warning starts the normal restore flow
+- missing/unconfigured server active identity does not break first migration unlock
+- legacy signed-out flow remains unchanged
+
 ### Roadmap Phase 6: Contact Identity Binding / Peer Disambiguation
 
 Goal:

@@ -1754,6 +1754,35 @@ export async function fetchCloudBackupIdentities(username, options = {}) {
   return data.items;
 }
 
+export async function fetchAccountActiveIdentity() {
+  const headers = await buildOptionalFirebaseAuthHeaders();
+  const res = await fetch(buildApiUrl("/api/account/active-identity").toString(), {
+    headers,
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("Active identity check failed");
+  }
+
+  if (data?.ok === false && data?.configured === false && data?.enabled === false) {
+    return {
+      ok: true,
+      configured: false,
+      unavailable: true,
+      error: data.error || "Active identity check unavailable",
+    };
+  }
+
+  if (!res.ok || data?.ok !== true) {
+    throw new Error(data?.error || "Active identity check failed");
+  }
+
+  return data;
+}
+
 export async function establishAccountActiveIdentity({
   activeIdentityId,
   displayName = "",

@@ -1235,6 +1235,86 @@ export default function App() {
         </ModalFrame>
       ) : null}
 
+      {state.modal?.type === "inactive_identity_warning" ? (
+        <ModalFrame
+          title="This Local Identity Is No Longer Active"
+          subtitle={`The signed-in Google account has a different active encrypted identity than this browser's local vault for ${state.modal.username}.`}
+          eyebrow="Identity safety"
+          actions={
+            <>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleInactiveIdentityWarning("cancel")}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => actions.handleInactiveIdentityWarning("restore")}
+              >
+                Restore from Cloud
+              </button>
+            </>
+          }
+        >
+          <div className="identity-compare">
+            <div>
+              <span>Local identity</span>
+              <strong>{helpers.formatIdentityShort(state.modal.localIdentityId)}</strong>
+            </div>
+            <div>
+              <span>Account active identity</span>
+              <strong>{helpers.formatIdentityShort(state.modal.activeIdentityId)}</strong>
+            </div>
+          </div>
+          <ModalNote tone="warning">
+            This usually means this account was started over or restored on
+            another device. Restore the latest cloud backup before chatting from
+            this browser.
+          </ModalNote>
+        </ModalFrame>
+      ) : null}
+
+      {state.modal?.type === "inactive_identity_check_failed" ? (
+        <ModalFrame
+          title="Could Not Check Active Identity"
+          subtitle="The app could not verify whether this browser's local identity is still active for the signed-in Google account."
+          eyebrow="Identity safety"
+          actions={
+            <>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleInactiveIdentityWarning("cancel")}
+              >
+                Cancel
+              </button>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => actions.handleInactiveIdentityWarning("retry")}
+              >
+                Try again
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => actions.handleInactiveIdentityWarning("restore")}
+              >
+                Restore from Cloud
+              </button>
+            </>
+          }
+        >
+          <ModalNote tone="warning">
+            If you recently used this account on another browser or phone,
+            restore from cloud before chatting here.
+          </ModalNote>
+        </ModalFrame>
+      ) : null}
+
       {state.modal?.type === "backup_freshness_warning" ? (
         <ModalFrame
           title={state.modal.modalTitle || "Cloud Backup Available"}
