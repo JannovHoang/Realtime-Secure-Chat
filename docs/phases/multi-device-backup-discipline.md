@@ -86,6 +86,31 @@ Checkpoint 1 test focus:
 - Older-backup advanced flow still requires confirmation and no longer reads as
   a normal continuation path.
 
+## Checkpoint 2: Backup-Needed Guidance After Local Chat Changes
+
+Status: completed.
+
+Runtime behavior change: UI guidance only. No automatic backup, backup format,
+crypto, server storage, or restore path changes.
+
+Implemented:
+
+- Added a session-level backup-needed signal after a user sends a message.
+- Added the same signal after a realtime incoming message is received.
+- Displayed the signal in the encrypted identity panel:
+  "Local encrypted chat state changed after the last backup. Use Backup to Cloud
+  before switching devices."
+- Cleared the signal after successful Backup to Cloud.
+- Cleared the signal after restore/start/logout so it does not carry across
+  unrelated local sessions.
+
+Checkpoint 2 test focus:
+
+- Sending a message shows backup-needed guidance.
+- Receiving a realtime message shows backup-needed guidance.
+- Backup to Cloud clears the guidance.
+- Chat, active identity enforcement, and restore behavior remain unchanged.
+
 ## Test Plan
 
 - Backup to Cloud from the active Firebase identity succeeds and records latest

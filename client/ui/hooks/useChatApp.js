@@ -69,6 +69,7 @@ const initialState = {
   restoredUsername: "",
   recoveredPasswordThisSession: false,
   recoveredPasswordUsername: "",
+  backupNeeded: false,
   continueWithoutRestoreFor: {},
   identityPanel: null,
   activePeer: "",
@@ -642,6 +643,7 @@ function reducer(state, action) {
       return {
         ...state,
         sending: false,
+        backupNeeded: true,
         messageDraft: "",
         messages: Array.isArray(action.items) ? action.items : state.messages,
       };
@@ -662,6 +664,7 @@ function reducer(state, action) {
         accountId: action.account?.accountId || state.accountId,
         displayName: action.account?.displayName || state.displayName,
         disconnected: false,
+        backupNeeded: false,
         password: "",
         peerDraft: "",
         conversationsLoaded: false,
@@ -699,6 +702,7 @@ function reducer(state, action) {
         restoredUsername: "",
         recoveredPasswordThisSession: false,
         recoveredPasswordUsername: "",
+        backupNeeded: false,
         accountId: "",
         displayName: "",
         identityPanel: null,
@@ -735,6 +739,8 @@ function reducer(state, action) {
       };
     case "backup_end":
       return { ...state, backingUp: false };
+    case "backup_fresh":
+      return { ...state, backupNeeded: false };
     case "change_vault_password_begin":
       return {
         ...state,
@@ -785,6 +791,7 @@ function reducer(state, action) {
           ...state,
           runtimeEventCount: state.runtimeEventCount + 1,
           lastRuntimeEventType: eventType,
+          backupNeeded: true,
           lastMessageFrom: String(payload?.from || "").trim(),
           lastMessagePreview: trimPreview(payload?.text || ""),
         };
@@ -795,6 +802,7 @@ function reducer(state, action) {
           started: false,
           starting: false,
           disconnected: false,
+          backupNeeded: false,
           password: "",
           activePeer: "",
           peerDraft: "",
@@ -956,6 +964,7 @@ function reducer(state, action) {
         accountId: action.account?.accountId || state.accountId,
         displayName: action.account?.displayName || state.displayName,
         identityPanel: action.identityPanel || state.identityPanel,
+        backupNeeded: false,
         password: "",
         statusText: "Restore ready",
         statusTone: "success",
@@ -1851,6 +1860,7 @@ export function useChatApp() {
           backupClientSavedAt: clientSavedAt,
         },
       });
+      dispatch({ type: "backup_fresh" });
       dispatch({ type: "set_status", message: "Ready", tone: "success" });
       pushToast("Cloud backup saved.", "success");
     } catch (err) {

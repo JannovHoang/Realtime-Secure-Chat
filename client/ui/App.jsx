@@ -94,7 +94,7 @@ function ToastViewport({ toasts }) {
   );
 }
 
-function AccountIdentityPanel({ info, helpers }) {
+function AccountIdentityPanel({ info, helpers, backupNeeded = false }) {
   if (!info?.displayName && !info?.identityId) return null;
 
   const accountShort = helpers.formatIdentityShort(info.accountId);
@@ -131,6 +131,12 @@ function AccountIdentityPanel({ info, helpers }) {
           <dd>{info.backupServerSavedAt ? backupOwnership.label : "Not backed up"}</dd>
         </div>
       </dl>
+      {backupNeeded ? (
+        <div className="account-backup-needed">
+          Local encrypted chat state changed after the last backup. Use Backup
+          to Cloud before switching devices.
+        </div>
+      ) : null}
       <details className="account-technical-details">
         <summary>Show technical details</summary>
         <dl className="account-technical-grid">
@@ -723,7 +729,11 @@ export default function App() {
             </div>
           </form>
 
-          <AccountIdentityPanel info={state.identityPanel} helpers={helpers} />
+          <AccountIdentityPanel
+            info={state.identityPanel}
+            helpers={helpers}
+            backupNeeded={state.backupNeeded}
+          />
 
           <div className="peer-list">
             <div className="peer-list-title-row">

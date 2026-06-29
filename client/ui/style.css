@@ -555,6 +555,18 @@ button.compact {
   white-space: nowrap;
 }
 
+.account-backup-needed {
+  margin-top: 12px;
+  padding: 10px 11px;
+  border: 1px solid rgba(146, 64, 14, 0.16);
+  border-radius: var(--radius-sm);
+  background: rgba(254, 243, 199, 0.72);
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .account-technical-details {
   margin-top: 12px;
   border-top: 1px solid rgba(43, 89, 217, 0.1);
