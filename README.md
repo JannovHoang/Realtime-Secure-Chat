@@ -20,6 +20,7 @@ The server **never decrypts** messages. It only relays ciphertext.
 - Local state persistence in an encrypted vault (browser localStorage, client-side only)
 - Optional Google/Firebase sign-in for account ownership
 - Browser-local default vault pointer for Google signed-in unlock UX
+- Server-enforced active encrypted identity for Firebase-owned accounts
 - Encrypted cloud backup/restore with latest-backup restore as the default path
 
 ---
@@ -82,6 +83,10 @@ recovery keys, plaintext keys, or plaintext messages.
 The app does not implement full automatic multi-device Double Ratchet sync.
 Before switching devices, save a fresh cloud backup from the newest working
 device, then restore the latest backup on the other device.
+
+For signed-in Firebase accounts, the server tracks one active encrypted identity.
+Older local identities are blocked from normal Firebase chat and backup paths;
+the user should restore the latest active backup or explicitly start over.
 
 ---
 

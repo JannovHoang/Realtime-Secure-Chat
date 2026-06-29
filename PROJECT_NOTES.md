@@ -10718,6 +10718,82 @@ Follow-up fix during Checkpoint 7 testing:
 - this prevents the client from timing out during unlock with `Server identity binding timed out` when MongoDB/cache/pending flush is slow through the public-domain setup
 - the mobile `Chat with` field now submits through a real form with `enterKeyHint="go"` so soft-keyboard action keys can switch peers instead of requiring a tap on the conversation list
 
+### Device Switching And Active Identity Enforcement - Checkpoint 8: Docs And Regression
+
+Goal:
+
+- close the phase with documentation that matches the implemented account/identity model
+- record the expected device-switching, Start over, backup, restore, recovery, and legacy regression behavior
+- keep runtime behavior unchanged in this checkpoint
+
+Final phase model:
+
+- Firebase account ownership is derived from a verified Firebase ID token
+- account id is `firebase:<uid>` in Firebase-owned flows
+- each Firebase account has one server-enforced active encrypted identity
+- browser-local default vault pointer is convenience metadata only
+- local vault identity must match the server active identity before normal Firebase chat
+- WebSocket `identity_bind`, `cert_submit`, `send`, and Firebase-owned `backup_save` are aligned with the active identity
+- normal Firebase Restore from Cloud targets the active identity's latest backup
+- inactive local identities are recovery/start-over situations, not normal chat continuation
+- Start over creates/promotes a new active identity after explicit confirmation
+- recovery key restore keeps the same identity from the wrapper/backup and does not create a new identity
+
+Updated docs:
+
+- `README.md` now states that Firebase-owned accounts use a server-enforced active encrypted identity
+- `DEMO_SCRIPT.md` now defines:
+  - server active identity
+  - inactive local identity
+  - the relationship between default vault pointer and server enforcement
+- demo checklist now includes:
+  - backup before switching devices
+  - backup after recovery key use
+  - backup after Start over
+  - restore latest active backup when inactive identity warning appears
+
+Regression checklist:
+
+- Google account A cannot use Google account B's default vault pointer
+- signed-in Firebase unlock succeeds when local identity matches server active identity
+- signed-in Firebase unlock warns/blocks when local identity differs from server active identity
+- WebSocket binding rejects inactive Firebase identities even if UI warning is bypassed
+- Start over promotes a new active identity, increments `activeRevision`, publishes a new cert, and can save a Firebase-owned backup
+- Create new encrypted identity under Google uses Firebase account metadata, not local-only metadata
+- Restore from Cloud in Firebase mode returns the active identity's latest backup by default
+- older/inactive backups are not default restore targets
+- inactive identity cannot save a Firebase-owned latest backup
+- recovery key flow restores the identity in the wrapper/backup and does not create a new identity
+- after recovery key use, the user should unlock with the new vault password and save a fresh cloud backup
+- normal active identity Backup to Cloud still works
+- realtime chat still works after active identity bind
+- offline pending/cert cache still flush after bind without causing `Server identity binding timed out`
+- mobile `Chat with` soft-keyboard submit can switch peers
+- legacy signed-out Start/Restore remains available for migration and demo compatibility
+- duplicate display names across different Firebase accounts are not fully disambiguated yet
+
+Non-goals still remaining:
+
+- no full automatic multi-device Double Ratchet synchronization
+- no contact identity binding / duplicate display-name disambiguation
+- no promote-old-inactive-identity advanced flow
+- no automatic restore
+- no Firebase Admin SDK migration in this phase
+
+Recommended next phases:
+
+1. Backup Discipline / Device Switching Reliability:
+   - make backup freshness and restore discipline clearer after cross-device use
+   - reduce chances of chatting from state that was not backed up
+   - refine latest-backup recovery guidance
+2. Contact Identity Binding / Peer Disambiguation:
+   - store peer identity/account metadata locally
+   - detect duplicate display names
+   - warn when a known peer changes encrypted identity
+3. Firebase Admin / Auth Hardening:
+   - wrap Firebase token verification behind an auth adapter
+   - optionally move to Firebase Admin SDK when credentials are ready
+
 ### Roadmap Phase 6: Contact Identity Binding / Peer Disambiguation
 
 Goal:

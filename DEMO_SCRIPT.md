@@ -469,6 +469,20 @@ Browser-local metadata that maps a Firebase uid to a local vault label and
 active identity id for this browser. It does not contain vault password, recovery
 key, plaintext keys, plaintext messages, or decrypted vault content.
 
+`Server active identity`
+
+Firebase-owned account metadata stored on the server. It records the active
+encrypted identity id for `firebase:<uid>`, plus revision, source, device label,
+and update time. The browser-local pointer is convenience metadata; the server
+active identity is the account-level enforcement record.
+
+`Inactive local identity`
+
+A local vault identity that still exists on this browser but no longer matches
+the signed-in Google account's server active identity. The normal choices are to
+restore the latest active cloud backup or explicitly start over. The app should
+not silently promote an inactive local identity back to active.
+
 `Sign out`
 
 The visible signed-in exit action. It signs out the Google/Firebase account and
@@ -494,18 +508,20 @@ still appear.
 - Restore still asks for the backup display/vault label because the HTTP restore
   API is still routed by `/api/backups/:username`.
 - The project still works best with one active browser/device per account at a
-  time.
+  time because full multi-device Double Ratchet sync is not implemented.
 - Switching devices should be done by backing up on the old device and restoring
   on the new device before continuing chat.
 - The app does not implement full multi-device Double Ratchet synchronization.
 - If a user continues chatting from an old local vault, secure chat state can
-  desynchronize. The warning modals reduce this risk but do not replace real
+  desynchronize. Firebase active identity enforcement blocks inactive identities
+  from normal Firebase chat and backup paths, but it does not replace real
   multi-device sync.
 - Firebase Auth does not solve stale Double Ratchet state by itself. The newest
   working device still needs to save a fresh cloud backup before another device
   restores.
-- A different device can still hold an older local identity after Start over
-  until the future Active Identity Enforcement phase warns or blocks it.
+- A different device can still hold an older local identity after Start over, but
+  signed-in Firebase mode should warn/block it instead of letting it chat as the
+  account's active identity.
 - Peer selection is still display-name based, so duplicate display names across
   different Google accounts are not fully disambiguated yet.
 
@@ -526,6 +542,12 @@ Before demo:
 - creating a recovery key does not replace this rule; it only prepares a future
   password-recovery path, while Backup to Cloud carries the latest encrypted
   chat state
+- after using a recovery key, unlock with the new vault password and save a fresh
+  Backup to Cloud
+- after Start over, save a fresh Backup to Cloud before switching devices
+- if an inactive identity modal appears, use Restore from Cloud for normal
+  continuation; use Start over only when intentionally replacing the active
+  identity
 - if a restore warning says the cloud backup may be older, cancel unless you are
   intentionally testing rollback
 
