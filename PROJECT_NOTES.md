@@ -10589,6 +10589,81 @@ Checkpoint 5 test expectation:
 - legacy signed-out flow remains unchanged
 - no active session is created for an inactive Firebase identity
 
+### Device Switching And Active Identity Enforcement - Checkpoint 6: Backup Save/List/Restore Align With Active Identity
+
+Goal:
+
+- make Firebase-owned cloud backup operations use the server active identity as the default account-level restore/backup boundary
+- prevent inactive identities from writing a latest active backup path
+- keep legacy/no-token backup restore behavior unchanged for migration and signed-out demo use
+
+Backup list behavior:
+
+- unauthenticated / legacy list:
+  - still lists backups by display-name route for backward compatibility
+- Firebase-authenticated list:
+  - verifies Firebase token
+  - derives `accountId = firebase:<uid>`
+  - reads server active identity metadata
+  - if active identity exists, returns only backups whose `identityId == activeIdentityId`
+  - older Firebase-owned backups for the same display name are not returned in the default list path
+
+Backup get/restore behavior:
+
+- unauthenticated / legacy get:
+  - unchanged
+- Firebase-authenticated get without explicit `identityId`:
+  - fetches the active identity backup when active identity exists
+- Firebase-authenticated get with explicit `identityId`:
+  - rejects the result if it does not match server `activeIdentityId`
+  - this keeps default restore aligned with the active identity
+
+Backup save behavior:
+
+- legacy save remains unchanged
+- Firebase WebSocket backup save now explicitly checks server active identity before writing:
+  - active identity must exist
+  - backup `identityId` must match server `activeIdentityId`
+  - otherwise backup save is rejected
+- this is in addition to the Checkpoint 5 active WebSocket session requirement
+
+Security/UX intent:
+
+- a stale browser cannot write a new Firebase-owned active backup from an inactive local vault
+- Restore from Cloud in Firebase mode no longer defaults to older inactive backups when an active identity is known
+- older backups remain in MongoDB for future advanced/recovery flows, but are not returned by the normal Firebase restore list
+
+Non-goals for this checkpoint:
+
+- no advanced older-backup browser UI rewrite yet
+- no deletion/archival migration of old backup documents
+- no promote-older-identity flow
+- no automatic restore
+- no contact/peer disambiguation
+
+Checkpoint 6 test expectation:
+
+- normal signed-in active identity can still Backup to Cloud successfully
+- Firebase Restore from Cloud lists/restores the active identity backup by default
+- after Start over, old identity backups are not shown in the default Firebase restore list
+- stale/inactive identity cannot save a Firebase-owned backup as latest active backup
+- legacy signed-out restore/list still works as before
+
+Follow-up fix during Checkpoint 6 testing:
+
+- creating a new identity while signed in with Google now uses a Firebase account profile in the client UI/runtime metadata:
+  - `accountId: firebase:<uid>`
+  - `accountIdScheme: firebase`
+  - `authMode: firebase`
+  - `firebaseUid: <uid>`
+- the create identity modal now shows `Create Identity` wording when no local vault exists instead of reusing the stronger `Start Over` wording
+- Start over wording remains for cases where a local vault already exists and will be replaced
+- certificate publishing now waits for the server `identity_bound` acknowledgement before sending `cert_submit`
+- this prevents a new Firebase-created identity from writing account/backup/message records but missing its peer certificate if `cert_submit` races ahead of async server identity activation
+- Create identity / Start over now promotes the new identity through the verified Firebase active-identity API before WebSocket `identity_bind`
+- this preserves server enforcement while preventing the newly created local vault from being rejected as an inactive identity before it can publish its certificate
+- the Firebase fallback UI now exits create/restore/legacy sub-mode after a session starts, so the user should not need to press Back before continuing
+
 ### Roadmap Phase 6: Contact Identity Binding / Peer Disambiguation
 
 Goal:

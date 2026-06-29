@@ -41,6 +41,7 @@ const DEFAULT_WS_PATH = "/ws";
 const BACKUP_REQUEST_TIMEOUT_MS = 10000;
 const HISTORY_REQUEST_TIMEOUT_MS = 10000;
 const SEND_REQUEST_TIMEOUT_MS = 10000;
+const IDENTITY_BIND_TIMEOUT_MS = 10000;
 const HISTORY_RECENT_DEFAULT_LIMIT = 50;
 const HISTORY_RECENT_MAX_LIMIT = 100;
 const HISTORY_KEY_SEED_RECORD = "__securechat_history_key_seed_v1__";
@@ -1279,7 +1280,7 @@ function notifyDisconnected() {
 }
 
 /* ===================== init ===================== */
-export async function initChat(username, password, accountProfile = null) {
+export async function initChat(username, password, accountProfile = null, options = {}) {
   await destroyChat();
 
   myUser = normalizeUsername(username);
@@ -1301,6 +1302,11 @@ export async function initChat(username, password, accountProfile = null) {
 
   const firebaseIdToken = await getFirebaseRegisterToken();
   const deviceLabel = getClientDeviceLabel();
+  const beforeIdentityBind =
+    typeof options.beforeIdentityBind === "function"
+      ? options.beforeIdentityBind
+      : null;
+  let beforeIdentityBindDoneFor = "";
 
   socket = new WebSocket(getServerWsUrl());
 
@@ -1318,6 +1324,62 @@ export async function initChat(username, password, accountProfile = null) {
     rejectRegistered = reject;
     setTimeout(() => reject(new Error("Server registration timed out")), 5000);
   });
+  let identityBindWaiter = null;
+
+  function settleIdentityBind(ok, payload) {
+    if (!identityBindWaiter) return false;
+    const waiter = identityBindWaiter;
+    identityBindWaiter = null;
+    clearTimeout(waiter.timer);
+    if (ok) waiter.resolve(payload);
+    else waiter.reject(payload instanceof Error ? payload : new Error(String(payload || "Identity binding failed")));
+    return true;
+  }
+
+  function waitForIdentityBound() {
+    if (identityBindWaiter) {
+      identityBindWaiter.reject(new Error("Identity binding already pending"));
+      clearTimeout(identityBindWaiter.timer);
+      identityBindWaiter = null;
+    }
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        settleIdentityBind(false, new Error("Server identity binding timed out"));
+      }, IDENTITY_BIND_TIMEOUT_MS);
+      identityBindWaiter = { resolve, reject, timer };
+    });
+  }
+
+  async function bindIdentity(identityId) {
+    const normalizedIdentityId = normalizeIdentityId(identityId);
+    if (beforeIdentityBind && beforeIdentityBindDoneFor !== normalizedIdentityId) {
+      await beforeIdentityBind({
+        identityId: normalizedIdentityId,
+        username: myUser,
+        accountId: myAccountId,
+        displayName: myDisplayName,
+        deviceLabel,
+      });
+      beforeIdentityBindDoneFor = normalizedIdentityId;
+    }
+    const boundPromise = waitForIdentityBound();
+    wsSend({
+      type: "identity_bind",
+      identityId: normalizedIdentityId,
+      accountId: myAccountId,
+      displayName: myDisplayName,
+      deviceLabel,
+    });
+    const bound = await boundPromise;
+    if (bound?.accountId) {
+      myAccountId = normalizeAccountId(bound.accountId);
+    }
+    if (bound?.displayName) {
+      myDisplayName = normalizeDisplayName(bound.displayName) || myDisplayName;
+    }
+    return bound;
+  }
 
   socket.onopen = () => {
     wsSend({
@@ -1335,6 +1397,7 @@ export async function initChat(username, password, accountProfile = null) {
   socket.onerror = (e) => console.warn("[chat] ws error", e);
   socket.onclose = () => {
     console.warn("[chat] disconnected");
+    settleIdentityBind(false, new Error("Chat connection closed during identity binding"));
     rejectAllSendRequests("Chat connection closed before delivery confirmation");
     notifyDisconnected();
   };
@@ -1366,10 +1429,16 @@ export async function initChat(username, password, accountProfile = null) {
       return;
     }
 
+    if (data.type === "identity_bound") {
+      settleIdentityBind(true, data);
+      return;
+    }
+
     if (data.type === "auth_error") {
       const err = new Error(
         String(data.message || data.error || "Authentication failed")
       );
+      settleIdentityBind(false, err);
       rejectConfig(err);
       rejectRegistered(err);
       try {
@@ -1402,6 +1471,13 @@ export async function initChat(username, password, accountProfile = null) {
           data.error || "Server rejected the request"
         )
       ) {
+        return;
+      }
+      if (
+        identityBindWaiter &&
+        String(data.error || "").toLowerCase().includes("identity")
+      ) {
+        settleIdentityBind(false, data.error || "Identity binding failed");
         return;
       }
       console.warn("[chat] server error:", data.error || data);
@@ -1481,13 +1557,7 @@ export async function initChat(username, password, accountProfile = null) {
   if (!messenger.EGKeyPair?.pub || !messenger.EGKeyPair?.sec) {
     const cert = await messenger.generateCertificate(myUser);
     const identityId = await ensureMessengerIdentityId();
-    wsSend({
-      type: "identity_bind",
-      identityId,
-      accountId: myAccountId,
-      displayName: myDisplayName,
-      deviceLabel,
-    });
+    await bindIdentity(identityId);
     cert.identityId = identityId;
     wsSend({ type: "cert_submit", certificate: cert });
 
@@ -1495,13 +1565,7 @@ export async function initChat(username, password, accountProfile = null) {
     await saveStateNow();
   } else {
     const identityId = await ensureMessengerIdentityId();
-    wsSend({
-      type: "identity_bind",
-      identityId,
-      accountId: myAccountId,
-      displayName: myDisplayName,
-      deviceLabel,
-    });
+    await bindIdentity(identityId);
     const cert = {
       username: myUser,
       identityId,

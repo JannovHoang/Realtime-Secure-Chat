@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef } from "react";
 import { buildLocalAccountProfile } from "../../account.js";
 import {
   getFirebaseAuthAvailability,
+  getCurrentUser as getCurrentFirebaseUser,
   onAuthStateChanged,
   signInWithGoogle,
   signOut as signOutFirebase,
@@ -1047,6 +1048,21 @@ export function useChatApp() {
     }, 2400);
   }
 
+  async function buildCurrentAccountProfile(username) {
+    const displayName = normalizePeer(username);
+    const authUser = state.authUser?.uid ? state.authUser : getCurrentFirebaseUser();
+    if (authUser?.uid) {
+      return {
+        accountId: `firebase:${authUser.uid}`,
+        displayName,
+        accountIdScheme: "firebase",
+        authMode: "firebase",
+        firebaseUid: authUser.uid,
+      };
+    }
+    return buildLocalAccountProfile(username);
+  }
+
   useEffect(() => {
     dispatch({ type: "bridge_status", payload: runtimeSnapshotState() });
 
@@ -1254,7 +1270,8 @@ export function useChatApp() {
   }
 
   async function saveFirebaseDefaultVaultPointer(username, patch = {}) {
-    const firebaseUid = String(state.authUser?.uid || "").trim();
+    const authUser = state.authUser?.uid ? state.authUser : getCurrentFirebaseUser();
+    const firebaseUid = String(authUser?.uid || "").trim();
     const legacyVaultLabel = normalizePeer(username);
     if (!firebaseUid || !legacyVaultLabel) return null;
 
@@ -1306,7 +1323,8 @@ export function useChatApp() {
   }
 
   function clearFirebaseDefaultVaultPointerFor(username) {
-    const firebaseUid = String(state.authUser?.uid || "").trim();
+    const authUser = state.authUser?.uid ? state.authUser : getCurrentFirebaseUser();
+    const firebaseUid = String(authUser?.uid || "").trim();
     const legacyVaultLabel = normalizePeer(username);
     if (!firebaseUid || !legacyVaultLabel) return false;
     if (
@@ -1324,7 +1342,8 @@ export function useChatApp() {
   }
 
   async function establishFirebaseActiveIdentity(username, activeIdentityId, source, displayName) {
-    if (!state.authUser?.uid || !activeIdentityId || !source) return null;
+    const authUser = state.authUser?.uid ? state.authUser : getCurrentFirebaseUser();
+    if (!authUser?.uid || !activeIdentityId || !source) return null;
     return establishAccountActiveIdentity({
       activeIdentityId,
       displayName: displayName || username,
@@ -1400,7 +1419,7 @@ export function useChatApp() {
       return;
     }
 
-    const account = await buildLocalAccountProfile(username);
+    const account = await buildCurrentAccountProfile(username);
     const firebasePointer =
       state.authUser?.uid &&
       state.defaultVaultPointer?.firebaseUid === state.authUser.uid &&
@@ -1557,8 +1576,27 @@ export function useChatApp() {
 
     dispatch({ type: "start_begin" });
     try {
-      await initChat(username, password, account);
-      if (activeIdentitySource) {
+      const shouldPromoteBeforeBind =
+        account.authMode === "firebase" &&
+        (activeIdentitySource === "create" || activeIdentitySource === "start_over");
+      const preBindActiveIdentityOptions = shouldPromoteBeforeBind
+        ? {
+            beforeIdentityBind: async ({ identityId, displayName }) => {
+              const activeIdentity = await establishFirebaseActiveIdentity(
+                username,
+                identityId,
+                activeIdentitySource,
+                displayName || account.displayName
+              );
+              if (!activeIdentity) {
+                throw new Error("Sign in with Google before creating this encrypted identity.");
+              }
+            },
+          }
+        : {};
+
+      await initChat(username, password, account, preBindActiveIdentityOptions);
+      if (activeIdentitySource && !shouldPromoteBeforeBind) {
         const identityMeta = await loadIdentityMetadata();
         try {
           await establishFirebaseActiveIdentity(
@@ -1758,7 +1796,7 @@ export function useChatApp() {
     dispatch({ type: "close_modal" });
     dispatch({ type: "backup_begin" });
     try {
-      const account = await buildLocalAccountProfile(username);
+      const account = await buildCurrentAccountProfile(username);
       const passwordOk = await verifyPersistedVaultPassword(username, password);
       if (!passwordOk) throw new Error("Incorrect password");
       await flushChatState();
@@ -2107,7 +2145,7 @@ export function useChatApp() {
         wrapper
       );
       clearLocalSessionStale(username);
-      const account = await buildLocalAccountProfile(username);
+      const account = await buildCurrentAccountProfile(username);
       if (blob) {
         try {
           await saveBackupMetadata({
@@ -2176,7 +2214,7 @@ export function useChatApp() {
     }
   }
 
-  function openResetEncryptedIdentityModal() {
+  async function openResetEncryptedIdentityModal() {
     const username = String(state.username || "").trim();
     const password = String(state.password || "");
     if (state.started && !state.disconnected) {
@@ -2187,9 +2225,14 @@ export function useChatApp() {
       pushToast("Enter the display name and the new vault password first.", "warning");
       return;
     }
+    const hasLocalVault = await hasPersistedVault(username).catch(() => false);
     dispatch({
       type: "open_modal",
-      modal: { type: "reset_encrypted_identity", username },
+      modal: {
+        type: "reset_encrypted_identity",
+        username,
+        mode: hasLocalVault ? "start_over" : "create",
+      },
     });
   }
 
@@ -2297,7 +2340,7 @@ export function useChatApp() {
     const password = String(passwordArg || state.password || "");
 
     try {
-      const account = await buildLocalAccountProfile(username);
+      const account = await buildCurrentAccountProfile(username);
       const isFirebaseRestore = !!state.authUser?.uid && options.includeAuth !== false;
       const selectedAccountId = state.pendingRestore?.items?.find(
         (item) => item?.identityId === identityId

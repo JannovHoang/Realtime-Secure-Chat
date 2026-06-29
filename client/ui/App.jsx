@@ -297,6 +297,12 @@ export default function App() {
     state.defaultVaultPointerLoaded &&
     !firebaseDefaultVault &&
     !!firebaseVaultFallbackMode;
+
+  React.useEffect(() => {
+    if (state.started || !signedInWithGoogle) {
+      setFirebaseVaultFallbackMode("");
+    }
+  }, [signedInWithGoogle, state.started]);
   const startLabel = state.disconnected
     ? "Reconnect"
     : signedInWithGoogle
@@ -559,15 +565,15 @@ export default function App() {
                     Restore from Cloud
                   </button>
                 ) : firebaseVaultFallbackMode === "create" ? (
-                  <button
-                    className="primary"
-                    type="button"
-                    disabled={busy || state.started || !state.username || !state.password}
-                    onClick={() => {
-                      actions.openResetEncryptedIdentityModal();
-                    }}
-                  >
-                    Create identity
+                    <button
+                      className="primary"
+                      type="button"
+                      disabled={busy || state.started || !state.username || !state.password}
+                      onClick={() => {
+                      void actions.openResetEncryptedIdentityModal();
+                      }}
+                    >
+                      Create identity
                   </button>
                 ) : firebaseVaultFallbackMode === "legacy" ? (
                   <button
@@ -617,7 +623,7 @@ export default function App() {
                       type="button"
                       disabled={busy || state.started || !state.username || !state.password}
                       onClick={() => {
-                        actions.openResetEncryptedIdentityModal();
+                        void actions.openResetEncryptedIdentityModal();
                       }}
                     >
                       Start over
@@ -1155,9 +1161,9 @@ export default function App() {
 
       {state.modal?.type === "reset_encrypted_identity" ? (
         <ModalFrame
-          title="Start Over"
+          title={state.modal.mode === "create" ? "Create Identity" : "Start Over"}
           subtitle={`Create a new encrypted identity for ${state.modal.username} with the password currently entered above.`}
-          eyebrow="Vault recovery"
+          eyebrow={state.modal.mode === "create" ? "Encrypted identity" : "Vault recovery"}
           actions={
             <>
               <button className="secondary" type="button" onClick={actions.closeModal}>
@@ -1169,17 +1175,25 @@ export default function App() {
                 disabled={state.resettingEncryptedIdentity}
                 onClick={() => void actions.confirmResetEncryptedIdentity()}
               >
-                Start Over
+                {state.modal.mode === "create" ? "Create Identity" : "Start Over"}
               </button>
             </>
           }
         >
-          <ModalNote tone="warning">
-            Use this only when you cannot unlock or recover the old vault. This
-            creates a new encrypted identity and removes the old local chat
-            history from this browser. Old encrypted messages may be unreadable
-            without the old password or recovery key.
-          </ModalNote>
+          {state.modal.mode === "create" ? (
+            <ModalNote>
+              This creates the first encrypted identity for this signed-in
+              Google account on this browser. Save a recovery key and run Backup
+              to Cloud after the vault opens.
+            </ModalNote>
+          ) : (
+            <ModalNote tone="warning">
+              Use this only when you cannot unlock or recover the old vault.
+              This creates a new encrypted identity and removes the old local
+              chat history from this browser. Old encrypted messages may be
+              unreadable without the old password or recovery key.
+            </ModalNote>
+          )}
           <label className="modal-field">
             <span>Type display name to confirm</span>
             <input
@@ -1190,9 +1204,9 @@ export default function App() {
             />
           </label>
           <ModalNote>
-            After starting over, this browser will use the new identity as the
-            default for the signed-in Google account. Save a recovery key and
-            run Backup to Cloud when ready.
+            {state.modal.mode === "create"
+              ? "After creation, this browser will use the new identity as the default for the signed-in Google account. Save a recovery key and run Backup to Cloud when ready."
+              : "After starting over, this browser will use the new identity as the default for the signed-in Google account. Save a recovery key and run Backup to Cloud when ready."}
           </ModalNote>
         </ModalFrame>
       ) : null}

@@ -514,6 +514,16 @@ function backupOwnerFilterFromAuth(auth) {
   };
 }
 
+async function getFirebaseActiveIdentityForAuth(auth) {
+  if (!auth?.accountId) return null;
+  return getAccountActiveIdentity(auth.accountId);
+}
+
+function filterDocsToActiveIdentity(docs, activeIdentity) {
+  if (!activeIdentity?.activeIdentityId) return docs;
+  return docs.filter((doc) => doc?.identityId === activeIdentity.activeIdentityId);
+}
+
 function abToB64(ab) {
   return Buffer.from(new Uint8Array(ab)).toString("base64");
 }
@@ -1091,10 +1101,14 @@ const server = http.createServer((req, res) => {
     void (async () => {
       try {
         const httpAuth = await resolveOptionalFirebaseHttpAuth(req);
-        const items = await listIdentityBackups(
+        const activeIdentity = await getFirebaseActiveIdentityForAuth(httpAuth);
+        const allItems = await listIdentityBackups(
           username,
           backupOwnerFilterFromAuth(httpAuth)
         );
+        const items = httpAuth?.firebaseUid
+          ? filterDocsToActiveIdentity(allItems, activeIdentity)
+          : allItems;
         const safeItems = items
           .filter((doc) => doc?.identityId)
           .map((doc) => ({
@@ -1163,11 +1177,26 @@ const server = http.createServer((req, res) => {
     void (async () => {
       try {
         const httpAuth = await resolveOptionalFirebaseHttpAuth(req);
+        const activeIdentity = await getFirebaseActiveIdentityForAuth(httpAuth);
+        const effectiveIdentityId =
+          httpAuth?.firebaseUid && !identityId
+            ? normalizeIdentityId(activeIdentity?.activeIdentityId)
+            : identityId;
         const doc = await getIdentityBackup(
           username,
-          identityId || null,
+          effectiveIdentityId || null,
           backupOwnerFilterFromAuth(httpAuth)
         );
+        if (
+          httpAuth?.firebaseUid &&
+          activeIdentity?.activeIdentityId &&
+          doc?.identityId !== activeIdentity.activeIdentityId
+        ) {
+          return writeJson(res, 200, {
+            ok: false,
+            error: "Restore unavailable",
+          });
+        }
         if (
           !doc?.username ||
           typeof doc.ciphertextB64 !== "string" ||
@@ -1755,6 +1784,32 @@ wss.on("connection", (ws) => {
           requestId,
           error: "Backup save failed",
         });
+      }
+
+      if (session?.firebaseUid) {
+        try {
+          const activeIdentity = await getAccountActiveIdentity(verifiedFirebaseAccountId);
+          if (
+            !activeIdentity?.activeIdentityId ||
+            activeIdentity.activeIdentityId !== identityId
+          ) {
+            return sendJson(ws, {
+              type: "backup_saved",
+              ok: false,
+              requestId,
+              error:
+                "Backup save blocked: restore the latest active identity before backing up.",
+            });
+          }
+        } catch (err) {
+          console.warn("[backup_save] active identity check failed:", err);
+          return sendJson(ws, {
+            type: "backup_saved",
+            ok: false,
+            requestId,
+            error: "Backup save failed",
+          });
+        }
       }
 
       try {
