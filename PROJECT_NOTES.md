@@ -10228,6 +10228,81 @@ Checkpoint 0 test expectation:
 - Start over, Backup to Cloud, Restore from Cloud, freshness guard, reconnect reload, and legacy flow still work as before
 - docs now clearly distinguish browser-local pointer from server-enforced active identity
 
+### Device Switching And Active Identity Enforcement - Checkpoint 1: Server Active Identity Metadata Model
+
+Goal:
+
+- add the backend persistence model for account-level active encrypted identity metadata
+- keep runtime behavior unchanged until the read endpoint and enforcement checkpoints wire this model into client/server flows
+- make the future enforcement source of truth keyed by canonical Firebase `accountId`, not browser-local pointer or display name
+
+Implementation:
+
+- added `account_active_identities` MongoDB collection support in `server/mongo.js`
+- added helper:
+  - `getAccountActiveIdentity(accountId)`
+  - `saveAccountActiveIdentity(accountMeta)`
+- added indexes:
+  - unique `{ accountId: 1 }`
+  - sparse `{ firebaseUid: 1 }`
+  - `{ activeIdentityId: 1 }`
+- kept existing `account_active_devices` collection untouched for current live-session and legacy behavior
+
+Stored metadata shape:
+
+```js
+{
+  schemaVersion: 1,
+  accountId: "firebase:<uid>",
+  firebaseUid: "<uid>",
+  activeIdentityId: "<identityId>",
+  activeRevision: 1,
+  displayName: "AliceDemo",
+  deviceLabel: "Dell G15 Chrome",
+  source: "migration_unlock" | "restore_latest" | "create" | "start_over" | "backup_active",
+  serverUpdatedAt: Date,
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
+Validation rules added at the model boundary:
+
+- `accountId` is required
+- `activeIdentityId` is required
+- `source` must be one of:
+  - `migration_unlock`
+  - `restore_latest`
+  - `create`
+  - `start_over`
+  - `backup_active`
+- `deviceLabel` is normalized and capped to 80 characters
+- helper returns a safe metadata object only, without Mongo `_id`
+
+Revision behavior:
+
+- first save starts `activeRevision` at `1`
+- saving a different `activeIdentityId` increments `activeRevision`
+- `backup_active` with the same active identity updates metadata without incrementing revision
+- this checkpoint only creates the model behavior; later checkpoints decide which flows are allowed to call it
+
+Non-goals for this checkpoint:
+
+- no HTTP active identity endpoint yet
+- no WebSocket inactive identity blocking yet
+- no backup save blocking yet
+- no client stale-identity UI yet
+- no Start over promotion wiring yet
+- no behavior change in public-domain testing
+
+Checkpoint 1 test expectation:
+
+- app builds successfully
+- server starts and `ensureIndexes()` can create the new collection indexes
+- existing Google default vault UX still behaves the same because the helper is not wired into runtime flows yet
+- existing Backup to Cloud / Restore from Cloud still uses current backup storage behavior
+- `PROJECT_NOTES.md` documents that Checkpoint 1 is model-only
+
 ### Roadmap Phase 6: Contact Identity Binding / Peer Disambiguation
 
 Goal:

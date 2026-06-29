@@ -5,6 +5,29 @@ const { MongoClient, ServerApiVersion } = require("mongodb");
 let client = null;
 let db = null;
 
+const ACTIVE_IDENTITY_SCHEMA_VERSION = 1;
+const ACTIVE_IDENTITY_SOURCES = new Set([
+  "migration_unlock",
+  "restore_latest",
+  "create",
+  "start_over",
+  "backup_active",
+]);
+
+function normalizeString(value) {
+  return String(value || "").trim();
+}
+
+function normalizeDeviceLabel(value) {
+  const label = normalizeString(value).replace(/\s+/g, " ");
+  return label ? label.slice(0, 80) : "Unknown browser";
+}
+
+function normalizeActiveIdentitySource(value) {
+  const source = normalizeString(value);
+  return ACTIVE_IDENTITY_SOURCES.has(source) ? source : "";
+}
+
 async function connectMongo() {
   if (db) return db;
 
@@ -313,6 +336,92 @@ async function getAccountActiveDevice(username) {
   return currentDb.collection("account_active_devices").findOne({ username });
 }
 
+function toSafeActiveIdentityDoc(doc) {
+  if (!doc) return null;
+  return {
+    schemaVersion: Number(doc.schemaVersion || ACTIVE_IDENTITY_SCHEMA_VERSION),
+    accountId: doc.accountId || "",
+    firebaseUid: doc.firebaseUid || null,
+    activeIdentityId: doc.activeIdentityId || "",
+    activeRevision: Number(doc.activeRevision || 0),
+    displayName: doc.displayName || "",
+    deviceLabel: doc.deviceLabel || "Unknown browser",
+    source: doc.source || "",
+    serverUpdatedAt:
+      doc.serverUpdatedAt instanceof Date
+        ? doc.serverUpdatedAt.toISOString()
+        : doc.serverUpdatedAt || null,
+    createdAt:
+      doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt || null,
+    updatedAt:
+      doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : doc.updatedAt || null,
+  };
+}
+
+async function getAccountActiveIdentity(accountId) {
+  const normalizedAccountId = normalizeString(accountId);
+  if (!normalizedAccountId) return null;
+
+  const currentDb = getDb();
+  const doc = await currentDb
+    .collection("account_active_identities")
+    .findOne({ accountId: normalizedAccountId });
+  return toSafeActiveIdentityDoc(doc);
+}
+
+async function saveAccountActiveIdentity(accountMeta = {}) {
+  const accountId = normalizeString(accountMeta.accountId);
+  const activeIdentityId = normalizeString(accountMeta.activeIdentityId);
+  const source = normalizeActiveIdentitySource(accountMeta.source);
+
+  if (!accountId) {
+    throw new Error("accountId is required for active identity metadata");
+  }
+  if (!activeIdentityId) {
+    throw new Error("activeIdentityId is required for active identity metadata");
+  }
+  if (!source) {
+    throw new Error("valid active identity source is required");
+  }
+
+  const currentDb = getDb();
+  const collection = currentDb.collection("account_active_identities");
+  const now = new Date();
+  const existing = await collection.findOne({ accountId });
+  const existingRevision = Number(existing?.activeRevision || 0);
+  const identityChanged = existing?.activeIdentityId !== activeIdentityId;
+  const shouldIncrementRevision = !existing || identityChanged || source !== "backup_active";
+  const activeRevision = shouldIncrementRevision
+    ? existingRevision + 1
+    : Math.max(existingRevision, 1);
+
+  const doc = {
+    schemaVersion: ACTIVE_IDENTITY_SCHEMA_VERSION,
+    accountId,
+    firebaseUid: normalizeString(accountMeta.firebaseUid) || null,
+    activeIdentityId,
+    activeRevision,
+    displayName: normalizeString(accountMeta.displayName),
+    deviceLabel: normalizeDeviceLabel(accountMeta.deviceLabel),
+    source,
+    serverUpdatedAt: now,
+    updatedAt: now,
+  };
+
+  await collection.updateOne(
+    { accountId },
+    {
+      $set: doc,
+      $setOnInsert: {
+        createdAt: now,
+      },
+    },
+    { upsert: true }
+  );
+
+  return getAccountActiveIdentity(accountId);
+}
+
 async function dropLegacyUniqueIndexIfPresent(collection, indexName) {
   try {
     const indexes = await collection.indexes();
@@ -337,6 +446,7 @@ async function ensureIndexes() {
   const certs = currentDb.collection("certs");
   const backups = currentDb.collection("identity_backups");
   const activeDevices = currentDb.collection("account_active_devices");
+  const activeIdentities = currentDb.collection("account_active_identities");
 
   await dropLegacyUniqueIndexIfPresent(certs, "username_1");
   await certs.createIndex({ username: 1, identityId: 1 }, { unique: true });
@@ -357,6 +467,13 @@ async function ensureIndexes() {
     { accountId: 1 },
     { sparse: true }
   );
+
+  await activeIdentities.createIndex({ accountId: 1 }, { unique: true });
+  await activeIdentities.createIndex(
+    { firebaseUid: 1 },
+    { sparse: true }
+  );
+  await activeIdentities.createIndex({ activeIdentityId: 1 });
 }
 
 module.exports = {
@@ -375,5 +492,7 @@ module.exports = {
   listIdentityBackups,
   saveAccountActiveDevice,
   getAccountActiveDevice,
+  saveAccountActiveIdentity,
+  getAccountActiveIdentity,
   ensureIndexes,
 };
