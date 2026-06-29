@@ -326,23 +326,23 @@ function getBackupFreshnessSignal(cloudBackup, localBackupMeta, pointer = null) 
   const localKnownMs = getKnownLocalBackupMs(localBackupMeta, pointer);
   if (!localKnownMs) {
     return {
-      status: "Cloud backup available",
+      status: "Latest cloud backup available",
       toast:
-        "Cloud backup available. Restore first if this account was used on another device.",
-      modalTitle: "Cloud Backup Available",
+        "Latest cloud backup available. Restore it first if this account was used on another device.",
+      modalTitle: "Latest Cloud Backup Available",
       modalSubtitle:
-        "A cloud backup exists for this identity. If this account was used on another device, restore before chatting.",
+        "A latest active backup exists for this identity. If this account was used on another device, restore that backup before chatting from this browser.",
     };
   }
 
   if (cloudServerMs <= localKnownMs) return null;
   return {
-    status: "Cloud backup may be newer",
+    status: "Cloud backup is newer than local record",
     toast:
-      "A newer cloud backup may exist for this identity. Restore first if this browser may be using an older local state.",
-    modalTitle: "Cloud Backup May Be Newer",
+      "Cloud backup is newer than this browser's local record. Restore latest backup before chatting here.",
+    modalTitle: "Cloud Backup Is Newer",
     modalSubtitle:
-      "The cloud backup appears newer than this browser's local backup record. Restore first if you recently used another device.",
+      "The latest active backup is newer than this browser's local backup record. Restore latest backup before chatting here if another device has the newest encrypted state.",
   };
 }
 
@@ -374,10 +374,10 @@ function getPreStartCloudBackupSignal(
     return {
       status: "Cloud backup identity differs",
       toast:
-        "Cloud backup exists, but it does not match this browser's local identity. Restore first if this account was used elsewhere.",
+        "Cloud backup exists for a different active identity. Restore latest backup instead of chatting from this local identity.",
       modalTitle: "Cloud Backup Identity Differs",
       modalSubtitle:
-        "This display name has a cloud backup, but this browser is holding a different local identity. Restore from Cloud before chatting unless you intentionally want to continue with this local identity.",
+        "This account has a cloud backup for a different encrypted identity. Restore latest backup before chatting unless you intentionally want to keep this browser's local identity.",
     };
   }
 
@@ -1399,10 +1399,10 @@ export function useChatApp() {
         username,
         status: "Cloud backup check unavailable",
         toast:
-          "Could not check cloud backup freshness. Restore may be temporarily rate limited or unavailable.",
+          "Could not check latest backup freshness. Restore may be temporarily rate limited or unavailable.",
         modalTitle: "Could Not Check Cloud Backup",
         modalSubtitle:
-          "The app could not verify whether this browser has the latest encrypted state. If you recently used this account on another device, wait a few minutes and restore before chatting.",
+          "The app could not verify whether this browser has the latest encrypted state. If you recently used this account on another device, wait a few minutes and restore latest backup before chatting.",
       };
     }
   }
@@ -1535,7 +1535,7 @@ export function useChatApp() {
           username,
           status: "Local session may be stale",
           toast:
-            "This browser was logged out because the account started elsewhere. Restore before chatting unless you intentionally want to continue.",
+            "This browser was logged out because the account started elsewhere. Restore latest backup before chatting unless you intentionally want to continue.",
           modalTitle: "Local Session May Be Stale",
           modalSubtitle:
             "This browser was replaced by another active device. If you used the account on that phone/browser, restore the latest cloud backup before chatting here.",

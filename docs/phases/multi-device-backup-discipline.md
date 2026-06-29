@@ -9,7 +9,7 @@ state that was not backed up or restored on the current device.
 
 ## Checkpoint 0: Baseline Design And Test Plan
 
-Status: in progress.
+Status: completed.
 
 Runtime behavior change: none.
 
@@ -57,6 +57,34 @@ can stay narrow and testable.
 3. Tighten restore/backup UI around latest active backup versus older backup
    recovery material.
 4. Update demo/report docs after runtime behavior is verified.
+
+## Checkpoint 1: Freshness Warning Copy And Metadata Audit
+
+Status: completed.
+
+Runtime behavior change: warning/status copy only. No backup format, crypto,
+server storage, or restore path changes.
+
+Implemented:
+
+- Clarified cloud-newer status as latest backup newer than this browser's local
+  backup record.
+- Clarified cloud-backup-available status as latest active backup available.
+- Clarified different-identity warning to prefer Restore Latest Backup before
+  chatting from a mismatched local identity.
+- Renamed the modal action from Restore from Cloud to Restore Latest Backup for
+  freshness warnings.
+- Clarified older-backup modal copy: older backups are recovery material, not
+  the normal continuation path.
+
+Checkpoint 1 test focus:
+
+- Existing active-identity and backup enforcement behavior remains unchanged.
+- Cloud-newer warning clearly instructs Restore Latest Backup before chatting.
+- Different-identity warning clearly instructs Restore Latest Backup before
+  chatting.
+- Older-backup advanced flow still requires confirmation and no longer reads as
+  a normal continuation path.
 
 ## Test Plan
 

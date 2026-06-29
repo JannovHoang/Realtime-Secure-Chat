@@ -1394,7 +1394,7 @@ export default function App() {
                   type="button"
                   onClick={() => actions.handleBackupFreshnessWarning("restore")}
                 >
-                  Restore from Cloud
+                  Restore Latest Backup
                 </button>
               )}
             </>
@@ -1409,8 +1409,8 @@ export default function App() {
           ) : (
             <ModalNote tone="warning">
               Starting from an older local vault can desynchronize secure chat
-              state. Restore first if you recently used this account on another
-              browser or phone.
+              state. Restore the latest active backup first if you recently
+              used this account on another browser or phone.
             </ModalNote>
           )}
         </ModalFrame>
@@ -1595,7 +1595,8 @@ export default function App() {
               <summary>Advanced: show older backups</summary>
               <ModalNote tone="warning">
                 Older backups can roll back Double Ratchet state and make recent
-                messages unreadable. Use an older backup only if the latest one
+                messages unreadable. They are recovery material, not the normal
+                continuation path. Use an older backup only if the latest one
                 cannot be restored.
               </ModalNote>
               <div className="restore-choice-list">
@@ -1662,8 +1663,9 @@ export default function App() {
         >
           <ModalNote tone="warning">
             Restoring an older backup may cause Double Ratchet state mismatch or
-            make recent messages unreadable. Use this only if the latest backup
-            cannot be restored.
+            make recent messages unreadable. Older backups are recovery
+            material, not the normal continuation path. Use this only if the
+            latest backup cannot be restored.
           </ModalNote>
         </ModalFrame>
       ) : null}
