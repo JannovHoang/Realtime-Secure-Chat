@@ -390,7 +390,7 @@ async function saveAccountActiveIdentity(accountMeta = {}) {
   const existing = await collection.findOne({ accountId });
   const existingRevision = Number(existing?.activeRevision || 0);
   const identityChanged = existing?.activeIdentityId !== activeIdentityId;
-  const shouldIncrementRevision = !existing || identityChanged || source !== "backup_active";
+  const shouldIncrementRevision = !existing || identityChanged;
   const activeRevision = shouldIncrementRevision
     ? existingRevision + 1
     : Math.max(existingRevision, 1);

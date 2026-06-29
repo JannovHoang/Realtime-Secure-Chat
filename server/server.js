@@ -29,6 +29,7 @@ const {
   saveAccountActiveDevice,
   getAccountActiveDevice,
   getAccountActiveIdentity,
+  saveAccountActiveIdentity,
 } = require("./mongo");
 
 const {
@@ -172,6 +173,18 @@ function normalizeDisplayName(v) {
 function normalizeDeviceLabel(v) {
   const label = String(v || "").trim().replace(/\s+/g, " ");
   return label ? label.slice(0, 80) : "Unknown browser";
+}
+
+const ACTIVE_IDENTITY_PROMOTION_SOURCES = new Set([
+  "migration_unlock",
+  "restore_latest",
+  "create",
+  "start_over",
+]);
+
+function normalizeActiveIdentitySource(v) {
+  const source = String(v || "").trim();
+  return ACTIVE_IDENTITY_PROMOTION_SOURCES.has(source) ? source : "";
 }
 
 function makeLegacyAccountKey(username) {
@@ -403,6 +416,28 @@ function writeAuthRequired(res, error = "Firebase auth token required") {
   return writeJson(res, 401, {
     ok: false,
     error,
+  });
+}
+
+function readJsonBody(req, maxBytes = 16 * 1024) {
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk.toString("utf8");
+      if (raw.length > maxBytes) {
+        reject(new Error("Request body too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      if (!raw.trim()) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        reject(new Error("Invalid JSON body"));
+      }
+    });
+    req.on("error", reject);
   });
 }
 
@@ -907,6 +942,98 @@ const server = http.createServer((req, res) => {
         return writeJson(res, 401, {
           ok: false,
           error: "Firebase auth token invalid",
+        });
+      }
+    })();
+    return;
+  }
+
+  if (req.method === "POST" && reqUrl.pathname === "/api/account/active-identity") {
+    const token = readBearerToken(req);
+    if (!token) {
+      return writeAuthRequired(res);
+    }
+
+    const status = getFirebaseAuthServerStatus();
+    if (!status.enabled) {
+      return writeJson(res, 200, {
+        ok: false,
+        configured: false,
+        enabled: false,
+        error: status.reason,
+      });
+    }
+
+    void (async () => {
+      try {
+        const decoded = await verifyFirebaseIdToken(token);
+        const body = await readJsonBody(req);
+        const accountId = makeFirebaseAccountId(decoded.firebaseUid);
+        const activeIdentityId = normalizeIdentityId(body.activeIdentityId);
+        const source = normalizeActiveIdentitySource(body.source);
+        const displayName = normalizeDisplayName(body.displayName);
+        const deviceLabel = normalizeDeviceLabel(body.deviceLabel);
+
+        if (!activeIdentityId || !source) {
+          return writeJson(res, 400, {
+            ok: false,
+            error: "Invalid active identity metadata",
+          });
+        }
+
+        const existing = await getAccountActiveIdentity(accountId);
+        if (
+          existing?.activeIdentityId &&
+          existing.activeIdentityId !== activeIdentityId &&
+          source === "migration_unlock"
+        ) {
+          return writeJson(res, 409, {
+            ok: false,
+            error: "Active identity already configured",
+            activeIdentityId: existing.activeIdentityId,
+            activeRevision: existing.activeRevision,
+            serverUpdatedAt: existing.serverUpdatedAt || null,
+          });
+        }
+
+        const activeIdentity = await saveAccountActiveIdentity({
+          accountId,
+          firebaseUid: decoded.firebaseUid,
+          activeIdentityId,
+          displayName,
+          deviceLabel,
+          source,
+        });
+
+        return writeJson(res, 200, {
+          ok: true,
+          configured: true,
+          accountId: activeIdentity.accountId,
+          firebaseUid: activeIdentity.firebaseUid || decoded.firebaseUid,
+          activeIdentityId: activeIdentity.activeIdentityId,
+          activeRevision: activeIdentity.activeRevision,
+          displayName: activeIdentity.displayName || "",
+          deviceLabel: activeIdentity.deviceLabel || "",
+          source: activeIdentity.source || "",
+          serverUpdatedAt: activeIdentity.serverUpdatedAt || null,
+        });
+      } catch (err) {
+        const message = String(err?.message || err || "");
+        if (
+          message.includes("Firebase") ||
+          message.includes("token") ||
+          message.includes("audience") ||
+          message.includes("issuer")
+        ) {
+          return writeJson(res, 401, {
+            ok: false,
+            error: "Firebase auth token invalid",
+          });
+        }
+        console.warn("[active_identity_promote] failed:", err);
+        return writeJson(res, 400, {
+          ok: false,
+          error: "Active identity update failed",
         });
       }
     })();

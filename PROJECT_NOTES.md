@@ -10283,7 +10283,7 @@ Revision behavior:
 
 - first save starts `activeRevision` at `1`
 - saving a different `activeIdentityId` increments `activeRevision`
-- `backup_active` with the same active identity updates metadata without incrementing revision
+- saving the same active identity updates metadata without incrementing revision
 - this checkpoint only creates the model behavior; later checkpoints decide which flows are allowed to call it
 
 Non-goals for this checkpoint:
@@ -10396,6 +10396,88 @@ Checkpoint 2 test expectation:
 - with a valid Firebase ID token, the endpoint returns the signed-in account's canonical `accountId`
 - if no active identity document exists yet, response is `ok:true` and `configured:false`
 - public-domain chat behavior remains unchanged because the client is not wired to this endpoint yet
+
+### Device Switching And Active Identity Enforcement - Checkpoint 3: Establish Active Identity For Explicit Flows
+
+Goal:
+
+- start writing server active identity metadata from explicit, user-driven Firebase account flows
+- keep stale-device blocking for later checkpoints
+- prevent plain unlock from silently overriding a different server active identity
+
+Endpoint added:
+
+```text
+POST /api/account/active-identity
+Authorization: Bearer <Firebase ID token>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "activeIdentityId": "id_xxx",
+  "displayName": "AliceDemo",
+  "deviceLabel": "Chrome on Windows",
+  "source": "migration_unlock"
+}
+```
+
+Allowed promotion sources in this checkpoint:
+
+- `migration_unlock`
+- `restore_latest`
+- `create`
+- `start_over`
+
+Server rules:
+
+- Firebase token is required
+- server derives `accountId = firebase:<uid>` from the verified token
+- client-supplied uid/account id is not trusted
+- `activeIdentityId` is required
+- invalid source is rejected
+- `migration_unlock` can establish active identity only when:
+  - no server active identity exists yet, or
+  - the existing active identity is the same identity
+- `migration_unlock` must not override a different existing active identity
+- `create`, `start_over`, and `restore_latest` are explicit flows and can promote the submitted identity
+- changing active identity increments `activeRevision`
+- saving the same active identity updates metadata without incrementing revision
+
+Client wiring:
+
+- signed-in Google + successful local vault unlock:
+  - client calls `POST /api/account/active-identity` with `source: "migration_unlock"`
+  - this seeds server metadata for accounts that already had a browser-local default pointer from the previous phase
+  - if no server active identity exists yet, this establishes the local identity as active
+  - if the server already has the same active identity, this refreshes metadata without incrementing revision
+  - if the server already has a different active identity, the start flow fails instead of silently binding the stale local vault
+- signed-in Google + Restore from Cloud default/latest path:
+  - after decrypt/import succeeds, client calls the endpoint with `source: "restore_latest"`
+  - older/advanced restore does not promote active identity
+- signed-in Google + Create identity / Start over:
+  - after new identity is created, client calls the endpoint with `source: "create"` if no previous local vault existed
+  - otherwise calls with `source: "start_over"`
+
+Non-goals for this checkpoint:
+
+- no stale local identity warning before unlock yet
+- no WebSocket inactive identity blocking yet
+- no backup save blocking yet
+- no automatic restore
+- no promote-older-identity flow
+- no contact/peer disambiguation
+
+Checkpoint 3 test expectation:
+
+- first successful signed-in migration/create/restore creates or updates `account_active_identities`
+- `activeRevision` starts at `1`
+- repeating the same active identity does not increment `activeRevision`
+- Start over / Create identity changes `activeIdentityId` and increments `activeRevision`
+- advanced older restore does not promote active identity
+- current chat behavior is otherwise unchanged until enforcement checkpoints
 
 ### Roadmap Phase 6: Contact Identity Binding / Peer Disambiguation
 

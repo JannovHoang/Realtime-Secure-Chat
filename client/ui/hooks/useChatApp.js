@@ -14,6 +14,7 @@ import {
 import {
   changeLocalVaultPassword,
   destroyChat,
+  establishAccountActiveIdentity,
   fetchCloudBackup,
   fetchCloudBackupIdentities,
   fetchRecentMessages,
@@ -1318,6 +1319,15 @@ export function useChatApp() {
     return cleared;
   }
 
+  async function establishFirebaseActiveIdentity(username, activeIdentityId, source, displayName) {
+    if (!state.authUser?.uid || !activeIdentityId || !source) return null;
+    return establishAccountActiveIdentity({
+      activeIdentityId,
+      displayName: displayName || username,
+      source,
+    });
+  }
+
   async function getPreStartBackupWarning(
     username,
     password,
@@ -1404,6 +1414,12 @@ export function useChatApp() {
     }
 
     const hasUsableLocalIdentity = hasLocalVault && !!localIdentityMeta?.identityId;
+    const shouldMigrationUnlock =
+      !!state.authUser?.uid &&
+      hasUsableLocalIdentity &&
+      !options.activeIdentitySource;
+    const activeIdentitySource =
+      options.activeIdentitySource || (shouldMigrationUnlock ? "migration_unlock" : "");
     const shouldGuard =
       !options.skipGuard &&
       !hasUsableLocalIdentity &&
@@ -1476,6 +1492,20 @@ export function useChatApp() {
     dispatch({ type: "start_begin" });
     try {
       await initChat(username, password, account);
+      if (activeIdentitySource) {
+        const identityMeta = await loadIdentityMetadata();
+        try {
+          await establishFirebaseActiveIdentity(
+            username,
+            identityMeta?.identityId,
+            activeIdentitySource,
+            identityMeta?.displayName || account.displayName
+          );
+        } catch (activeIdentityErr) {
+          await destroyChat().catch(() => {});
+          throw activeIdentityErr;
+        }
+      }
       dispatch({ type: "start_success", account });
       void saveFirebaseDefaultVaultPointer(username);
       void refreshIdentityPanel(account);
@@ -2114,13 +2144,18 @@ export function useChatApp() {
     dispatch({ type: "reset_identity_begin" });
     try {
       await destroyChat().catch(() => {});
+      const hadLocalVault = await hasPersistedVault(username);
       clearFirebaseDefaultVaultPointerFor(username);
       await clearPersistedVault(username);
       await clearRecoveryWrapper(username);
       clearLocalSessionStale(username);
       dispatch({ type: "close_modal" });
       dispatch({ type: "allow_continue_without_restore", username });
-      await performStart({ skipGuard: true, skipBackupWarning: true });
+      await performStart({
+        skipGuard: true,
+        skipBackupWarning: true,
+        activeIdentitySource: hadLocalVault ? "start_over" : "create",
+      });
       pushToast(
         "Started over with a new encrypted identity. Save a recovery key and back it up when ready.",
         "success"
@@ -2241,6 +2276,7 @@ export function useChatApp() {
               identityId,
               includeAuth: options.includeAuth !== false,
               legacyRestore: !!options.legacyRestore,
+              olderBackup: !!options.olderBackup,
               staleWarning,
             },
           });
@@ -2267,6 +2303,7 @@ export function useChatApp() {
             identityId,
             includeAuth: options.includeAuth !== false,
             legacyRestore: !!options.legacyRestore,
+            olderBackup: !!options.olderBackup,
             localIdentityShort: formatIdentityShort(localIdentityMeta?.identityId),
             targetIdentityShort: formatIdentityShort(payload.identityId),
             sameIdentity:
@@ -2300,6 +2337,14 @@ export function useChatApp() {
         isFirebaseRestore ? null : account.accountId
       );
       clearLocalSessionStale(username);
+      if (isFirebaseRestore && !options.legacyRestore && !options.olderBackup) {
+        await establishFirebaseActiveIdentity(
+          username,
+          payload.identityId,
+          "restore_latest",
+          payload.displayName || account.displayName || username
+        );
+      }
       try {
         await initVault(password, username);
         await saveBackupMetadata({
@@ -2381,6 +2426,7 @@ export function useChatApp() {
       skipOverwriteConfirm: true,
       includeAuth: pending.includeAuth !== false,
       legacyRestore: !!pending.legacyRestore,
+      olderBackup: !!pending.olderBackup,
     });
   }
 
@@ -2408,6 +2454,7 @@ export function useChatApp() {
       skipStaleRestoreConfirm: true,
       includeAuth: pending.includeAuth !== false,
       legacyRestore: !!pending.legacyRestore,
+      olderBackup: !!pending.olderBackup,
     });
   }
 
@@ -2423,6 +2470,7 @@ export function useChatApp() {
           identityId,
           includeAuth: pending.includeAuth !== false,
           legacyRestore: !!pending.legacyRestore,
+          olderBackup: true,
         },
       });
       dispatch({
@@ -2467,6 +2515,7 @@ export function useChatApp() {
     await completeRestore(pending.identityId, pending.username, pending.password, {
       includeAuth: pending.includeAuth !== false,
       legacyRestore: !!pending.legacyRestore,
+      olderBackup: true,
     });
   }
 

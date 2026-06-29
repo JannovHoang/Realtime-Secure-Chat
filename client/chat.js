@@ -1754,6 +1754,49 @@ export async function fetchCloudBackupIdentities(username, options = {}) {
   return data.items;
 }
 
+export async function establishAccountActiveIdentity({
+  activeIdentityId,
+  displayName = "",
+  source,
+} = {}) {
+  const identityId = normalizeIdentityId(activeIdentityId);
+  if (!identityId) {
+    throw new Error("Active identity id is required");
+  }
+  const normalizedSource = String(source || "").trim();
+  if (!normalizedSource) {
+    throw new Error("Active identity source is required");
+  }
+
+  const headers = await buildOptionalFirebaseAuthHeaders();
+  const res = await fetch(buildApiUrl("/api/account/active-identity").toString(), {
+    method: "POST",
+    headers: {
+      ...headers,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      activeIdentityId: identityId,
+      displayName: normalizeDisplayName(displayName || myDisplayName || myUser),
+      deviceLabel: getClientDeviceLabel(),
+      source: normalizedSource,
+    }),
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("Active identity update failed");
+  }
+
+  if (!res.ok || data?.ok !== true) {
+    throw new Error(data?.error || "Active identity update failed");
+  }
+
+  return data;
+}
+
 /* ===================== logout / cleanup ===================== */
 export async function destroyChat() {
   try {
