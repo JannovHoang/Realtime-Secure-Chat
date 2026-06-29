@@ -10303,6 +10303,100 @@ Checkpoint 1 test expectation:
 - existing Backup to Cloud / Restore from Cloud still uses current backup storage behavior
 - `PROJECT_NOTES.md` documents that Checkpoint 1 is model-only
 
+### Device Switching And Active Identity Enforcement - Checkpoint 2: Read Active Identity Endpoint
+
+Goal:
+
+- expose a safe server-authenticated read API for the signed-in Firebase account's active encrypted identity metadata
+- let later client checkpoints compare local pointer/local identity against server active identity
+- keep this checkpoint read-only: no promotion, no blocking, no client UI changes yet
+
+Endpoint added:
+
+```text
+GET /api/account/active-identity
+Authorization: Bearer <Firebase ID token>
+```
+
+Behavior:
+
+- server verifies the Firebase ID token using the existing verifier
+- server derives canonical account ownership from the verified token:
+  - `accountId = firebase:<uid>`
+- server does not trust client-supplied uid/account id for this endpoint
+- server reads `account_active_identities` by canonical `accountId`
+- response contains only metadata, never vault password, recovery key, private key, ratchet state, plaintext vault, or backup ciphertext
+
+Response when Firebase server auth is unavailable:
+
+```json
+{
+  "ok": false,
+  "configured": false,
+  "enabled": false,
+  "error": "server auth mode is legacy"
+}
+```
+
+Response when token is missing:
+
+```json
+{
+  "ok": false,
+  "error": "Firebase auth token required"
+}
+```
+
+Response when no active identity is configured for the signed-in account:
+
+```json
+{
+  "ok": true,
+  "configured": false,
+  "accountId": "firebase:<uid>",
+  "firebaseUid": "<uid>",
+  "activeIdentityId": null,
+  "activeRevision": 0,
+  "displayName": "",
+  "deviceLabel": "",
+  "source": "",
+  "serverUpdatedAt": null
+}
+```
+
+Response when an active identity exists:
+
+```json
+{
+  "ok": true,
+  "configured": true,
+  "accountId": "firebase:<uid>",
+  "firebaseUid": "<uid>",
+  "activeIdentityId": "id_xxx",
+  "activeRevision": 3,
+  "displayName": "AliceDemo",
+  "deviceLabel": "Dell G15 Chrome",
+  "source": "restore_latest",
+  "serverUpdatedAt": "2026-06-29T00:00:00.000Z"
+}
+```
+
+Non-goals for this checkpoint:
+
+- no client calls this endpoint yet
+- no active identity promotion yet
+- no WebSocket inactive identity blocking yet
+- no backup save blocking yet
+- no Start over active identity wiring yet
+- no restore behavior change yet
+
+Checkpoint 2 test expectation:
+
+- `GET /api/account/active-identity` without token returns 401 JSON instead of crashing
+- with a valid Firebase ID token, the endpoint returns the signed-in account's canonical `accountId`
+- if no active identity document exists yet, response is `ok:true` and `configured:false`
+- public-domain chat behavior remains unchanged because the client is not wired to this endpoint yet
+
 ### Roadmap Phase 6: Contact Identity Binding / Peer Disambiguation
 
 Goal:

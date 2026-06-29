@@ -28,6 +28,7 @@ const {
   listIdentityBackups,
   saveAccountActiveDevice,
   getAccountActiveDevice,
+  getAccountActiveIdentity,
 } = require("./mongo");
 
 const {
@@ -792,6 +793,7 @@ const server = http.createServer((req, res) => {
     req.method === "OPTIONS" &&
     (reqUrl.pathname.startsWith("/api/backup/") ||
       reqUrl.pathname.startsWith("/api/backups/") ||
+      reqUrl.pathname.startsWith("/api/account/") ||
       reqUrl.pathname.startsWith("/api/auth/"))
   ) {
     res.writeHead(204, {
@@ -846,6 +848,65 @@ const server = http.createServer((req, res) => {
           ok: false,
           error: "Firebase auth token invalid",
           detail: String(err?.message || err || ""),
+        });
+      }
+    })();
+    return;
+  }
+
+  if (req.method === "GET" && reqUrl.pathname === "/api/account/active-identity") {
+    const token = readBearerToken(req);
+    if (!token) {
+      return writeAuthRequired(res);
+    }
+
+    const status = getFirebaseAuthServerStatus();
+    if (!status.enabled) {
+      return writeJson(res, 200, {
+        ok: false,
+        configured: false,
+        enabled: false,
+        error: status.reason,
+      });
+    }
+
+    void (async () => {
+      try {
+        const decoded = await verifyFirebaseIdToken(token);
+        const accountId = makeFirebaseAccountId(decoded.firebaseUid);
+        const activeIdentity = await getAccountActiveIdentity(accountId);
+
+        if (!activeIdentity) {
+          return writeJson(res, 200, {
+            ok: true,
+            configured: false,
+            accountId,
+            firebaseUid: decoded.firebaseUid,
+            activeIdentityId: null,
+            activeRevision: 0,
+            displayName: "",
+            deviceLabel: "",
+            source: "",
+            serverUpdatedAt: null,
+          });
+        }
+
+        return writeJson(res, 200, {
+          ok: true,
+          configured: true,
+          accountId: activeIdentity.accountId,
+          firebaseUid: activeIdentity.firebaseUid || decoded.firebaseUid,
+          activeIdentityId: activeIdentity.activeIdentityId,
+          activeRevision: activeIdentity.activeRevision,
+          displayName: activeIdentity.displayName || "",
+          deviceLabel: activeIdentity.deviceLabel || "",
+          source: activeIdentity.source || "",
+          serverUpdatedAt: activeIdentity.serverUpdatedAt || null,
+        });
+      } catch (err) {
+        return writeJson(res, 401, {
+          ok: false,
+          error: "Firebase auth token invalid",
         });
       }
     })();
