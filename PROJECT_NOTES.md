@@ -110,13 +110,31 @@ Checkpoint 8 completed: docs and regression cleanup.
 
 ## Short Roadmap
 
-1. Multi-Device Backup Discipline / Latest Backup Rules.
-2. Contact / Peer Identity Disambiguation.
-3. Automatic Latest Backup / Backup Checkpointing.
-4. Firebase Account Ownership Hardening / Production Auth Cleanup.
-5. Legacy Migration / Compatibility Cleanup.
-6. Security / Abuse / Operational Hardening.
-7. UX Polish / Demo Readiness.
+Deadline priority:
+
+Must-have:
+
+1. Device Switching And Active Identity Enforcement - completed.
+2. Multi-Device Backup Discipline / Latest Backup Rules.
+3. Demo / Regression / Report.
+
+Should-have:
+
+4. Contact / Peer Identity Disambiguation MVP.
+
+Nice-to-have:
+
+5. Automatic Latest Backup / Backup Checkpointing.
+
+Future work:
+
+6. Full multi-device sync.
+7. Email/password registration.
+8. Firebase Admin migration.
+9. Production deployment hardening.
+
+Do not start Auto Backup unless must-have work is stable. Manual Backup Now plus
+latest-backup rules is the safer deadline target.
 
 ## Private Notes Policy
 
