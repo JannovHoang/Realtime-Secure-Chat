@@ -11,6 +11,11 @@ server/keys.json
 # logs
 *.log
 
+# Local/private project notes
+local-notes/
+*.private.md
+*_PRIVATE.md
+
 # OS/editor
 .DS_Store
 Thumbs.db
