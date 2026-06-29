@@ -2352,6 +2352,13 @@ export function useChatApp() {
     try {
       const account = await buildCurrentAccountProfile(username);
       const isFirebaseRestore = !!state.authUser?.uid && options.includeAuth !== false;
+      const restoreMode = options.olderBackup
+        ? "older"
+        : options.legacyRestore
+          ? "legacy"
+          : isFirebaseRestore
+            ? "latest_active"
+            : "latest";
       const selectedAccountId = state.pendingRestore?.items?.find(
         (item) => item?.identityId === identityId
       )?.accountId;
@@ -2423,6 +2430,7 @@ export function useChatApp() {
             includeAuth: options.includeAuth !== false,
             legacyRestore: !!options.legacyRestore,
             olderBackup: !!options.olderBackup,
+            restoreMode,
             localIdentityShort: formatIdentityShort(localIdentityMeta?.identityId),
             targetIdentityShort: formatIdentityShort(payload.identityId),
             sameIdentity:
@@ -2440,6 +2448,7 @@ export function useChatApp() {
             username,
             localIdentityShort: formatIdentityShort(localIdentityMeta?.identityId),
             targetIdentityShort: formatIdentityShort(payload.identityId),
+            restoreMode,
             sameIdentity:
               !!localIdentityMeta?.identityId &&
               localIdentityMeta.identityId === payload.identityId,

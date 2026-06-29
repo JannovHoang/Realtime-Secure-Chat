@@ -111,6 +111,33 @@ Checkpoint 2 test focus:
 - Backup to Cloud clears the guidance.
 - Chat, active identity enforcement, and restore behavior remain unchanged.
 
+## Checkpoint 3: Restore Latest And Older Backup Discipline
+
+Status: completed.
+
+Runtime behavior change: restore confirmation copy only. No backup format,
+crypto, server storage, active identity enforcement, or restore API changes.
+
+Implemented:
+
+- Kept Firebase Restore from Cloud on the latest active backup path.
+- Made the single-backup same-identity confirmation read as a latest-backup
+  refresh instead of a generic replace:
+  "Refresh From Latest Backup?"
+- Renamed that confirmation action to "Restore Latest Backup" when the selected
+  backup is the latest active backup for the same encrypted identity.
+- Kept different-identity restore confirmation as "Replace Local Identity?"
+- Kept older backups behind the advanced confirmation flow and labeled them as
+  recovery material, not the normal continuation path.
+
+Checkpoint 3 test focus:
+
+- A same-identity latest active restore shows the latest-backup refresh copy.
+- A different-identity restore still shows the replace warning.
+- Older backup restore still requires the advanced confirmation.
+- Restore, chat, Backup to Cloud, and active identity enforcement remain
+  unchanged.
+
 ## Test Plan
 
 - Backup to Cloud from the active Firebase identity succeeds and records latest

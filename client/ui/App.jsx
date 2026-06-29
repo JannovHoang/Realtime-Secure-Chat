@@ -1427,53 +1427,70 @@ export default function App() {
       ) : null}
 
       {state.modal?.type === "restore_overwrite_confirm" ? (
-        <ModalFrame
-          title="Replace Local Identity?"
-          subtitle={`Restore will replace the local identity stored for ${state.modal.username}.`}
-          eyebrow="Restore safety"
-          actions={
-            <>
-              <button
-                className="secondary"
-                type="button"
-                onClick={() => actions.handleRestoreOverwriteConfirm("cancel")}
+        (() => {
+          const isLatestActiveRestore = state.modal.restoreMode === "latest_active";
+          const isSameLatestActive =
+            isLatestActiveRestore && state.modal.sameIdentity;
+          return (
+            <ModalFrame
+              title={
+                isSameLatestActive
+                  ? "Refresh From Latest Backup?"
+                  : "Replace Local Identity?"
+              }
+              subtitle={
+                isSameLatestActive
+                  ? `Restore will refresh ${state.modal.username} on this browser from the latest active backup.`
+                  : `Restore will replace the local identity stored for ${state.modal.username}.`
+              }
+              eyebrow="Restore safety"
+              actions={
+                <>
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => actions.handleRestoreOverwriteConfirm("cancel")}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="primary"
+                    type="button"
+                    onClick={() => void actions.handleRestoreOverwriteConfirm("continue")}
+                  >
+                    {isSameLatestActive ? "Restore Latest Backup" : "Restore and Replace"}
+                  </button>
+                </>
+              }
+            >
+              <div className="identity-compare">
+                <div>
+                  <span>Current local identity</span>
+                  <strong>{state.modal.localIdentityShort || "unknown"}</strong>
+                </div>
+                <div>
+                  <span>Cloud backup identity</span>
+                  <strong>{state.modal.targetIdentityShort || "unknown"}</strong>
+                </div>
+              </div>
+              <ModalNote
+                tone={
+                  state.modal.sameIdentity || state.modal.localIdentityUnknown
+                    ? "info"
+                    : "warning"
+                }
               >
-                Cancel
-              </button>
-              <button
-                className="primary"
-                type="button"
-                onClick={() => void actions.handleRestoreOverwriteConfirm("continue")}
-              >
-                Restore and Replace
-              </button>
-            </>
-          }
-        >
-          <div className="identity-compare">
-            <div>
-              <span>Current local identity</span>
-              <strong>{state.modal.localIdentityShort || "unknown"}</strong>
-            </div>
-            <div>
-              <span>Cloud backup identity</span>
-              <strong>{state.modal.targetIdentityShort || "unknown"}</strong>
-            </div>
-          </div>
-          <ModalNote
-            tone={
-              state.modal.sameIdentity || state.modal.localIdentityUnknown
-                ? "info"
-                : "warning"
-            }
-          >
-            {state.modal.sameIdentity
-              ? "This appears to be the same identity. Restore will refresh this browser with the cloud backup state."
-              : state.modal.localIdentityUnknown
-                ? "The current local identity could not be verified with this vault password. This can happen when this browser still has an older local vault encrypted with a previous password. Restore will replace that local copy with the selected cloud backup."
-                : "This browser currently has a different identity for the same display name. Continue only if you intend to replace the local vault identity."}
-          </ModalNote>
-        </ModalFrame>
+                {isSameLatestActive
+                  ? "This is the same encrypted identity. Restore will refresh this browser with the latest active backup state."
+                  : state.modal.sameIdentity
+                    ? "This appears to be the same identity. Restore will refresh this browser with the selected cloud backup state."
+                    : state.modal.localIdentityUnknown
+                      ? "The current local identity could not be verified with this vault password. This can happen when this browser still has an older local vault encrypted with a previous password. Restore will replace that local copy with the selected cloud backup."
+                      : "This browser currently has a different identity for the same display name. Continue only if you intend to replace the local vault identity."}
+              </ModalNote>
+            </ModalFrame>
+          );
+        })()
       ) : null}
 
       {state.modal?.type === "legacy_restore_confirm" ? (
