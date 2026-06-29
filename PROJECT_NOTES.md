@@ -52,10 +52,10 @@ ratchet state, vault passwords, or raw recovery keys.
 
 ## Current Branch / Phase
 
-Current branch at the time of this cleanup:
+Current branch:
 
 ```text
-feature/active-identity-enforcement
+feature/latest-backup-rules
 ```
 
 Recently completed phase:
@@ -67,7 +67,8 @@ Device Switching And Active Identity Enforcement
 Current checkpoint status:
 
 ```text
-Checkpoint 8 completed: docs and regression cleanup.
+Multi-Device Backup Discipline / Latest Backup Rules
+Checkpoint 0 in progress: baseline design and regression plan only.
 ```
 
 ## Public Docs

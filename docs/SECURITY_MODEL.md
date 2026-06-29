@@ -25,6 +25,9 @@
 - A Firebase account has one server-enforced active encrypted identity.
 - Latest active backup is the normal restore path.
 - Older backups are advanced/recovery only.
+- Manual Backup to Cloud is the current way to move latest encrypted state to a
+  different device.
+- Freshness warnings must not silently merge or replay Double Ratchet state.
 - Inactive local identities must not silently chat or save latest backups as the
   account's active identity.
 - Start over explicitly creates/promotes a new active identity.

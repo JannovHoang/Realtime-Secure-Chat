@@ -45,11 +45,17 @@ https://chat.securechat.id.vn
 - Backup to Cloud uploads encrypted identity/vault state only.
 - Latest active backup is the normal Firebase restore path.
 - Older backups are advanced/recovery material, not normal continuation.
+- Manual Backup to Cloud is currently the supported way to carry latest
+  encrypted chat state to another device.
 - Freshness guard warns when cloud backup metadata appears newer than local
   state.
+- If local encrypted chat state changes after the last backup, users should
+  save a fresh Backup to Cloud before switching devices.
 - After recovery key use, unlock with the new vault password and save a fresh
   Backup to Cloud.
 - After Start over, save a fresh Backup to Cloud before switching devices.
+- The app does not implement full automatic multi-device Double Ratchet state
+  synchronization.
 
 ## Legacy Compatibility
 

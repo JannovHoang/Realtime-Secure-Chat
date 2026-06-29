@@ -34,7 +34,14 @@
 - Firebase Restore from Cloud defaults to latest active backup.
 - Freshness guard warns if cloud metadata is newer than local state.
 - Restore does not silently overwrite a newer local vault without warning.
+- Local-newer state after chat shows backup-needed guidance before device
+  switching.
 - Older/inactive backups are not normal default restore targets.
+- Older backups remain advanced/recovery material, not the normal continuation
+  path.
+- Recovery key restore is followed by unlock with the new password and a fresh
+  Backup to Cloud.
+- Start over is followed by a fresh Backup to Cloud before switching devices.
 
 ## Active Identity
 

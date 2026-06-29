@@ -44,10 +44,17 @@ Scope for deadline:
 
 - Restore default uses latest backup of the active identity.
 - Older backups are advanced/recovery data only.
-- Cloud-newer/local-newer warnings are clear.
+- Cloud-newer and local-newer warnings are clear.
 - Manual Backup Now remains available and reliable.
+- Local chat changes after the last backup produce clear backup-needed
+  guidance.
+- Recovery and Start over flows clearly instruct users to save a fresh Backup to
+  Cloud before switching devices.
 - UI/report clearly state there is no full automatic multi-device Double
   Ratchet sync.
+
+Checkpoint 0 status: design and regression plan in progress; runtime behavior
+unchanged.
 
 ## 3. Contact / Peer Identity Disambiguation
 
