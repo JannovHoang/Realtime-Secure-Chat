@@ -17,6 +17,7 @@ The current demo focuses on:
 - encrypted identity backup and restore
 - account and identity metadata visibility
 - safer device switching warnings
+- latest-backup restore discipline
 - Firebase default-vault UX in optional/legacy-safe mode
 - fixed public domain access through Cloudflare Tunnel
 
@@ -165,9 +166,10 @@ Expected result:
 Expected result:
 
 - if cloud backup metadata is newer than the older browser's local pointer or
-  backup metadata, the app shows `Cloud Backup May Be Newer`
-- the user can choose `Restore from Cloud`, `Unlock anyway`, or `Cancel`
-- for safe use, choose `Restore from Cloud` before chatting from the older
+  backup metadata, the app shows a latest-backup freshness warning such as
+  `Cloud Backup Is Newer`
+- the user can choose `Restore Latest Backup`, `Unlock anyway`, or `Cancel`
+- for safe use, choose `Restore Latest Backup` before chatting from the older
   browser
 - this is a guard, not full automatic multi-device Double Ratchet sync
 
@@ -175,14 +177,19 @@ Expected result:
 
 1. Use a browser that already has a local vault for the display name.
 2. Click `Restore from Cloud`.
-3. Confirm that the app shows `Replace Local Identity?`.
-4. Choose `Cancel` once.
-5. Try again and choose `Restore and Replace`.
+3. If the selected backup is the same latest active identity, confirm that the
+   app shows `Refresh From Latest Backup?`.
+4. If the selected backup is a different local identity, confirm that the app
+   shows `Replace Local Identity?`.
+5. Choose `Cancel` once.
+6. Try again and choose the primary restore action.
 
 Expected result:
 
 - cancel does not replace the local vault
-- confirm replaces the local identity with the selected cloud backup
+- same-identity latest restore refreshes this browser from the latest backup
+- different-identity restore replaces the local identity with the selected cloud
+  backup only after explicit confirmation
 - the flow still requires pressing `Start` after restore
 
 ### G. Stale Backup Restore Guard
@@ -196,7 +203,7 @@ Expected result:
 
 Expected result:
 
-- the app shows `Cloud Backup May Be Older`
+- the app shows `Selected Backup May Be Older`
 - choosing `Cancel` leaves the local vault unchanged
 - choosing `Restore Anyway` is available only as an explicit rollback/recovery
   action
@@ -535,6 +542,9 @@ Before demo:
 - use clean demo users that have not already desynchronized
 - if using Google sign-in, verify that the display name matches the intended
   local vault before unlocking
+- for the normal Firebase demo path, sign in with the intended Google account
+  before unlock or restore; signed-out legacy unlock is only for
+  migration/compatibility
 - backup before switching devices
 - restore before chatting on a new device
 - after important test messages, save a fresh backup from the newest working
@@ -550,6 +560,8 @@ Before demo:
   identity
 - if a restore warning says the cloud backup may be older, cancel unless you are
   intentionally testing rollback
+- reused browsers can retain local vaults for multiple display names after
+  different Google accounts have used that browser
 
 Avoid during demo:
 

@@ -51,6 +51,11 @@ https://chat.securechat.id.vn
   state.
 - If local encrypted chat state changes after the last backup, users should
   save a fresh Backup to Cloud before switching devices.
+- The UI shows backup-needed guidance after send/receive changes local
+  encrypted chat state, and clears that guidance after Backup to Cloud.
+- Same-identity restore from the latest active backup is presented as a refresh
+  from latest backup; different-identity restore remains an explicit local
+  identity replacement.
 - After recovery key use, unlock with the new vault password and save a fresh
   Backup to Cloud.
 - After Start over, save a fresh Backup to Cloud before switching devices.
@@ -61,6 +66,9 @@ https://chat.securechat.id.vn
 
 - Legacy signed-out display-name flow still exists for migration/demo use.
 - Some local vault storage and routes still use display/vault labels.
+- A browser can retain multiple local vaults by display/vault label even after
+  different Google accounts sign in and out.
+- Signed-out local vault unlock is not Firebase account ownership proof.
 - Do not remove legacy flow unless a dedicated migration cleanup phase is active.
 
 ## Known Limitations

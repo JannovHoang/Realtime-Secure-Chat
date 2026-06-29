@@ -14,6 +14,10 @@
 - Signed-in user with valid default vault pointer only needs vault password.
 - Google account A does not use account B's pointer or active identity.
 - Legacy signed-out Start still works for existing local demo vaults.
+- Signed-out legacy unlock is treated as migration/demo compatibility, not
+  Firebase account ownership proof.
+- A browser that previously used multiple Google accounts may still hold
+  multiple local vaults by display/vault label.
 
 ## Realtime Chat
 
@@ -32,10 +36,12 @@
 
 - Backup to Cloud succeeds for the active Firebase identity.
 - Firebase Restore from Cloud defaults to latest active backup.
+- Same-identity latest active restore shows latest-backup refresh copy.
 - Freshness guard warns if cloud metadata is newer than local state.
 - Restore does not silently overwrite a newer local vault without warning.
 - Local-newer state after chat shows backup-needed guidance before device
   switching.
+- Backup to Cloud clears backup-needed guidance after local send/receive.
 - Older/inactive backups are not normal default restore targets.
 - Older backups remain advanced/recovery material, not the normal continuation
   path.
@@ -68,3 +74,14 @@
 - No plaintext ratchet state in logs.
 - No Mongo URI, Cloudflare token, Firebase service account, or private key is
   committed.
+
+## Demo User Smoke Path
+
+- AliceDemo and BebeDemo can sign in/unlock in separate browsers and exchange
+  realtime messages both directions.
+- Giang Hoang can restore latest backup after signing in with the intended
+  Google account.
+- If Firefox or another reused browser still has an older local vault for Giang
+  Hoang, local-newer restore warning is expected; cancel and Backup to Cloud
+  from the newest working local state unless intentionally testing rollback.
+- Do not choose older backup identities during the normal demo path.

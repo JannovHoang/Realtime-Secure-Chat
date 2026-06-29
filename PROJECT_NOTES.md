@@ -45,6 +45,10 @@ ratchet state, vault passwords, or raw recovery keys.
 - Inactive local identities are blocked from normal Firebase chat and
   Firebase-owned latest-backup save paths.
 - Normal Firebase Restore from Cloud targets the active identity's latest backup.
+- Local chat changes after the last backup show Backup to Cloud guidance before
+  device switching.
+- Same-identity latest restore is presented as a latest-backup refresh; older
+  backups remain advanced/recovery material.
 - Start over creates/promotes a new active encrypted identity after explicit
   user confirmation.
 - Recovery key restore keeps the identity from the recovery wrapper/backup; it
@@ -61,14 +65,14 @@ feature/latest-backup-rules
 Recently completed phase:
 
 ```text
-Device Switching And Active Identity Enforcement
+Multi-Device Backup Discipline / Latest Backup Rules
 ```
 
 Current checkpoint status:
 
 ```text
 Multi-Device Backup Discipline / Latest Backup Rules
-Checkpoint 0 in progress: baseline design and regression plan only.
+Checkpoint 4 completed: demo, regression, and docs freeze.
 ```
 
 ## Public Docs
@@ -116,7 +120,7 @@ Deadline priority:
 Must-have:
 
 1. Device Switching And Active Identity Enforcement - completed.
-2. Multi-Device Backup Discipline / Latest Backup Rules.
+2. Multi-Device Backup Discipline / Latest Backup Rules - completed.
 3. Demo / Regression / Report.
 
 Should-have:

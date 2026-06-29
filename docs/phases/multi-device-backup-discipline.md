@@ -1,6 +1,6 @@
 # Phase: Multi-Device Backup Discipline / Latest Backup Rules
 
-Status: in progress.
+Status: completed.
 
 ## Goal
 
@@ -137,6 +137,36 @@ Checkpoint 3 test focus:
 - Older backup restore still requires the advanced confirmation.
 - Restore, chat, Backup to Cloud, and active identity enforcement remain
   unchanged.
+
+## Checkpoint 4: Demo, Regression, And Docs Freeze
+
+Status: completed.
+
+Runtime behavior change: none.
+
+Implemented:
+
+- Updated public demo and regression docs for the latest-backup discipline.
+- Recorded that the phase is complete and remains manual-backup based.
+- Added concrete demo guidance for AliceDemo, BebeDemo, and Giang Hoang style
+  multi-browser testing.
+- Documented the signed-out legacy local-vault caveat: browser-local vaults can
+  remain available by display/vault label even after a different Google account
+  was used in the same browser.
+- Reconfirmed that automatic backup and full multi-device Double Ratchet sync
+  are out of scope.
+
+Checkpoint 4 test focus:
+
+- Run the public-domain smoke test.
+- Verify Google sign-in plus vault unlock for the intended demo account.
+- Verify realtime chat in both directions.
+- Verify backup-needed guidance after send/receive.
+- Verify Backup to Cloud clears the backup-needed guidance.
+- Verify Restore Latest Backup for a same-identity restore.
+- Verify older backups remain advanced/recovery material.
+- Verify legacy signed-out unlock is understood as migration/demo
+  compatibility, not Firebase account ownership.
 
 ## Test Plan
 

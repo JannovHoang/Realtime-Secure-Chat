@@ -37,6 +37,8 @@ identities cannot silently continue as the current account identity.
 
 Priority: must-have.
 
+Status: completed.
+
 Goal: make cross-device use safer by tightening latest-backup expectations,
 freshness warnings, and backup guidance after chat, recovery, and Start over.
 
@@ -53,8 +55,17 @@ Scope for deadline:
 - UI/report clearly state there is no full automatic multi-device Double
   Ratchet sync.
 
-Checkpoint 0 status: design and regression plan in progress; runtime behavior
-unchanged.
+Completed phase outcome:
+
+- Freshness warnings point users to Restore Latest Backup when cloud metadata is
+  newer than local state.
+- Local chat changes after the last backup show Backup to Cloud guidance before
+  device switching.
+- Restore confirmation copy distinguishes latest active backup refresh from
+  local identity replacement.
+- Older backups remain advanced/recovery material, not the normal continuation
+  path.
+- Manual Backup to Cloud remains the supported deadline-safe discipline.
 
 ## 3. Contact / Peer Identity Disambiguation
 
