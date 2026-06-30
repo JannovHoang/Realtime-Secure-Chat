@@ -72,7 +72,8 @@ Current checkpoint status:
 
 ```text
 Chat UI Polish / Account Vault Simplification
-Checkpoint 0 completed: UI plan and scope freeze.
+Checkpoint 4 completed: backup-needed banner and mobile chat view.
+Next checkpoint: Checkpoint 5 - Account/Vault Entry vs Chat Workspace Split.
 ```
 
 ## Public Docs

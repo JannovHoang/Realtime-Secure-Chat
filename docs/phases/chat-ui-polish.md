@@ -141,10 +141,46 @@ Danger zone:
 2. Vault unlock panel for signed-in users.
 3. Compact account/vault status and sidebar conversation priority.
 4. Backup-needed banner with Backup now action.
-5. Settings and advanced action grouping.
-6. Status wording polish.
-7. Visual polish and semantic color hierarchy.
-8. Regression and demo checklist update.
+5. Account/Vault entry vs Chat Workspace split.
+6. Settings and advanced action grouping.
+7. Status wording polish.
+8. Visual polish and semantic color hierarchy.
+9. Regression and demo checklist update.
+
+### Checkpoint 5 Target: Account/Vault Entry vs Chat Workspace Split
+
+Separate the large account/vault entry UI from the unlocked chat workspace.
+This checkpoint remains UI/layout/rendering-condition only.
+
+Account/Vault Entry is used before the app is ready for chat:
+
+- signed out;
+- signed in without a local vault/default pointer;
+- vault locked;
+- restore, recovery, and start-over flows.
+
+Chat Workspace is used after the vault is unlocked:
+
+- compact top bar only;
+- sidebar conversations plus chat pane on desktop/laptop;
+- existing mobile Account/Vault, Conversations, and Chat detail flow preserved
+  unless a small rendering fix is required;
+- no large display-name input, Account Auth card, Session Status card, or
+  unlocked-only technical actions dominating the chat header.
+
+Unlocked Chat Workspace top-level actions should stay limited to:
+
+- Backup now / Backup to Cloud;
+- Settings;
+- Sign out when applicable.
+
+Settings should keep secondary and advanced actions grouped:
+
+- Profile / Identity: display name or identity label if needed.
+- Vault: Change vault password, Create recovery key.
+- Backup: Backup now, Restore latest backup if still useful in unlocked state.
+- Advanced: Technical details.
+- Danger zone: Start over with a new encrypted identity.
 
 ## Design Targets
 

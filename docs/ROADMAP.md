@@ -88,6 +88,8 @@ Scope:
 - Signed-in vault unlock panel.
 - Compact account/vault status instead of a large technical identity card.
 - Backup-needed action banner near the chat/composer.
+- Account/Vault Entry and unlocked Chat Workspace split so the large
+  account/vault UI does not dominate the active chat view.
 - Settings/Advanced grouping for change password, recovery key, technical
   details, and Start over.
 - Semantic button and status colors.
