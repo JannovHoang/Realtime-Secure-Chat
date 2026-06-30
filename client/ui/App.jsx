@@ -94,7 +94,7 @@ function ToastViewport({ toasts }) {
   );
 }
 
-function AccountIdentityPanel({ info, helpers, backupNeeded = false }) {
+function AccountIdentityPanel({ info, helpers, backupNeeded = false, detailsOnly = false }) {
   if (!info?.displayName && !info?.identityId) return null;
 
   const accountShort = helpers.formatIdentityShort(info.accountId);
@@ -110,6 +110,47 @@ function AccountIdentityPanel({ info, helpers, backupNeeded = false }) {
       ? backupOwnership.chipText
       : "Local only";
   const backupStatusClass = backupNeeded ? "is-pending" : backupChipClass;
+
+  const detailsGrid = (
+    <dl className="account-technical-grid">
+      <div>
+        <dt>Display name</dt>
+        <dd>{info.displayName || "unknown"}</dd>
+      </div>
+      <div>
+        <dt>Account ID</dt>
+        <dd title={info.accountId || ""}>{accountShort}</dd>
+      </div>
+      <div>
+        <dt>Identity ID</dt>
+        <dd title={info.identityId || ""}>{identityShort}</dd>
+      </div>
+      <div>
+        <dt>Backup time</dt>
+        <dd>{backupTime || "not saved yet"}</dd>
+      </div>
+      <div>
+        <dt>Backup</dt>
+        <dd>{info.backupServerSavedAt ? backupOwnership.label : "Not backed up"}</dd>
+      </div>
+      <div>
+        <dt>Account scheme</dt>
+        <dd>{info.accountIdScheme || "legacy/local"}</dd>
+      </div>
+      <div>
+        <dt>Backup owner</dt>
+        <dd>{backupOwnership.detail}</dd>
+      </div>
+      <div>
+        <dt>Auth mode</dt>
+        <dd>{info.authMode || "legacy/local"}</dd>
+      </div>
+    </dl>
+  );
+
+  if (detailsOnly) {
+    return detailsGrid;
+  }
 
   return (
     <div className="account-panel">
@@ -127,40 +168,7 @@ function AccountIdentityPanel({ info, helpers, backupNeeded = false }) {
       </div>
       <details className="account-technical-details">
         <summary>Details</summary>
-        <dl className="account-technical-grid">
-          <div>
-            <dt>Display name</dt>
-            <dd>{info.displayName || "unknown"}</dd>
-          </div>
-          <div>
-            <dt>Account ID</dt>
-            <dd title={info.accountId || ""}>{accountShort}</dd>
-          </div>
-          <div>
-            <dt>Identity ID</dt>
-            <dd title={info.identityId || ""}>{identityShort}</dd>
-          </div>
-          <div>
-            <dt>Backup time</dt>
-            <dd>{backupTime || "not saved yet"}</dd>
-          </div>
-          <div>
-            <dt>Backup</dt>
-            <dd>{info.backupServerSavedAt ? backupOwnership.label : "Not backed up"}</dd>
-          </div>
-          <div>
-            <dt>Account scheme</dt>
-            <dd>{info.accountIdScheme || "legacy/local"}</dd>
-          </div>
-          <div>
-            <dt>Backup owner</dt>
-            <dd>{backupOwnership.detail}</dd>
-          </div>
-          <div>
-            <dt>Auth mode</dt>
-            <dd>{info.authMode || "legacy/local"}</dd>
-          </div>
-        </dl>
+        {detailsGrid}
       </details>
     </div>
   );
@@ -274,6 +282,7 @@ export default function App() {
   const [showRecoveryNextPassword, setShowRecoveryNextPassword] = React.useState(false);
   const [showRecoveryConfirmPassword, setShowRecoveryConfirmPassword] = React.useState(false);
   const [firebaseVaultFallbackMode, setFirebaseVaultFallbackMode] = React.useState("");
+  const [mobileChatOpen, setMobileChatOpen] = React.useState(false);
   const showPasswordField = !state.started || state.disconnected;
   const signedInWithGoogle = !!state.authUser?.uid;
   const googleAuthEnabled = !!state.authAvailability?.enabled;
@@ -339,9 +348,17 @@ export default function App() {
     !state.activePeerReady ||
     busy ||
     !String(state.messageDraft || "").trim();
+  const showComposer =
+    state.started && !state.disconnected && !!state.activePeer && state.activePeerReady;
   const showSignedOutGoogleEntry =
     !signedInWithGoogle && !state.started && !state.disconnected;
   const showUnlockedActions = state.started && !state.disconnected;
+  const showMobileChatDetail =
+    state.started && !!state.activePeer && mobileChatOpen;
+  const mobileContentMode =
+    showMobileChatDetail
+      ? " is-mobile-chat-open"
+      : " is-mobile-conversation-open";
 
   React.useEffect(() => {
     const textarea = composerInputRef.current;
@@ -388,6 +405,12 @@ export default function App() {
   }, [signedInWithGoogle, firebaseDefaultVault, state.started]);
 
   React.useEffect(() => {
+    if (!state.started || !state.activePeer) {
+      setMobileChatOpen(false);
+    }
+  }, [state.started, state.activePeer]);
+
+  React.useEffect(() => {
     const activePeerChanged = lastActivePeerRef.current !== state.activePeer;
     if (activePeerChanged) {
       lastActivePeerRef.current = state.activePeer;
@@ -413,8 +436,30 @@ export default function App() {
     shouldStickToBottomRef.current = distanceFromBottom < 96;
   }, []);
 
+  const openMobilePeer = React.useCallback(
+    (peer) => {
+      actions.selectPeer(peer);
+      setMobileChatOpen(true);
+    },
+    [actions]
+  );
+
+  const commitMobilePeerDraft = React.useCallback(() => {
+    actions.commitPeerDraft();
+    if (state.started && String(peerInputValue || "").trim()) {
+      setMobileChatOpen(true);
+    }
+  }, [actions, peerInputValue, state.started]);
+
+  const shellModeClass = [
+    showUnlockedActions ? "is-unlocked-shell" : "is-account-shell",
+    showMobileChatDetail ? "is-mobile-chat-detail" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="shell">
+    <div className={`shell ${shellModeClass}`}>
       <div className="topbar">
         <div className="brand">
           <img
@@ -643,6 +688,19 @@ export default function App() {
               <div className="vault-unlock-note">
                 The vault password unlocks E2EE keys stored on this browser.
               </div>
+              <details className="vault-unlock-danger">
+                <summary>Can't unlock?</summary>
+                <button
+                  className="secondary danger"
+                  type="button"
+                  disabled={busy || state.started}
+                  onClick={() => {
+                    void actions.openResetEncryptedIdentityModal();
+                  }}
+                >
+                  Start over with a new encrypted identity
+                </button>
+              </details>
             </div>
           ) : (
             <>
@@ -808,7 +866,7 @@ export default function App() {
                       Backup to Cloud
                     </button>
                     <button
-                      className="secondary"
+                      className="secondary desktop-vault-action"
                       type="button"
                       disabled={busy || !state.started || state.disconnected}
                       onClick={() => {
@@ -818,7 +876,7 @@ export default function App() {
                       Change vault password
                     </button>
                     <button
-                      className="secondary"
+                      className="secondary desktop-vault-action"
                       type="button"
                       disabled={busy || !state.started || state.disconnected}
                       onClick={() => {
@@ -827,6 +885,53 @@ export default function App() {
                     >
                       Create recovery key
                     </button>
+                    <details className="mobile-settings-menu">
+                      <summary>Settings</summary>
+                      <div className="mobile-settings-actions">
+                        <div className="mobile-settings-section">Vault</div>
+                        <button
+                          className="secondary"
+                          type="button"
+                          disabled={busy || !state.started || state.disconnected}
+                          onClick={() => {
+                            actions.openChangeVaultPasswordModal();
+                          }}
+                        >
+                          Change vault password
+                        </button>
+                        <button
+                          className="secondary"
+                          type="button"
+                          disabled={busy || !state.started || state.disconnected}
+                          onClick={() => {
+                            actions.openRecoveryKeyModal();
+                          }}
+                        >
+                          Create recovery key
+                        </button>
+                        <div className="mobile-settings-section">Advanced</div>
+                        <details className="mobile-technical-details">
+                          <summary>Technical details</summary>
+                          <AccountIdentityPanel
+                            info={state.identityPanel}
+                            helpers={helpers}
+                            backupNeeded={state.backupNeeded}
+                            detailsOnly
+                          />
+                        </details>
+                        <div className="mobile-settings-section danger">Danger zone</div>
+                        <button
+                          className="secondary danger"
+                          type="button"
+                          disabled={busy || !state.started || state.disconnected}
+                          onClick={() => {
+                            void actions.openResetEncryptedIdentityModal();
+                          }}
+                        >
+                          Start over with a new encrypted identity
+                        </button>
+                      </div>
+                    </details>
                   </>
                 ) : null}
                 {!signedInWithGoogle && showUnlockedActions ? (
@@ -858,13 +963,15 @@ export default function App() {
         </div>
       </div>
 
-      <div className="content">
+      <div
+        className={`content${state.started ? " is-started" : " is-prestart"}${mobileContentMode}`}
+      >
         <aside className="sidebar">
           <form
             className="peer-target-card"
             onSubmit={(e) => {
               e.preventDefault();
-              actions.commitPeerDraft();
+              commitMobilePeerDraft();
             }}
           >
             <div className="field">
@@ -882,7 +989,7 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    actions.commitPeerDraft();
+                    commitMobilePeerDraft();
                   }
                 }}
               />
@@ -913,7 +1020,7 @@ export default function App() {
                       "peer-item" + (item.peer === state.activePeer ? " active" : "")
                     }
                     aria-current={item.peer === state.activePeer ? "true" : undefined}
-                    onClick={() => actions.selectPeer(item.peer)}
+                    onClick={() => openMobilePeer(item.peer)}
                   >
                     <span className="peer-avatar">
                       {item.peer.slice(0, 1).toUpperCase()}
@@ -948,6 +1055,34 @@ export default function App() {
         </aside>
 
         <main className="chat">
+          {state.started && state.activePeer ? (
+            <div className="chat-pane-head">
+              <button
+                className="mobile-back-button"
+                type="button"
+                onClick={() => setMobileChatOpen(false)}
+              >
+                <span aria-hidden="true">{"<"}</span>
+                <span>Back to conversations</span>
+              </button>
+              <div className="chat-pane-identity">
+                <div className="chat-pane-title">{state.activePeer}</div>
+                <div className="chat-pane-sub">
+                  {state.activePeerReady
+                    ? "Peer certificate is ready"
+                    : "Waiting for peer certificate"}
+                </div>
+              </div>
+              <div
+                className={
+                  "chat-pane-badge" +
+                  (state.activePeerReady ? " is-ready" : " is-waiting")
+                }
+              >
+                {state.activePeerReady ? "Ready" : "Syncing"}
+              </div>
+            </div>
+          ) : null}
           <div
             className="messages"
             ref={messagesViewportRef}
@@ -955,25 +1090,6 @@ export default function App() {
           >
             {state.started && state.activePeer ? (
               <div className="chat-pane">
-                <div className="chat-pane-head">
-                  <div>
-                    <div className="chat-pane-title">{state.activePeer}</div>
-                    <div className="chat-pane-sub">
-                      {state.activePeerReady
-                        ? "Peer certificate is ready"
-                        : "Waiting for peer certificate"}
-                    </div>
-                  </div>
-                  <div
-                    className={
-                      "chat-pane-badge" +
-                      (state.activePeerReady ? " is-ready" : " is-waiting")
-                    }
-                  >
-                    {state.activePeerReady ? "Ready" : "Syncing"}
-                  </div>
-                </div>
-
                 {state.messageLoading ? (
                   <div className="history-loading">Loading local history...</div>
                 ) : null}
@@ -1017,36 +1133,57 @@ export default function App() {
             )}
           </div>
 
-          <div className="composer">
-            <textarea
-              ref={composerInputRef}
-              rows={1}
-              aria-label="Message"
-              placeholder={
-                state.activePeerReady
-                  ? "Type a message..."
-                  : "Send is enabled after the peer certificate is ready"
-              }
-              value={state.messageDraft}
-              onChange={(e) => actions.setMessageDraft(e.target.value)}
-              disabled={!state.started || state.disconnected || !state.activePeer || state.sending}
-              onKeyDown={(e) => {
-                if (shouldSendMessageFromKeyDown(e)) {
-                  e.preventDefault();
+          {state.started && !state.disconnected && state.backupNeeded ? (
+            <div className="backup-needed-banner">
+              <div className="backup-needed-copy">
+                <strong>Local changes are not backed up yet.</strong>
+                <span>Back up before switching devices.</span>
+              </div>
+              <button
+                className="secondary compact"
+                type="button"
+                disabled={backupDisabled}
+                onClick={() => {
+                  actions.openBackupModal();
+                }}
+              >
+                Backup to Cloud
+              </button>
+            </div>
+          ) : null}
+
+          {state.started && state.activePeer && !state.activePeerReady ? (
+            <div className="peer-waiting-note">Waiting for peer certificate...</div>
+          ) : null}
+
+          {showComposer ? (
+            <div className="composer">
+              <textarea
+                ref={composerInputRef}
+                rows={1}
+                aria-label="Message"
+                placeholder="Type a message..."
+                value={state.messageDraft}
+                onChange={(e) => actions.setMessageDraft(e.target.value)}
+                disabled={state.sending}
+                onKeyDown={(e) => {
+                  if (shouldSendMessageFromKeyDown(e)) {
+                    e.preventDefault();
+                    void actions.handleSend();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                disabled={sendDisabled}
+                onClick={() => {
                   void actions.handleSend();
-                }
-              }}
-            />
-            <button
-              type="button"
-              disabled={sendDisabled}
-              onClick={() => {
-                void actions.handleSend();
-              }}
-            >
-              Send
-            </button>
-          </div>
+                }}
+              >
+                Send
+              </button>
+            </div>
+          ) : null}
         </main>
       </div>
       {state.modal?.type === "backup_password" ? (
