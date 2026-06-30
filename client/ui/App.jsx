@@ -283,6 +283,8 @@ export default function App() {
   const googleAuthEnabled = !!state.authAvailability?.enabled;
   const firebaseDefaultVault = signedInWithGoogle ? state.defaultVaultPointer : null;
   const useDefaultVaultUnlock = !!firebaseDefaultVault && showPasswordField;
+  const firebaseVaultLabel =
+    firebaseDefaultVault?.displayName || firebaseDefaultVault?.legacyVaultLabel || "";
   const loadingFirebaseDefaultVault =
     signedInWithGoogle && showPasswordField && !state.defaultVaultPointerLoaded;
   const needsFirebaseVaultChoice =
@@ -564,6 +566,86 @@ export default function App() {
                 >
                   Use legacy local identity
                 </button>
+              </div>
+            </div>
+          ) : useDefaultVaultUnlock ? (
+            <div className="vault-unlock-card">
+              <div className="vault-unlock-head">
+                <div className="vault-unlock-copy">
+                  <div className="vault-unlock-eyebrow">Encrypted vault</div>
+                  <div className="vault-unlock-title">
+                    {state.disconnected ? "Reconnect secure session" : "Unlock encrypted vault"}
+                  </div>
+                  {firebaseVaultLabel ? (
+                    <div className="vault-unlock-detail">
+                      <span>
+                        <strong>Vault label</strong>
+                        {firebaseVaultLabel}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+                <span className="vault-unlock-chip">Local vault</span>
+              </div>
+
+              <div className="vault-unlock-controls">
+                <Field
+                  label="Vault password"
+                  placeholder="Enter your vault password"
+                  type={showTopbarPassword ? "text" : "password"}
+                  value={state.password}
+                  onChange={(value) => actions.setField("password", value)}
+                  disabled={busy}
+                  trailing={
+                    <button
+                      className="password-toggle"
+                      type="button"
+                      aria-label={
+                        showTopbarPassword ? "Hide vault password" : "Show vault password"
+                      }
+                      aria-pressed={showTopbarPassword}
+                      disabled={busy}
+                      onClick={() => setShowTopbarPassword((value) => !value)}
+                    >
+                      <PasswordVisibilityIcon visible={showTopbarPassword} />
+                    </button>
+                  }
+                />
+                <div className="vault-unlock-actions">
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={startDisabled}
+                    onClick={() => {
+                      void actions.handleStart();
+                    }}
+                  >
+                    {startLabel}
+                  </button>
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={busy || state.started || !state.username || !state.password}
+                    onClick={() => {
+                      void actions.handleRestoreRequest();
+                    }}
+                  >
+                    Restore Latest Backup
+                  </button>
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={busy || state.started || !state.username}
+                    onClick={() => {
+                      void actions.openRecoveryPasswordResetModal();
+                    }}
+                  >
+                    Use recovery key
+                  </button>
+                </div>
+              </div>
+              <div className="vault-unlock-note">
+                The vault password unlocks E2EE keys stored on this browser.
               </div>
             </div>
           ) : (

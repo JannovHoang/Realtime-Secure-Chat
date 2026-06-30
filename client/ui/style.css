@@ -156,6 +156,109 @@ body {
   gap: var(--space-2);
 }
 
+.vault-unlock-card {
+  display: grid;
+  gap: var(--space-3);
+  flex: 1 1 680px;
+  min-width: min(680px, 100%);
+  max-width: 840px;
+  padding: 14px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.96));
+  box-shadow: var(--shadow-sm);
+}
+
+.vault-unlock-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.vault-unlock-copy {
+  min-width: 0;
+}
+
+.vault-unlock-eyebrow {
+  color: var(--primary-2);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.vault-unlock-title {
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.vault-unlock-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.vault-unlock-detail span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+
+.vault-unlock-detail strong {
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vault-unlock-chip {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 999px;
+  background: rgba(219, 234, 254, 0.86);
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.vault-unlock-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.vault-unlock-controls label {
+  flex: 0 1 220px;
+}
+
+.vault-unlock-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.vault-unlock-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .topbar-actions {
   flex-wrap: wrap;
 }
@@ -1527,7 +1630,8 @@ button.compact {
 
   .signed-out-entry,
   .google-entry-card,
-  .legacy-entry {
+  .legacy-entry,
+  .vault-unlock-card {
     flex: 1 1 100%;
     max-width: none;
   }
@@ -1666,6 +1770,7 @@ button.compact {
   .signed-out-entry,
   .google-entry-card,
   .legacy-entry,
+  .vault-unlock-card,
   .firebase-vault-choice,
   .firebase-auth-card {
     width: 100%;
@@ -1703,6 +1808,21 @@ button.compact {
 
   .google-entry-card button {
     width: 100%;
+  }
+
+  .vault-unlock-head,
+  .vault-unlock-controls,
+  .vault-unlock-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .vault-unlock-controls label,
+  .vault-unlock-actions button {
+    width: 100%;
+    min-width: 0;
   }
 
   .firebase-vault-choice-actions {
