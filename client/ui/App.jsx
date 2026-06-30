@@ -359,6 +359,23 @@ export default function App() {
     showMobileChatDetail
       ? " is-mobile-chat-open"
       : " is-mobile-conversation-open";
+  const workspaceInfo = state.identityPanel || {};
+  const workspaceBackupOwnership = helpers.formatBackupOwnership(workspaceInfo);
+  const workspaceBackupStatusClass = state.backupNeeded
+    ? "is-pending"
+    : workspaceInfo.backupServerSavedAt
+      ? workspaceBackupOwnership.chipClass
+      : "is-local";
+  const workspaceBackupStatusText = state.backupNeeded
+    ? "Backup pending"
+    : workspaceInfo.backupServerSavedAt
+      ? workspaceBackupOwnership.chipText
+      : "Local only";
+  const workspaceDisplayName =
+    workspaceInfo.displayName || state.displayName || state.username || "Unlocked vault";
+  const workspaceSignOutDisabled = signedInWithGoogle ? state.authBusy : logoutDisabled;
+  const restoreLatestDisabled =
+    busy || !state.started || state.disconnected || !state.username || !state.password;
 
   React.useEffect(() => {
     const textarea = composerInputRef.current;
@@ -461,15 +478,135 @@ export default function App() {
   return (
     <div className={`shell ${shellModeClass}`}>
       <div className="topbar">
-        <div className="brand">
-          <img
-            className="brand-logo"
-            src={brandLogo}
-            alt="Realtime Secure Chat"
-          />
-        </div>
+        {showUnlockedActions ? (
+          <div className="workspace-topbar">
+            <div className="workspace-brand">
+              <img
+                className="workspace-logo"
+                src={brandLogo}
+                alt="Realtime Secure Chat"
+              />
+            </div>
+            <div className="workspace-summary">
+              <div className="workspace-title-row">
+                <span className="workspace-name">{workspaceDisplayName}</span>
+                <span aria-hidden="true">.</span>
+                <span>Vault unlocked</span>
+              </div>
+            </div>
+            <span className={`workspace-backup-chip ${workspaceBackupStatusClass}`}>
+              {workspaceBackupStatusText}
+            </span>
+            <div className="workspace-actions">
+              <button
+                className="secondary"
+                type="button"
+                disabled={backupDisabled}
+                onClick={() => {
+                  actions.openBackupModal();
+                }}
+              >
+                Backup to Cloud
+              </button>
+              <details className="workspace-settings-menu">
+                <summary>Settings</summary>
+                <div className="workspace-settings-panel">
+                  <div className="workspace-settings-section">Profile / Identity</div>
+                  <div className="workspace-settings-copy">
+                    <strong>{workspaceDisplayName}</strong>
+                  </div>
+                  <div className="workspace-settings-section">Vault</div>
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={busy || !state.started || state.disconnected}
+                    onClick={() => {
+                      actions.openChangeVaultPasswordModal();
+                    }}
+                  >
+                    Change vault password
+                  </button>
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={busy || !state.started || state.disconnected}
+                    onClick={() => {
+                      actions.openRecoveryKeyModal();
+                    }}
+                  >
+                    Create recovery key
+                  </button>
+                  <div className="workspace-settings-section">Backup</div>
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={backupDisabled}
+                    onClick={() => {
+                      actions.openBackupModal();
+                    }}
+                  >
+                    Backup to Cloud
+                  </button>
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={restoreLatestDisabled}
+                    onClick={() => {
+                      void actions.handleRestoreRequest();
+                    }}
+                  >
+                    Restore latest backup
+                  </button>
+                  <div className="workspace-settings-section">Advanced</div>
+                  <details className="workspace-technical-details">
+                    <summary>Technical details</summary>
+                    <AccountIdentityPanel
+                      info={state.identityPanel}
+                      helpers={helpers}
+                      backupNeeded={state.backupNeeded}
+                      detailsOnly
+                    />
+                  </details>
+                  <div className="workspace-settings-section danger">Danger zone</div>
+                  <button
+                    className="secondary danger"
+                    type="button"
+                    disabled={busy || !state.started || state.disconnected}
+                    onClick={() => {
+                      void actions.openResetEncryptedIdentityModal();
+                    }}
+                  >
+                    Start over with a new encrypted identity
+                  </button>
+                </div>
+              </details>
+              <button
+                className="secondary"
+                type="button"
+                disabled={workspaceSignOutDisabled}
+                onClick={() => {
+                  if (signedInWithGoogle) {
+                    void actions.handleFirebaseSignOut();
+                  } else {
+                    void actions.handleLogout();
+                  }
+                }}
+              >
+                {signedInWithGoogle && state.authBusy ? "Signing out..." : "Sign out"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="brand">
+              <img
+                className="brand-logo"
+                src={brandLogo}
+                alt="Realtime Secure Chat"
+              />
+            </div>
 
-        <div className={`login${showUnlockedActions ? " is-unlocked" : ""}`}>
+            <div className="login">
           {showSignedOutGoogleEntry ? (
             <div className="signed-out-entry">
               <div className="google-entry-card">
@@ -960,7 +1097,9 @@ export default function App() {
           {showSignedOutGoogleEntry ? null : (
             <FirebaseAuthPanel state={state} actions={actions} />
           )}
-        </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div
