@@ -59,7 +59,7 @@ ratchet state, vault passwords, or raw recovery keys.
 Current branch:
 
 ```text
-feature/latest-backup-rules
+feature/chat-ui-polish
 ```
 
 Recently completed phase:
@@ -71,8 +71,8 @@ Multi-Device Backup Discipline / Latest Backup Rules
 Current checkpoint status:
 
 ```text
-Multi-Device Backup Discipline / Latest Backup Rules
-Checkpoint 4 completed: demo, regression, and docs freeze.
+Chat UI Polish / Account Vault Simplification
+Checkpoint 0 completed: UI plan and scope freeze.
 ```
 
 ## Public Docs
@@ -123,20 +123,24 @@ Must-have:
 2. Multi-Device Backup Discipline / Latest Backup Rules - completed.
 3. Demo / Regression / Report.
 
+Demo polish:
+
+4. Chat UI Polish / Account Vault Simplification - in progress.
+
 Should-have:
 
-4. Contact / Peer Identity Disambiguation MVP.
+5. Contact / Peer Identity Disambiguation MVP.
 
 Nice-to-have:
 
-5. Automatic Latest Backup / Backup Checkpointing.
+6. Automatic Latest Backup / Backup Checkpointing.
 
 Future work:
 
-6. Full multi-device sync.
-7. Email/password registration.
-8. Firebase Admin migration.
-9. Production deployment hardening.
+7. Full multi-device sync.
+8. Email/password registration.
+9. Firebase Admin migration.
+10. Production deployment hardening.
 
 Do not start Auto Backup unless must-have work is stable. Manual Backup Now plus
 latest-backup rules is the safer deadline target.

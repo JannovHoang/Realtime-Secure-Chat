@@ -19,6 +19,25 @@
 - A browser that previously used multiple Google accounts may still hold
   multiple local vaults by display/vault label.
 
+## UI Polish / Action Visibility
+
+- Signed-out state prioritizes Sign in with Google.
+- Legacy/local mode remains available but is visually secondary.
+- Signed-out or locked state does not show normal unlocked-only actions such as
+  Backup to Cloud, Change vault password, Create recovery key, or normal
+  top-level Start over.
+- Signed-in vault-locked state shows the intended account/vault context and
+  asks only for vault password when a default vault pointer exists.
+- Vault-unlocked state keeps Backup now, Settings, and Sign out available.
+- Start over is presented as recovery/danger, not as a normal top-level action.
+- Account/vault status is compact enough that conversations remain the sidebar
+  priority.
+- Backup-needed warning appears as an actionable banner near chat/composer and
+  clears after Backup to Cloud.
+- Primary, secondary, warning, success, and danger colors match action meaning.
+- User-facing status text does not show dev-only labels such as React Shell
+  Only.
+
 ## Realtime Chat
 
 - Alice/Bob style realtime chat works in both directions.

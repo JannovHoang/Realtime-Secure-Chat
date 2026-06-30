@@ -11,20 +11,24 @@ Must-have:
 2. Multi-Device Backup Discipline / Latest Backup Rules.
 3. Demo / Regression / Report.
 
+Demo polish:
+
+4. Chat UI Polish / Account Vault Simplification.
+
 Should-have:
 
-4. Contact / Peer Identity Disambiguation MVP.
+5. Contact / Peer Identity Disambiguation MVP.
 
 Nice-to-have:
 
-5. Automatic Latest Backup / Backup Checkpointing.
+6. Automatic Latest Backup / Backup Checkpointing.
 
 Future work:
 
-6. Full multi-device sync.
-7. Email/password registration.
-8. Firebase Admin migration.
-9. Production deployment hardening.
+7. Full multi-device sync.
+8. Email/password registration.
+9. Firebase Admin migration.
+10. Production deployment hardening.
 
 ## 1. Device Switching And Active Identity Enforcement
 
@@ -67,7 +71,36 @@ Completed phase outcome:
   path.
 - Manual Backup to Cloud remains the supported deadline-safe discipline.
 
-## 3. Contact / Peer Identity Disambiguation
+## 3. Chat UI Polish / Account Vault Simplification
+
+Priority: demo polish.
+
+Status: in progress.
+
+Goal: make the app look and flow more like a polished secure chat product
+without changing crypto, backup, storage, WebSocket, or active identity
+behavior.
+
+Scope:
+
+- State-based action visibility.
+- Google-first entry with legacy/local mode as secondary compatibility.
+- Signed-in vault unlock panel.
+- Compact account/vault status instead of a large technical identity card.
+- Backup-needed action banner near the chat/composer.
+- Settings/Advanced grouping for change password, recovery key, technical
+  details, and Start over.
+- Semantic button and status colors.
+
+Non-goals:
+
+- Full redesign.
+- New backend routes or schemas.
+- Contact routing changes.
+- Local vault migration.
+- Removing legacy signed-out mode.
+
+## 4. Contact / Peer Identity Disambiguation
 
 Priority: should-have MVP.
 
@@ -81,7 +114,7 @@ Deadline MVP:
 - Warn or label clearly when display name is not a unique identity.
 - Avoid large routing/contact rewrites.
 
-## 4. Automatic Latest Backup / Backup Checkpointing
+## 5. Automatic Latest Backup / Backup Checkpointing
 
 Priority: nice-to-have. Do not start unless must-have items are stable.
 
@@ -103,28 +136,28 @@ Notes:
 - It must not run if the local identity is inactive or if freshness state says a
   newer cloud backup should be restored first.
 
-## 5. Firebase Account Ownership Hardening / Production Auth Cleanup
+## 6. Firebase Account Ownership Hardening / Production Auth Cleanup
 
 Priority: future work unless a small blocking bug appears.
 
 Goal: harden Firebase token verification behind a stable auth adapter and
 prepare for Firebase Admin SDK if production credentials are available.
 
-## 6. Legacy Migration / Compatibility Cleanup
+## 7. Legacy Migration / Compatibility Cleanup
 
 Priority: future work.
 
 Goal: reduce reliance on display-name routes and local vault labels while keeping
 safe migration paths for existing demo data.
 
-## 7. Security / Abuse / Operational Hardening
+## 8. Security / Abuse / Operational Hardening
 
 Priority: future work.
 
 Goal: improve rate limits, logging hygiene, token failure behavior, operational
 docs, and abuse resistance without weakening E2EE.
 
-## 8. UX Polish / Demo Readiness
+## 9. UX Polish / Demo Readiness
 
 Priority: must-have as part of demo/report freeze.
 
