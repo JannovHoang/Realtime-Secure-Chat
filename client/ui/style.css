@@ -225,6 +225,113 @@ body {
   flex: 0 0 auto;
 }
 
+.auth-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid rgba(100, 116, 139, 0.18);
+  border-radius: 999px;
+  background: rgba(241, 245, 249, 0.88);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.auth-mode-chip.is-google {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: rgba(219, 234, 254, 0.86);
+  color: #1d4ed8;
+}
+
+.signed-out-entry {
+  display: flex;
+  flex: 1 1 620px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  min-width: min(620px, 100%);
+  flex-wrap: wrap;
+}
+
+.google-entry-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex: 1 1 430px;
+  min-width: min(430px, 100%);
+  max-width: 680px;
+  padding: 14px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.96));
+  box-shadow: var(--shadow-sm);
+}
+
+.google-entry-copy {
+  min-width: 0;
+}
+
+.google-entry-eyebrow {
+  color: var(--primary-2);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.google-entry-title {
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.google-entry-detail {
+  margin-top: 4px;
+  max-width: 420px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.legacy-entry {
+  flex: 0 1 360px;
+  min-width: min(360px, 100%);
+  padding: 10px 12px;
+  border: 1px solid rgba(100, 116, 139, 0.16);
+  border-radius: var(--radius-md);
+  background: rgba(248, 251, 255, 0.72);
+}
+
+.legacy-entry summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  outline: none;
+}
+
+.legacy-entry summary:focus-visible {
+  border-radius: 8px;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.13);
+}
+
+.legacy-entry-body {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: 12px;
+}
+
+.legacy-entry-actions {
+  justify-content: flex-start;
+}
+
 .login label {
   display: flex;
   flex-direction: column;
@@ -1418,6 +1525,13 @@ button.compact {
     flex: 1 1 100%;
   }
 
+  .signed-out-entry,
+  .google-entry-card,
+  .legacy-entry {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
   .topbar-actions {
     flex: 1 1 100%;
   }
@@ -1549,6 +1663,9 @@ button.compact {
   .auth-fields,
   .topbar-actions,
   .topbar-status,
+  .signed-out-entry,
+  .google-entry-card,
+  .legacy-entry,
   .firebase-vault-choice,
   .firebase-auth-card {
     width: 100%;
@@ -1570,6 +1687,22 @@ button.compact {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
+  }
+
+  .signed-out-entry,
+  .google-entry-card {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .google-entry-card {
+    min-width: 0;
+  }
+
+  .google-entry-card button {
+    width: 100%;
   }
 
   .firebase-vault-choice-actions {

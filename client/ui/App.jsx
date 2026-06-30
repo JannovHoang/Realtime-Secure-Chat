@@ -228,16 +228,9 @@ function FirebaseAuthPanel({ state, actions }) {
             {state.authBusy ? "Signing out..." : "Sign out"}
           </button>
         ) : (
-          <button
-            className="secondary compact"
-            type="button"
-            disabled={state.authBusy || !enabled}
-            onClick={() => {
-              void actions.handleGoogleSignIn();
-            }}
-          >
-            {state.authBusy ? "Signing in..." : "Sign in with Google"}
-          </button>
+          <span className={enabled ? "auth-mode-chip is-google" : "auth-mode-chip"}>
+            {enabled ? "Google first" : "Local only"}
+          </span>
         )}
       </div>
     </div>
@@ -287,6 +280,7 @@ export default function App() {
   const [firebaseVaultFallbackMode, setFirebaseVaultFallbackMode] = React.useState("");
   const showPasswordField = !state.started || state.disconnected;
   const signedInWithGoogle = !!state.authUser?.uid;
+  const googleAuthEnabled = !!state.authAvailability?.enabled;
   const firebaseDefaultVault = signedInWithGoogle ? state.defaultVaultPointer : null;
   const useDefaultVaultUnlock = !!firebaseDefaultVault && showPasswordField;
   const loadingFirebaseDefaultVault =
@@ -347,6 +341,9 @@ export default function App() {
     !state.activePeerReady ||
     busy ||
     !String(state.messageDraft || "").trim();
+  const showSignedOutGoogleEntry =
+    !signedInWithGoogle && !state.started && !state.disconnected;
+  const showUnlockedActions = state.started && !state.disconnected;
 
   React.useEffect(() => {
     const textarea = composerInputRef.current;
@@ -430,7 +427,101 @@ export default function App() {
         </div>
 
         <div className="login">
-          {loadingFirebaseDefaultVault ? (
+          {showSignedOutGoogleEntry ? (
+            <div className="signed-out-entry">
+              <div className="google-entry-card">
+                <div className="google-entry-copy">
+                  <div className="google-entry-eyebrow">Secure account</div>
+                  <div className="google-entry-title">Sign in with Google</div>
+                  <div className="google-entry-detail">
+                    Google identifies your account. The vault password still
+                    unlocks E2EE keys on this browser.
+                  </div>
+                </div>
+                <button
+                  className="primary"
+                  type="button"
+                  disabled={state.authBusy || !googleAuthEnabled}
+                  onClick={() => {
+                    void actions.handleGoogleSignIn();
+                  }}
+                >
+                  {state.authBusy ? "Signing in..." : "Sign in with Google"}
+                </button>
+              </div>
+
+              <details className="legacy-entry">
+                <summary>Use legacy local mode</summary>
+                <div className="legacy-entry-body">
+                  <div className="auth-fields">
+                    <Field
+                      label="Display name"
+                      placeholder="Enter your display name"
+                      value={state.username}
+                      onChange={(value) => actions.setField("username", value)}
+                      disabled={busy}
+                    />
+                    <Field
+                      label="Vault password"
+                      placeholder="Enter your vault password"
+                      type={showTopbarPassword ? "text" : "password"}
+                      value={state.password}
+                      onChange={(value) => actions.setField("password", value)}
+                      disabled={busy}
+                      trailing={
+                        <button
+                          className="password-toggle"
+                          type="button"
+                          aria-label={
+                            showTopbarPassword
+                              ? "Hide vault password"
+                              : "Show vault password"
+                          }
+                          aria-pressed={showTopbarPassword}
+                          disabled={busy}
+                          onClick={() => setShowTopbarPassword((value) => !value)}
+                        >
+                          <PasswordVisibilityIcon visible={showTopbarPassword} />
+                        </button>
+                      }
+                    />
+                  </div>
+                  <div className="topbar-actions legacy-entry-actions">
+                    <button
+                      className="secondary"
+                      type="button"
+                      disabled={startDisabled}
+                      onClick={() => {
+                        void actions.handleStart();
+                      }}
+                    >
+                      Start local session
+                    </button>
+                    <button
+                      className="secondary"
+                      type="button"
+                      disabled={busy || state.started || !state.username || !state.password}
+                      onClick={() => {
+                        void actions.handleRestoreRequest();
+                      }}
+                    >
+                      Restore from Cloud
+                    </button>
+                    <button
+                      className="secondary"
+                      type="button"
+                      disabled={busy || state.started || !state.username}
+                      onClick={() => {
+                        void actions.openRecoveryPasswordResetModal();
+                      }}
+                    >
+                      Use recovery key
+                    </button>
+                  </div>
+                </div>
+              </details>
+            </div>
+          ) : loadingFirebaseDefaultVault ? (
             <div className="auth-fields">
               <div className="firebase-vault-choice">
                 <div className="firebase-vault-choice-title">Checking encrypted identity</div>
@@ -624,49 +715,43 @@ export default function App() {
                     >
                       Use recovery key
                     </button>
+                  </>
+                )}
+                {showUnlockedActions ? (
+                  <>
                     <button
                       className="secondary"
                       type="button"
-                      disabled={busy || state.started || !state.username || !state.password}
+                      disabled={backupDisabled}
                       onClick={() => {
-                        void actions.openResetEncryptedIdentityModal();
+                        actions.openBackupModal();
                       }}
                     >
-                      Start over
+                      Backup to Cloud
+                    </button>
+                    <button
+                      className="secondary"
+                      type="button"
+                      disabled={busy || !state.started || state.disconnected}
+                      onClick={() => {
+                        actions.openChangeVaultPasswordModal();
+                      }}
+                    >
+                      Change vault password
+                    </button>
+                    <button
+                      className="secondary"
+                      type="button"
+                      disabled={busy || !state.started || state.disconnected}
+                      onClick={() => {
+                        actions.openRecoveryKeyModal();
+                      }}
+                    >
+                      Create recovery key
                     </button>
                   </>
-                )}
-                <button
-                  className="secondary"
-                  type="button"
-                  disabled={backupDisabled}
-                  onClick={() => {
-                    actions.openBackupModal();
-                  }}
-                >
-                  Backup to Cloud
-                </button>
-                <button
-                  className="secondary"
-                  type="button"
-                  disabled={busy || !state.started || state.disconnected}
-                  onClick={() => {
-                    actions.openChangeVaultPasswordModal();
-                  }}
-                >
-                  Change vault password
-                </button>
-                <button
-                  className="secondary"
-                  type="button"
-                  disabled={busy || !state.started || state.disconnected}
-                  onClick={() => {
-                    actions.openRecoveryKeyModal();
-                  }}
-                >
-                  Create recovery key
-                </button>
-                {!signedInWithGoogle ? (
+                ) : null}
+                {!signedInWithGoogle && showUnlockedActions ? (
                   <button
                     className="secondary"
                     type="button"
@@ -689,7 +774,9 @@ export default function App() {
             </div>
           </div>
 
-          <FirebaseAuthPanel state={state} actions={actions} />
+          {showSignedOutGoogleEntry ? null : (
+            <FirebaseAuthPanel state={state} actions={actions} />
+          )}
         </div>
       </div>
 
