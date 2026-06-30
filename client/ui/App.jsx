@@ -194,15 +194,15 @@ function FirebaseAuthPanel({ state, actions }) {
     ? formatFirebaseAccountLabel(state.authUser)
     : enabled
       ? state.authReady
-        ? "Google sign-in available"
+        ? "Google sign-in ready"
         : "Checking Google sign-in"
       : availability.authMode === "legacy"
         ? "Legacy account mode"
         : "Firebase not configured";
   const detail = signedIn
-    ? `Signed in${maskedEmail ? ` as ${maskedEmail}` : ""}. Sign out closes the encrypted chat session but keeps local vault data.`
+    ? `Signed in${maskedEmail ? ` as ${maskedEmail}` : ""}. Signing out closes this chat session but keeps local vault data.`
     : enabled
-      ? "Sign-in proves account ownership only; it does not unlock E2EE keys."
+      ? "Google identifies the account. The vault password still unlocks E2EE keys."
       : "Current local display-name flow remains active.";
 
   return (
@@ -681,7 +681,7 @@ export default function App() {
                         void actions.handleRestoreRequest();
                       }}
                     >
-                      Restore from Cloud
+                      Restore latest backup
                     </button>
                     <button
                       className="secondary"
@@ -712,7 +712,7 @@ export default function App() {
                 No encrypted identity found on this browser
               </div>
               <div className="firebase-vault-choice-detail">
-                Restore a cloud backup, create a new encrypted identity, or
+                Restore the latest backup, create a new encrypted identity, or
                 migrate an existing legacy local vault.
               </div>
               <div className="firebase-vault-choice-actions">
@@ -722,7 +722,7 @@ export default function App() {
                   disabled={busy || state.started}
                   onClick={() => setFirebaseVaultFallbackMode("restore")}
                 >
-                  Restore from Cloud
+                  Restore latest backup
                 </button>
                 <button
                   className="secondary"
@@ -804,7 +804,7 @@ export default function App() {
                       void actions.handleRestoreRequest();
                     }}
                   >
-                    Restore Latest Backup
+                    Restore latest backup
                   </button>
                   <button
                     className="secondary"
@@ -928,7 +928,7 @@ export default function App() {
                       void actions.handleRestoreRequest();
                     }}
                   >
-                    Restore from Cloud
+                    Restore latest backup
                   </button>
                 ) : firebaseVaultFallbackMode === "create" ? (
                     <button
@@ -972,7 +972,7 @@ export default function App() {
                         void actions.handleRestoreRequest();
                       }}
                     >
-                      Restore from Cloud
+                      Restore latest backup
                     </button>
                     <button
                       className="secondary"
@@ -1111,7 +1111,7 @@ export default function App() {
                 <div className="chat-pane-title">{state.activePeer}</div>
                 <div className="chat-pane-sub">
                   {state.activePeerReady
-                    ? "Peer certificate is ready"
+                    ? "Secure channel ready"
                     : "Waiting for peer certificate"}
                 </div>
               </div>
@@ -1121,7 +1121,7 @@ export default function App() {
                   (state.activePeerReady ? " is-ready" : " is-waiting")
                 }
               >
-                {state.activePeerReady ? "Ready" : "Syncing"}
+                {state.activePeerReady ? "Ready" : "Waiting"}
               </div>
             </div>
           ) : null}
@@ -1178,7 +1178,7 @@ export default function App() {
           {state.started && !state.disconnected && state.backupNeeded ? (
             <div className="backup-needed-banner">
               <div className="backup-needed-copy">
-                <strong>Local changes are not backed up yet.</strong>
+                <strong>Backup pending.</strong>
                 <span>Back up before switching devices.</span>
               </div>
               <button
@@ -1591,7 +1591,7 @@ export default function App() {
                 type="button"
                 onClick={() => actions.handleStartGuard("restore")}
               >
-                Restore from Cloud
+                Restore latest backup
               </button>
               <button
                 className="primary"
@@ -1636,7 +1636,7 @@ export default function App() {
                 type="button"
                 onClick={() => actions.handleInactiveIdentityWarning("restore")}
               >
-                Restore from Cloud
+                Restore latest backup
               </button>
             </>
           }
@@ -1700,7 +1700,7 @@ export default function App() {
                 type="button"
                 onClick={() => actions.handleInactiveIdentityWarning("restore")}
               >
-                Restore from Cloud
+                Restore latest backup
               </button>
             </>
           }
@@ -1748,7 +1748,7 @@ export default function App() {
                   type="button"
                   onClick={() => actions.handleBackupFreshnessWarning("restore")}
                 >
-                  Restore Latest Backup
+                  Restore latest backup
                 </button>
               )}
             </>
@@ -1802,7 +1802,7 @@ export default function App() {
                     type="button"
                     onClick={() => void actions.handleRestoreOverwriteConfirm("continue")}
                   >
-                    {isSameLatestActive ? "Restore Latest Backup" : "Restore and Replace"}
+                    {isSameLatestActive ? "Restore latest backup" : "Restore and replace"}
                   </button>
                 </>
               }
@@ -1925,7 +1925,7 @@ export default function App() {
                   void actions.confirmRestoreChoice(state.modal.items[0].identityId)
                 }
               >
-                Restore Latest Backup
+                Restore latest backup
               </button>
             </>
           }

@@ -91,7 +91,7 @@ const initialState = {
   lastMessagePreview: "",
   lastForcedLogoutReason: "",
   disconnected: false,
-  statusText: "React Shell Only",
+  statusText: "Signed out",
   statusTone: "info",
   modal: null,
   backupPasswordInput: "",
@@ -653,7 +653,7 @@ function reducer(state, action) {
       return {
         ...state,
         starting: true,
-        statusText: "Starting...",
+        statusText: "Unlocking vault...",
         statusTone: "info",
       };
     case "start_success":
@@ -675,7 +675,7 @@ function reducer(state, action) {
         recentLoading: false,
         sending: false,
         activePeerReady: false,
-        statusText: "Ready",
+        statusText: "Vault unlocked",
         statusTone: "success",
       };
     case "identity_panel_set":
@@ -718,14 +718,14 @@ function reducer(state, action) {
         recentLoading: false,
         sending: false,
         activePeerReady: false,
-        statusText: "Logged out",
+        statusText: "Signed out",
         statusTone: "success",
       };
     case "restore_begin":
       return {
         ...state,
         restoring: true,
-        statusText: "Restoring...",
+        statusText: "Restoring latest backup...",
         statusTone: "info",
       };
     case "restore_end":
@@ -818,7 +818,7 @@ function reducer(state, action) {
           runtimeEventCount: state.runtimeEventCount + 1,
           lastRuntimeEventType: eventType,
           lastForcedLogoutReason: String(payload?.reason || "logged_in_elsewhere"),
-          statusText: "Logged out (other login)",
+          statusText: "Signed out on this device",
           statusTone: "error",
         };
       }
@@ -830,7 +830,7 @@ function reducer(state, action) {
           runtimeEventCount: state.runtimeEventCount + 1,
           lastRuntimeEventType: eventType,
           disconnected: state.started ? true : state.disconnected,
-          statusText: state.started ? "Disconnected" : state.statusText,
+          statusText: state.started ? "Connection lost" : state.statusText,
           statusTone: state.started ? "error" : state.statusTone,
         };
       }
@@ -966,7 +966,7 @@ function reducer(state, action) {
         identityPanel: action.identityPanel || state.identityPanel,
         backupNeeded: false,
         password: "",
-        statusText: "Restore ready",
+        statusText: "Backup restored",
         statusTone: "success",
       };
     case "allow_continue_without_restore":
@@ -1450,7 +1450,7 @@ export function useChatApp() {
         dispatch({
           type: "start_failure",
           message:
-            "The vault password did not unlock the local identity currently stored in this browser. Restore from Cloud first if this is a different identity.",
+            "The vault password did not unlock the local identity stored in this browser. Restore latest backup first if this is a different identity.",
         });
         pushToast(
           "Start failed: incorrect vault password for this browser's local identity.",
@@ -1622,7 +1622,7 @@ export function useChatApp() {
       dispatch({ type: "start_success", account });
       void saveFirebaseDefaultVaultPointer(username);
       void refreshIdentityPanel(account);
-      pushToast("Ready.", "success");
+      pushToast("Vault unlocked.", "success");
       if (!restoredThisUsername && !options.skipBackupWarning) {
         void checkBackupFreshness(username, freshnessAccount, firebasePointer);
       }
@@ -1643,7 +1643,7 @@ export function useChatApp() {
     try {
       await destroyChat();
       dispatch({ type: "logout_success" });
-      pushToast("Logged out.", "success");
+      pushToast("Signed out.", "success");
     } catch (err) {
       dispatch({
         type: "set_status",
@@ -1861,8 +1861,8 @@ export function useChatApp() {
         },
       });
       dispatch({ type: "backup_fresh" });
-      dispatch({ type: "set_status", message: "Ready", tone: "success" });
-      pushToast("Cloud backup saved.", "success");
+      dispatch({ type: "set_status", message: "Backup saved", tone: "success" });
+      pushToast("Backup saved to cloud.", "success");
     } catch (err) {
       dispatch({ type: "set_status", message: "Backup failed", tone: "error" });
       pushToast(
