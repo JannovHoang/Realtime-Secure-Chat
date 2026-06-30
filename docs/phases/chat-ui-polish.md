@@ -1,6 +1,6 @@
 # Phase: Chat UI Polish / Account Vault Simplification
 
-Status: in progress.
+Status: completed.
 
 ## Goal
 
@@ -21,6 +21,18 @@ Runtime behavior change: none.
 
 This checkpoint defines the UI polish plan and hard non-goals before runtime UI
 changes start.
+
+## Completed Runtime Checkpoints
+
+1. State-based action visibility plus Google-first entry.
+2. Vault unlock panel for signed-in users.
+3. Compact account/vault status and sidebar conversation priority.
+4. Backup-needed banner with Backup now action.
+5. Account/Vault entry vs Chat Workspace split.
+6. Settings and advanced action grouping.
+7. Status wording polish.
+8. Visual polish and semantic color hierarchy.
+9. Regression and demo checklist update.
 
 ## Hard Scope Rules
 
@@ -135,7 +147,7 @@ Danger zone:
 
 - Start over with a new encrypted identity
 
-## Planned Runtime Checkpoints
+## Runtime Checkpoints
 
 1. State-based action visibility plus Google-first entry.
 2. Vault unlock panel for signed-in users.
@@ -204,8 +216,8 @@ Google backup · Backup pending
 ### Chat Pane Backup Banner
 
 ```text
-Local changes are not backed up yet. Back up before switching devices.
-[Backup now]
+Backup pending. Back up before switching devices.
+[Backup to Cloud]
 ```
 
 ### Settings Grouping
@@ -231,8 +243,15 @@ Danger zone
 - Google Sign-In and Sign-Out.
 - Legacy signed-out mode still works.
 - Signed-in pointer unlock still asks only for vault password.
+- Account/Vault entry is shown before unlock; compact chat workspace is shown
+  after unlock.
 - Restore latest backup still works.
 - Backup to Cloud still works and clears backup-needed guidance.
+- Mobile uses Account/Vault, Conversations, and Chat detail screens instead of
+  stacking the whole desktop layout.
+- Chat detail keeps peer header visible while messages scroll.
+- Settings groups vault, backup, advanced, and danger actions.
+- Primary, secondary, warning, success, and danger colors match action meaning.
 - Realtime chat works both directions.
 - Offline pending delivery still works.
 - Recovery key, change password, and Start over modals still call existing

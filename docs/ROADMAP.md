@@ -75,7 +75,7 @@ Completed phase outcome:
 
 Priority: demo polish.
 
-Status: in progress.
+Status: completed.
 
 Goal: make the app look and flow more like a polished secure chat product
 without changing crypto, backup, storage, WebSocket, or active identity
@@ -93,6 +93,9 @@ Scope:
 - Settings/Advanced grouping for change password, recovery key, technical
   details, and Start over.
 - Semantic button and status colors.
+- Mobile Account/Vault, Conversations, and Chat detail views for the active
+  chat flow.
+- Regression and demo checklist updates for the polished UI flow.
 
 Non-goals:
 

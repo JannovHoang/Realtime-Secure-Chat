@@ -62,6 +62,23 @@ https://chat.securechat.id.vn
 - The app does not implement full automatic multi-device Double Ratchet state
   synchronization.
 
+## Chat UI State
+
+- Signed-out entry is Google-first. Legacy/local mode remains available as a
+  secondary compatibility path.
+- Before vault unlock, the UI shows Account/Vault entry screens and hides the
+  main chat workspace, conversation list, and composer.
+- After vault unlock, the UI switches to a compact chat workspace with Backup
+  to Cloud, Settings, and Sign out as the top-level actions.
+- Settings groups secondary and advanced actions: change vault password, create
+  recovery key, restore latest backup, technical details, and Start over.
+- Backup-needed guidance appears as a compact banner near the chat/composer and
+  clears after Backup to Cloud succeeds.
+- Desktop/laptop keeps the sidebar plus chat pane layout.
+- Mobile uses separate Account/Vault, Conversations, and Chat detail views.
+- Existing conversations are tappable/clickable. Starting a new conversation
+  still requires entering the peer display name manually.
+
 ## Legacy Compatibility
 
 - Legacy signed-out display-name flow still exists for migration/demo use.
@@ -75,6 +92,7 @@ https://chat.securechat.id.vn
 
 - No full automatic multi-device Double Ratchet synchronization.
 - Duplicate display names across Google accounts are not fully disambiguated.
+- Contact discovery and peer search suggestions are not implemented yet.
 - Restore APIs still route partly by `/api/backups/:username`.
 - Users must still manage backup discipline before switching devices.
 - Firebase Admin SDK migration is not complete; token verification is handled by

@@ -72,8 +72,9 @@ Current checkpoint status:
 
 ```text
 Chat UI Polish / Account Vault Simplification
-Checkpoint 4 completed: backup-needed banner and mobile chat view.
-Next checkpoint: Checkpoint 5 - Account/Vault Entry vs Chat Workspace Split.
+Checkpoint 9 completed: regression and demo checklist update.
+Next recommended work: demo/regression freeze, then Contact / Peer Identity
+Disambiguation MVP only if schedule allows.
 ```
 
 ## Public Docs
@@ -126,7 +127,7 @@ Must-have:
 
 Demo polish:
 
-4. Chat UI Polish / Account Vault Simplification - in progress.
+4. Chat UI Polish / Account Vault Simplification - completed.
 
 Should-have:
 

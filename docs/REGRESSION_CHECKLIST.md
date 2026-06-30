@@ -26,10 +26,26 @@
 - Signed-out or locked state does not show normal unlocked-only actions such as
   Backup to Cloud, Change vault password, Create recovery key, or normal
   top-level Start over.
+- Signed out state does not render conversation list, chat pane, or composer.
+- Signed-in account without a local vault/default pointer shows restore/create
+  identity/legacy/sign-out entry actions only.
 - Signed-in vault-locked state shows the intended account/vault context and
   asks only for vault password when a default vault pointer exists.
+- Vault-locked state does not render the main conversation list, chat pane, or
+  composer.
 - Vault-unlocked state keeps Backup now, Settings, and Sign out available.
+- Vault-unlocked desktop/laptop state uses the compact chat workspace instead
+  of the large Account/Vault entry UI.
+- Mobile vault-unlocked state has separate Conversations and Chat detail views.
+- Mobile conversation items are tappable and open Chat detail without requiring
+  the user to type an existing peer name.
+- Mobile Chat detail has a visible back control and peer header while messages
+  scroll.
+- Composer renders only in Chat detail when vault is unlocked, a peer is
+  selected, and the peer certificate is ready.
 - Start over is presented as recovery/danger, not as a normal top-level action.
+- Change vault password, Create recovery key, Restore latest backup, technical
+  details, and Start over are grouped under Settings after unlock.
 - Account/vault status is compact enough that conversations remain the sidebar
   priority.
 - Backup-needed warning appears as an actionable banner near chat/composer and
@@ -37,6 +53,8 @@
 - Primary, secondary, warning, success, and danger colors match action meaning.
 - User-facing status text does not show dev-only labels such as React Shell
   Only.
+- The outer page does not become the primary chat scrollbar; conversations and
+  messages scroll in their own regions.
 
 ## Realtime Chat
 
@@ -98,8 +116,13 @@
 
 - AliceDemo and BebeDemo can sign in/unlock in separate browsers and exchange
   realtime messages both directions.
+- Existing conversations can be opened by clicking/tapping conversation items.
+- A new conversation still requires entering the peer display name manually;
+  contact discovery and peer suggestions are future work.
 - Giang Hoang can restore latest backup after signing in with the intended
   Google account.
+- Mobile demo path can switch from Conversations to Chat detail, send a
+  message, and return with the back control.
 - If Firefox or another reused browser still has an older local vault for Giang
   Hoang, local-newer restore warning is expected; cancel and Backup to Cloud
   from the newest working local state unless intentionally testing rollback.
