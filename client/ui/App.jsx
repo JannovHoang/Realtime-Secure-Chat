@@ -104,42 +104,34 @@ function AccountIdentityPanel({ info, helpers, backupNeeded = false }) {
   const backupChipClass = info.backupServerSavedAt
     ? backupOwnership.chipClass
     : "is-local";
+  const backupStatusText = backupNeeded
+    ? "Backup pending"
+    : info.backupServerSavedAt
+      ? backupOwnership.chipText
+      : "Local only";
+  const backupStatusClass = backupNeeded ? "is-pending" : backupChipClass;
 
   return (
     <div className="account-panel">
-      <div className="account-panel-head">
-        <span>Encrypted identity</span>
-        <span className={`account-panel-chip ${backupChipClass}`}>
-          {info.backupServerSavedAt ? backupOwnership.chipText : "Local only"}
+      <div className="account-panel-main">
+        <div className="account-panel-copy">
+          <div className="account-panel-title">
+            <span>{info.displayName || "unknown"}</span>
+            <span aria-hidden="true">.</span>
+            <span>Unlocked</span>
+          </div>
+        </div>
+        <span className={`account-panel-chip ${backupStatusClass}`}>
+          {backupStatusText}
         </span>
       </div>
-      <dl className="account-panel-grid">
-        <div>
-          <dt>Display name</dt>
-          <dd>{info.displayName || "unknown"}</dd>
-        </div>
-        <div>
-          <dt>Vault</dt>
-          <dd>Unlocked</dd>
-        </div>
-        <div>
-          <dt>Identity</dt>
-          <dd title={info.identityId || ""}>{identityShort}</dd>
-        </div>
-        <div>
-          <dt>Backup</dt>
-          <dd>{info.backupServerSavedAt ? backupOwnership.label : "Not backed up"}</dd>
-        </div>
-      </dl>
-      {backupNeeded ? (
-        <div className="account-backup-needed">
-          Local encrypted chat state changed after the last backup. Use Backup
-          to Cloud before switching devices.
-        </div>
-      ) : null}
       <details className="account-technical-details">
-        <summary>Show technical details</summary>
+        <summary>Details</summary>
         <dl className="account-technical-grid">
+          <div>
+            <dt>Display name</dt>
+            <dd>{info.displayName || "unknown"}</dd>
+          </div>
           <div>
             <dt>Account ID</dt>
             <dd title={info.accountId || ""}>{accountShort}</dd>
@@ -151,6 +143,10 @@ function AccountIdentityPanel({ info, helpers, backupNeeded = false }) {
           <div>
             <dt>Backup time</dt>
             <dd>{backupTime || "not saved yet"}</dd>
+          </div>
+          <div>
+            <dt>Backup</dt>
+            <dd>{info.backupServerSavedAt ? backupOwnership.label : "Not backed up"}</dd>
           </div>
           <div>
             <dt>Account scheme</dt>
@@ -428,7 +424,7 @@ export default function App() {
           />
         </div>
 
-        <div className="login">
+        <div className={`login${showUnlockedActions ? " is-unlocked" : ""}`}>
           {showSignedOutGoogleEntry ? (
             <div className="signed-out-entry">
               <div className="google-entry-card">
@@ -765,7 +761,7 @@ export default function App() {
                   >
                     Use legacy identity
                   </button>
-                ) : (
+                ) : !showUnlockedActions ? (
                   <>
                     <button
                       className="primary"
@@ -798,7 +794,7 @@ export default function App() {
                       Use recovery key
                     </button>
                   </>
-                )}
+                ) : null}
                 {showUnlockedActions ? (
                   <>
                     <button
@@ -898,12 +894,6 @@ export default function App() {
             </div>
           </form>
 
-          <AccountIdentityPanel
-            info={state.identityPanel}
-            helpers={helpers}
-            backupNeeded={state.backupNeeded}
-          />
-
           <div className="peer-list">
             <div className="peer-list-title-row">
               <div className="peer-list-head">Conversations</div>
@@ -949,6 +939,12 @@ export default function App() {
               </div>
             )}
           </div>
+
+          <AccountIdentityPanel
+            info={state.identityPanel}
+            helpers={helpers}
+            backupNeeded={state.backupNeeded}
+          />
         </aside>
 
         <main className="chat">
