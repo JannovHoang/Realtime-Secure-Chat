@@ -166,10 +166,6 @@ function AccountIdentityPanel({ info, helpers, backupNeeded = false, detailsOnly
           {backupStatusText}
         </span>
       </div>
-      <details className="account-technical-details">
-        <summary>Details</summary>
-        {detailsGrid}
-      </details>
     </div>
   );
 }
@@ -989,99 +985,6 @@ export default function App() {
                       Use recovery key
                     </button>
                   </>
-                ) : null}
-                {showUnlockedActions ? (
-                  <>
-                    <button
-                      className="secondary"
-                      type="button"
-                      disabled={backupDisabled}
-                      onClick={() => {
-                        actions.openBackupModal();
-                      }}
-                    >
-                      Backup to Cloud
-                    </button>
-                    <button
-                      className="secondary desktop-vault-action"
-                      type="button"
-                      disabled={busy || !state.started || state.disconnected}
-                      onClick={() => {
-                        actions.openChangeVaultPasswordModal();
-                      }}
-                    >
-                      Change vault password
-                    </button>
-                    <button
-                      className="secondary desktop-vault-action"
-                      type="button"
-                      disabled={busy || !state.started || state.disconnected}
-                      onClick={() => {
-                        actions.openRecoveryKeyModal();
-                      }}
-                    >
-                      Create recovery key
-                    </button>
-                    <details className="mobile-settings-menu">
-                      <summary>Settings</summary>
-                      <div className="mobile-settings-actions">
-                        <div className="mobile-settings-section">Vault</div>
-                        <button
-                          className="secondary"
-                          type="button"
-                          disabled={busy || !state.started || state.disconnected}
-                          onClick={() => {
-                            actions.openChangeVaultPasswordModal();
-                          }}
-                        >
-                          Change vault password
-                        </button>
-                        <button
-                          className="secondary"
-                          type="button"
-                          disabled={busy || !state.started || state.disconnected}
-                          onClick={() => {
-                            actions.openRecoveryKeyModal();
-                          }}
-                        >
-                          Create recovery key
-                        </button>
-                        <div className="mobile-settings-section">Advanced</div>
-                        <details className="mobile-technical-details">
-                          <summary>Technical details</summary>
-                          <AccountIdentityPanel
-                            info={state.identityPanel}
-                            helpers={helpers}
-                            backupNeeded={state.backupNeeded}
-                            detailsOnly
-                          />
-                        </details>
-                        <div className="mobile-settings-section danger">Danger zone</div>
-                        <button
-                          className="secondary danger"
-                          type="button"
-                          disabled={busy || !state.started || state.disconnected}
-                          onClick={() => {
-                            void actions.openResetEncryptedIdentityModal();
-                          }}
-                        >
-                          Start over with a new encrypted identity
-                        </button>
-                      </div>
-                    </details>
-                  </>
-                ) : null}
-                {!signedInWithGoogle && showUnlockedActions ? (
-                  <button
-                    className="secondary"
-                    type="button"
-                    disabled={logoutDisabled}
-                    onClick={() => {
-                      void actions.handleLogout();
-                    }}
-                  >
-                    Logout
-                  </button>
                 ) : null}
               </div>
             </>
