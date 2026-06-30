@@ -15,8 +15,14 @@
   --primary-soft: rgba(43, 89, 217, 0.1);
   --accent: #0ea5e9;
   --success: #166534;
+  --success-bg: rgba(220, 252, 231, 0.82);
+  --success-border: rgba(22, 163, 74, 0.22);
   --warning: #9a6700;
+  --warning-bg: rgba(255, 251, 235, 0.96);
+  --warning-border: rgba(217, 119, 6, 0.24);
   --danger: #b91c1c;
+  --danger-bg: rgba(254, 242, 242, 0.86);
+  --danger-border: rgba(185, 28, 28, 0.22);
   --radius-sm: 12px;
   --radius-md: 18px;
   --radius-lg: 24px;
@@ -169,22 +175,22 @@ body {
 }
 
 .workspace-backup-chip.is-google {
-  border-color: rgba(37, 99, 235, 0.16);
-  background: rgba(219, 234, 254, 0.82);
-  color: #1d4ed8;
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
 }
 
 .workspace-backup-chip.is-legacy {
-  border-color: rgba(146, 64, 14, 0.16);
-  background: rgba(254, 243, 199, 0.78);
-  color: #92400e;
+  border-color: rgba(100, 116, 139, 0.18);
+  background: rgba(241, 245, 249, 0.9);
+  color: #475569;
 }
 
 .workspace-backup-chip.is-local,
 .workspace-backup-chip.is-pending {
-  border-color: rgba(146, 64, 14, 0.18);
-  background: rgba(254, 243, 199, 0.82);
-  color: #92400e;
+  border-color: var(--warning-border);
+  background: rgba(254, 243, 199, 0.92);
+  color: var(--warning);
 }
 
 .workspace-actions {
@@ -218,6 +224,12 @@ body {
   cursor: pointer;
   font-weight: 800;
   list-style: none;
+}
+
+.workspace-settings-menu[open] > summary {
+  border-color: rgba(43, 89, 217, 0.22);
+  background: rgba(239, 246, 255, 0.94);
+  color: var(--primary-2);
 }
 
 .workspace-settings-menu > summary::-webkit-details-marker {
@@ -268,6 +280,12 @@ body {
   background: rgba(248, 251, 255, 0.86);
   color: var(--text);
   font-size: 12px;
+}
+
+.workspace-settings-panel .action-backup {
+  border-color: rgba(43, 89, 217, 0.18);
+  background: rgba(239, 246, 255, 0.9);
+  color: var(--primary-2);
 }
 
 .workspace-settings-panel button {
@@ -470,8 +488,12 @@ body {
 
 button.danger {
   color: var(--danger);
-  border-color: rgba(185, 28, 28, 0.2);
-  background: rgba(254, 242, 242, 0.82);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+button.danger:hover {
+  background: rgba(254, 226, 226, 0.95);
 }
 
 .topbar-actions {
@@ -794,6 +816,17 @@ button.secondary:hover {
   background: #eef2f7;
 }
 
+button.action-backup {
+  border-color: rgba(43, 89, 217, 0.2);
+  background: rgba(239, 246, 255, 0.94);
+  color: var(--primary-2);
+  font-weight: 800;
+}
+
+button.action-backup:hover {
+  background: rgba(219, 234, 254, 0.96);
+}
+
 button.compact {
   min-height: 38px;
   padding: 8px 12px;
@@ -821,18 +854,20 @@ button.compact {
 
 .migration-status.is-success {
   color: var(--success);
-  border-color: rgba(34, 197, 94, 0.26);
+  border-color: var(--success-border);
+  background: var(--success-bg);
 }
 
 .migration-status.is-error {
   color: var(--danger);
-  border-color: rgba(239, 68, 68, 0.24);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
 }
 
 .migration-status.is-warning {
   color: var(--warning);
-  border-color: rgba(245, 158, 11, 0.32);
-  background: rgba(255, 251, 235, 0.96);
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
 }
 
 .content {
@@ -968,21 +1003,21 @@ button.compact {
 }
 
 .account-panel-chip.is-saved {
-  border: 1px solid rgba(22, 101, 52, 0.14);
-  background: rgba(220, 252, 231, 0.72);
+  border: 1px solid var(--success-border);
+  background: var(--success-bg);
   color: var(--success);
 }
 
 .account-panel-chip.is-google {
-  border: 1px solid rgba(37, 99, 235, 0.16);
-  background: rgba(219, 234, 254, 0.82);
-  color: #1d4ed8;
+  border: 1px solid var(--success-border);
+  background: var(--success-bg);
+  color: var(--success);
 }
 
 .account-panel-chip.is-legacy {
-  border: 1px solid rgba(146, 64, 14, 0.16);
-  background: rgba(254, 243, 199, 0.78);
-  color: #92400e;
+  border: 1px solid rgba(100, 116, 139, 0.16);
+  background: rgba(241, 245, 249, 0.84);
+  color: #475569;
 }
 
 .account-panel-chip.is-unknown {
@@ -992,15 +1027,15 @@ button.compact {
 }
 
 .account-panel-chip.is-local {
-  border: 1px solid rgba(146, 64, 14, 0.16);
-  background: rgba(254, 243, 199, 0.74);
-  color: #92400e;
+  border: 1px solid var(--warning-border);
+  background: rgba(254, 243, 199, 0.78);
+  color: var(--warning);
 }
 
 .account-panel-chip.is-pending {
-  border: 1px solid rgba(146, 64, 14, 0.18);
-  background: rgba(254, 243, 199, 0.82);
-  color: #92400e;
+  border: 1px solid var(--warning-border);
+  background: rgba(254, 243, 199, 0.9);
+  color: var(--warning);
 }
 
 .account-technical-grid {
@@ -1307,15 +1342,15 @@ button.compact {
 }
 
 .chat-pane-badge.is-ready {
-  color: #166534;
-  background: rgba(220, 252, 231, 0.9);
-  border-color: rgba(34, 197, 94, 0.24);
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: var(--success-border);
 }
 
 .chat-pane-badge.is-waiting {
-  color: #92400e;
+  color: var(--warning);
   background: rgba(254, 243, 199, 0.88);
-  border-color: rgba(245, 158, 11, 0.24);
+  border-color: var(--warning-border);
 }
 
 .chat-empty {
@@ -1371,9 +1406,9 @@ button.compact {
 .peer-waiting-note {
   flex: 0 0 auto;
   padding: 10px 16px;
-  border-top: 1px solid rgba(245, 158, 11, 0.18);
-  background: rgba(255, 251, 235, 0.94);
-  color: #92400e;
+  border-top: 1px solid var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
   font-size: 12px;
   font-weight: 750;
   text-align: center;
@@ -1386,9 +1421,9 @@ button.compact {
   gap: 12px;
   flex: 0 0 auto;
   padding: 10px 16px;
-  border-top: 1px solid rgba(146, 64, 14, 0.16);
-  background: rgba(255, 251, 235, 0.96);
-  color: #92400e;
+  border-top: 1px solid var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
 }
 
 .backup-needed-copy {
@@ -1405,15 +1440,19 @@ button.compact {
 }
 
 .backup-needed-copy span {
-  color: #9a6700;
+  color: var(--warning);
   font-weight: 650;
 }
 
 .backup-needed-banner button {
   flex: 0 0 auto;
-  border-color: rgba(146, 64, 14, 0.22);
+  border-color: rgba(154, 103, 0, 0.26);
   background: rgba(255, 255, 255, 0.9);
-  color: #92400e;
+  color: var(--warning);
+}
+
+.backup-needed-banner button:hover {
+  background: rgba(254, 243, 199, 0.78);
 }
 
 .composer {

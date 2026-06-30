@@ -495,7 +495,7 @@ export default function App() {
             </span>
             <div className="workspace-actions">
               <button
-                className="secondary"
+                className="secondary action-backup"
                 type="button"
                 disabled={backupDisabled}
                 onClick={() => {
@@ -534,7 +534,7 @@ export default function App() {
                   </button>
                   <div className="workspace-settings-section">Backup</div>
                   <button
-                    className="secondary"
+                    className="secondary action-backup"
                     type="button"
                     disabled={backupDisabled}
                     onClick={() => {
@@ -1182,7 +1182,7 @@ export default function App() {
                 <span>Back up before switching devices.</span>
               </div>
               <button
-                className="secondary compact"
+                className="secondary compact action-backup"
                 type="button"
                 disabled={backupDisabled}
                 onClick={() => {
